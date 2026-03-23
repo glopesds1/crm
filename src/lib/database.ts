@@ -21,7 +21,6 @@ function clientToDb(c: Client): Record<string, unknown> {
     offers: c.offers ?? [],
     onboarding_checklist: c.onboardingChecklist ?? [],
     monthly_meetings: c.monthlyMeetings ?? [],
-    is_active: c.isActive,
   };
 }
 
@@ -44,7 +43,7 @@ function dbToClient(row: Record<string, unknown>): Client {
     offers: (row.offers as Client['offers']) ?? [],
     onboardingChecklist: (row.onboarding_checklist as Client['onboardingChecklist']) ?? [],
     monthlyMeetings: (row.monthly_meetings as Client['monthlyMeetings']) ?? [],
-    isActive: (row.is_active as boolean) ?? true,
+    isActive: true,
   };
 }
 
@@ -95,9 +94,10 @@ export async function createClient(client: Client): Promise<Client> {
 }
 
 export async function updateClient(client: Client): Promise<Client> {
+  const { id, ...dbData } = clientToDb(client);
   const { data, error } = await supabase
     .from('clients')
-    .update(clientToDb(client))
+    .update(dbData)
     .eq('id', client.id)
     .select()
     .single();
