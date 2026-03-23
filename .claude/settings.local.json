@@ -6,7 +6,9 @@
       "Bash(python3 -m json.tool)",
       "Bash(curl -s https://nlvjlgjztngiixcpumfe.supabase.co/rest/v1/comercial_tasks?limit=1 -H 'apikey: sb_publishable_8GYm9Gs9VLyYHJgc3oZgmw_GyXrbOXj' -H 'Authorization: Bearer sb_publishable_8GYm9Gs9VLyYHJgc3oZgmw_GyXrbOXj')",
       "Bash(curl -s \"https://nlvjlgjztngiixcpumfe.supabase.co/rest/v1/comercial_tasks?limit=1&select=id,type,category,collaborator,image_url,completion_time,answered,meeting_status,scheduled,sale_status,contract_value,cash_collect,term_months,company_name,cnpj,address,contact_email,phone,responsible_name,meeting_summary,next_meeting_date,loss_reason,touchpoint,created_at\" -H 'apikey: sb_publishable_8GYm9Gs9VLyYHJgc3oZgmw_GyXrbOXj' -H 'Authorization: Bearer sb_publishable_8GYm9Gs9VLyYHJgc3oZgmw_GyXrbOXj')",
-      "Bash(curl -s \"https://nlvjlgjztngiixcpumfe.supabase.co/rest/v1/crm_leads?limit=1&select=*\" -H 'apikey: sb_publishable_8GYm9Gs9VLyYHJgc3oZgmw_GyXrbOXj' -H 'Authorization: Bearer sb_publishable_8GYm9Gs9VLyYHJgc3oZgmw_GyXrbOXj')"
+      "Bash(curl -s \"https://nlvjlgjztngiixcpumfe.supabase.co/rest/v1/crm_leads?limit=1&select=*\" -H 'apikey: sb_publishable_8GYm9Gs9VLyYHJgc3oZgmw_GyXrbOXj' -H 'Authorization: Bearer sb_publishable_8GYm9Gs9VLyYHJgc3oZgmw_GyXrbOXj')",
+      "Bash(curl -s \"https://nlvjlgjztngiixcpumfe.supabase.co/rest/v1/clients?limit=1&select=*\" -H \"apikey: sb_publishable_8GYm9Gs9VLyYHJgc3oZgmw_GyXrbOXj\" -H \"Authorization: Bearer sb_publishable_8GYm9Gs9VLyYHJgc3oZgmw_GyXrbOXj\")",
+      "Bash(curl -s \"https://nlvjlgjztngiixcpumfe.supabase.co/rest/v1/clients?limit=1&select=*\" -H 'apikey: sb_publishable_8GYm9Gs9VLyYHJgc3oZgmw_GyXrbOXj' -H 'Authorization: Bearer sb_publishable_8GYm9Gs9VLyYHJgc3oZgmw_GyXrbOXj')"
     ]
   }
 }

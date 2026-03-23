@@ -30,6 +30,7 @@ interface CRMLead {
   valor_mrr?: number;
   motivo_perda?: string;
   proxima_reuniao?: string;
+
   tags?: string[];
   observacoes?: string;
   created_at: string;
@@ -80,13 +81,21 @@ const ETAPA_MAP = Object.fromEntries(ETAPAS.map(e => [e.id, e]));
 const TAGS_CONFIG: Record<string, string> = {
   'MQL':             'bg-blue-900/50 text-blue-300 border-blue-700/50',
   'No-show':         'bg-red-900/50 text-red-300 border-red-700/50',
-  'Programa Pro':    'bg-purple-900/50 text-purple-300 border-purple-700/50',
-  'Programa Lite':   'bg-yellow-900/50 text-yellow-300 border-yellow-700/50',
-  'Programa Basic':  'bg-orange-900/50 text-orange-300 border-orange-700/50',
+  'Programa Pro':    'bg-yellow-900/50 text-yellow-400 border-yellow-700/50',
+  'Programa Lite':   'bg-gray-800/50 text-gray-300 border-gray-600/50',
+  'Programa Basic':  'bg-blue-900/50 text-blue-400 border-blue-700/50',
   'Contrato na Mão': 'bg-green-900/50 text-green-300 border-green-700/50',
   'Link na Mão':     'bg-cyan-900/50 text-cyan-300 border-cyan-700/50',
 };
 const ALL_TAGS = Object.keys(TAGS_CONFIG);
+
+const getProgramaStyle = (programa: string) => {
+  const p = (programa || '').toLowerCase();
+  if (p === 'pro')   return 'text-yellow-400 font-bold';
+  if (p === 'lite')  return 'text-gray-300 font-bold';
+  if (p === 'basic') return 'text-blue-400 font-bold';
+  return 'text-white font-bold';
+};
 
 const TIPO_ICON: Record<string, any> = {
   ligacao: PhoneCall,
@@ -112,6 +121,7 @@ function LeadCard({ lead, proximaTarefa, onClick }: { lead: CRMLead; proximaTare
       {lead.area && <div className="flex items-center gap-1.5 text-[10px] text-gray-400"><MapPin size={9} className="text-gray-600" /><span className="truncate">{lead.area}</span></div>}
       {lead.faturamento && <div className="flex items-center gap-1.5 text-[10px] text-gray-500"><DollarSign size={9} className="text-gray-600" />{lead.faturamento}</div>}
       {lead.responsavel && <div className="flex items-center gap-1.5 text-[10px] text-gray-500"><User size={9} className="text-gray-600" />{lead.responsavel}</div>}
+      {lead.programa_apresentado && <div className={`text-[10px] ${getProgramaStyle(lead.programa_apresentado)}`}>{lead.programa_apresentado}</div>}
       {lead.valor_contrato != null && lead.valor_contrato > 0 && (
         <div className="text-[10px] font-bold text-brand-primary">Contrato: R$ {Number(lead.valor_contrato).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</div>
       )}
@@ -124,19 +134,17 @@ function LeadCard({ lead, proximaTarefa, onClick }: { lead: CRMLead; proximaTare
           <span>R1 - {fmtDate(lead.proxima_reuniao)}</span>
         </div>
       )}
-      {proximaTarefa && !proximaTarefa.concluida && (
-        <div className="flex items-center gap-1.5 text-[10px] text-yellow-400 bg-yellow-900/20 rounded-lg px-2 py-1">
-          <Calendar size={9} />
-          {proximaTarefa.titulo.startsWith('R2+') && proximaTarefa.data_agendada ? (
-            <span>R2+ - {fmtDate(proximaTarefa.data_agendada)}</span>
-          ) : (
-            <>
-              <span className="truncate">{proximaTarefa.titulo}</span>
-              {proximaTarefa.data_agendada && <span className="text-gray-600 ml-auto flex-shrink-0">{fmtDate(proximaTarefa.data_agendada)}</span>}
-            </>
-          )}
-        </div>
-      )}
+      {proximaTarefa && !proximaTarefa.concluida && (() => {
+        const isReuniao = proximaTarefa.titulo.startsWith('R1') || proximaTarefa.titulo.startsWith('R2');
+        const colorClass = isReuniao ? 'text-orange-400 bg-orange-900/20' : 'text-yellow-400 bg-yellow-900/20';
+        return (
+          <div className={`flex items-center gap-1.5 text-[10px] ${colorClass} rounded-lg px-2 py-1`}>
+            <Calendar size={9} />
+            <span className="truncate">{proximaTarefa.titulo}</span>
+            {proximaTarefa.data_agendada && <span className="text-gray-600 ml-auto flex-shrink-0">{fmtDate(proximaTarefa.data_agendada)}</span>}
+          </div>
+        );
+      })()}
       {lead.tags && lead.tags.length > 0 && (
         <div className="flex flex-wrap gap-1">
           {lead.tags.map(tag => <span key={tag} className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full border ${TAGS_CONFIG[tag] ?? 'bg-white/5 text-gray-500 border-white/10'}`}>{tag}</span>)}
@@ -150,8 +158,8 @@ function LeadCard({ lead, proximaTarefa, onClick }: { lead: CRMLead; proximaTare
 }
 
 // ── Nova Atividade Form ────────────────────────────────────────
-function NovaAtividadeForm({ leadId, leadName, userSession, onSaved, onCancel, onLeadUpdated }: {
-  leadId: string; leadName: string; userSession: any; onSaved: (a: CRMAtividade) => void; onCancel: () => void; onLeadUpdated?: (upd: Partial<CRMLead>) => void;
+function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSaved, onCancel, onLeadUpdated }: {
+  lead?: CRMLead; leadId: string; leadName: string; userSession: any; onSaved: (a: CRMAtividade) => void; onCancel: () => void; onLeadUpdated?: (upd: Partial<CRMLead>) => void;
 }) {
   const [tipo, setTipo] = useState<'ligacao' | 'reuniao'>('ligacao');
   const [statusChamada, setStatusChamada] = useState<'Atendeu' | 'Não atendeu' | null>(null);
@@ -172,11 +180,14 @@ function NovaAtividadeForm({ leadId, leadName, userSession, onSaved, onCancel, o
   const [prazoMeses, setPrazoMeses] = useState('');
   const [resumo, setResumo] = useState('');
   const [razaoSocial, setRazaoSocial] = useState('');
-  const [cnpj, setCnpj] = useState('');
+  const [tipoPessoa, setTipoPessoa] = useState<'PF' | 'PJ'>('PJ');
+  const [cpfCnpj, setCpfCnpj] = useState('');
   const [endereco, setEndereco] = useState('');
   const [emailContato, setEmailContato] = useState('');
   const [telefoneContato, setTelefoneContato] = useState('');
   const [nomeResponsavel, setNomeResponsavel] = useState('');
+  const [formaPagamento, setFormaPagamento] = useState('');
+  const [dataPrimeiroVencimento, setDataPrimeiroVencimento] = useState('');
   const [proximaReuniao, setProximaReuniao] = useState('');
   const [motivoPerda, setMotivoPerda] = useState('');
   // Ligação extra fields
@@ -235,11 +246,14 @@ function NovaAtividadeForm({ leadId, leadName, userSession, onSaved, onCancel, o
       const extras: Record<string, string> = {};
       if (resumo) extras.resumo = resumo;
       if (razaoSocial) extras.razao_social = razaoSocial;
-      if (cnpj) extras.cnpj = cnpj;
-      if (endereco) extras.endereco = endereco;
+      if (tipoPessoa) extras.tipo_pessoa = tipoPessoa;
+      if (cpfCnpj) extras.cpf_cnpj = cpfCnpj;
+      if (endereco) extras.endereco_completo = endereco;
       if (emailContato) extras.email_contato = emailContato;
       if (telefoneContato) extras.telefone_contato = telefoneContato;
       if (nomeResponsavel) extras.nome_responsavel = nomeResponsavel;
+      if (formaPagamento) extras.forma_pagamento = formaPagamento;
+      if (dataPrimeiroVencimento) extras.data_primeiro_vencimento = dataPrimeiroVencimento;
       if (motivoPerda) extras.motivo_perda = motivoPerda;
       if (proximaReuniao) extras.proxima_reuniao = proximaReuniao;
       if (Object.keys(extras).length > 0) {
@@ -305,6 +319,49 @@ function NovaAtividadeForm({ leadId, leadName, userSession, onSaved, onCancel, o
             valor_mrr: prazoMeses && valorContrato ? parseFloat(valorContrato) / parseInt(prazoMeses) : null,
             updated_at: now, etapa_desde: now,
           }).eq('id', leadId);
+
+          // Auto-create client
+          try {
+            const parsedContrato = valorContrato ? parseFloat(valorContrato) : 0;
+            const parsedMrr = prazoMeses && valorContrato ? parseFloat(valorContrato) / parseInt(prazoMeses) : 0;
+            await supabase.from('clients').insert({
+              name: leadName,
+              responsible: leadObj?.responsavel ?? '',
+              plan: leadObj?.programa_apresentado === 'Pro' ? 'Pro' : leadObj?.programa_apresentado === 'Lite' ? 'Lite' : 'Basic',
+              status: 'Onboarding',
+              entry_date: new Date().toISOString().split('T')[0],
+              contract_duration: parsedMrr ? Math.round(parsedContrato / parsedMrr) : 12,
+              docs: { access: '', transcription: '' },
+              tags: [],
+              platforms: [],
+              funnels: [],
+              onboarding_checklist: [],
+              monthly_meetings: [],
+              comments: [],
+              offers: [],
+              situation: '',
+            });
+          } catch (err) { console.error('Failed to create client:', err); }
+
+          // Notify Juliana via n8n (fire-and-forget)
+          try {
+            fetch('https://webhook.m2black.com/webhook/venda-fechada', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                nome: leadName,
+                telefone: leadObj?.telefone,
+                programa: leadObj?.programa_apresentado,
+                valor_contrato: valorContrato ? parseFloat(valorContrato) : null,
+                valor_cc: valorCc ? parseFloat(valorCc) : null,
+                valor_mrr: prazoMeses && valorContrato ? parseFloat(valorContrato) / parseInt(prazoMeses) : null,
+                responsavel: leadObj?.responsavel,
+                razao_social: razaoSocial,
+                cnpj: cpfCnpj,
+                responsavel_empresa: nomeResponsavel,
+              }),
+            }).catch(e => console.warn('Webhook venda-fechada (CORS em dev):', e.message));
+          } catch (e) { console.warn('Webhook venda-fechada:', e); }
         } else if (resultado === 'Perdido') {
           await supabase.from('crm_leads').update({
             etapa: 'perdido', status: 'perdido',
@@ -519,11 +576,21 @@ function NovaAtividadeForm({ leadId, leadName, userSession, onSaved, onCancel, o
                   />
                 </div>
                 <div>
-                  <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">CNPJ</label>
-                  <input value={cnpj} onChange={e => setCnpj(e.target.value)}
-                    className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-1.5 text-sm text-white focus:outline-none focus:border-brand-primary"
-                  />
+                  <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">Tipo de Pessoa</label>
+                  <select value={tipoPessoa} onChange={e => setTipoPessoa(e.target.value as 'PF' | 'PJ')}
+                    className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-1.5 text-sm text-white focus:outline-none focus:border-brand-primary appearance-none"
+                  >
+                    <option value="PJ" className="bg-bg-main">Pessoa Jurídica (CNPJ)</option>
+                    <option value="PF" className="bg-bg-main">Pessoa Física (CPF)</option>
+                  </select>
                 </div>
+              </div>
+              <div>
+                <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">CPF / CNPJ</label>
+                <input value={cpfCnpj} onChange={e => setCpfCnpj(e.target.value)}
+                  className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-1.5 text-sm text-white focus:outline-none focus:border-brand-primary"
+                  placeholder={tipoPessoa === 'PF' ? '000.000.000-00' : '00.000.000/0000-00'}
+                />
               </div>
               <div>
                 <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">Endereço Completo</label>
@@ -550,6 +617,23 @@ function NovaAtividadeForm({ leadId, leadName, userSession, onSaved, onCancel, o
                 <input value={nomeResponsavel} onChange={e => setNomeResponsavel(e.target.value)}
                   className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-1.5 text-sm text-white focus:outline-none focus:border-brand-primary"
                 />
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">Forma de Pagamento</label>
+                  <select value={formaPagamento} onChange={e => setFormaPagamento(e.target.value)}
+                    className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-1.5 text-sm text-white focus:outline-none focus:border-brand-primary appearance-none"
+                  >
+                    <option value="" className="bg-bg-main">Selecionar...</option>
+                    {['À vista', '2x', '3x', '6x', '12x', 'Boleto mensal', 'Cartão recorrente'].map(f => <option key={f} value={f} className="bg-bg-main">{f}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">Data do 1º Vencimento</label>
+                  <input type="date" value={dataPrimeiroVencimento} onChange={e => setDataPrimeiroVencimento(e.target.value)}
+                    className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-1.5 text-sm text-gray-300 focus:outline-none focus:border-brand-primary"
+                  />
+                </div>
               </div>
             </div>
           )}
@@ -651,6 +735,11 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers }
   const [atividades, setAtividades] = useState<CRMAtividade[]>([]);
   const [tarefas, setTarefas] = useState<CRMTarefa[]>([]);
   const [showAtivForm, setShowAtivForm] = useState(false);
+  const [showAgendarTarefa, setShowAgendarTarefa] = useState(false);
+  const [agTitulo, setAgTitulo] = useState('');
+  const [agData, setAgData] = useState('');
+  const [agResponsavel, setAgResponsavel] = useState('');
+  const [agSaving, setAgSaving] = useState(false);
   const [tab, setTab] = useState<'info' | 'timeline' | 'tarefas'>('info');
   // Reunião Realizada section (rm_marcada)
   const [reuniaoRealizada, setReuniaoRealizada] = useState(false);
@@ -662,6 +751,15 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers }
   const [rrResumo, setRrResumo] = useState('');
   const [rrMotivoPerda, setRrMotivoPerda] = useState('');
   const [rrProximaReuniao, setRrProximaReuniao] = useState('');
+  const [rrRazaoSocial, setRrRazaoSocial] = useState('');
+  const [rrTipoPessoa, setRrTipoPessoa] = useState<'PF' | 'PJ'>('PJ');
+  const [rrCpfCnpj, setRrCpfCnpj] = useState('');
+  const [rrEndereco, setRrEndereco] = useState('');
+  const [rrEmailContato, setRrEmailContato] = useState('');
+  const [rrTelefoneContato, setRrTelefoneContato] = useState('');
+  const [rrNomeResponsavel, setRrNomeResponsavel] = useState('');
+  const [rrFormaPagamento, setRrFormaPagamento] = useState('');
+  const [rrDataPrimeiroVencimento, setRrDataPrimeiroVencimento] = useState('');
   const [rrImageFile, setRrImageFile] = useState<File | null>(null);
   const [rrImagePreview, setRrImagePreview] = useState<string | null>(null);
   const [rrImageError, setRrImageError] = useState(false);
@@ -717,6 +815,32 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers }
     if (upd.etapa) setEtapa(upd.etapa);
   };
 
+  const handleAgendarTarefa = async () => {
+    setAgSaving(true);
+    try {
+      const now = new Date().toISOString();
+      const { data } = await supabase.from('crm_tarefas').insert({
+        lead_id: lead.id,
+        titulo: agTitulo.trim(),
+        data_agendada: agData,
+        responsavel: agResponsavel || (userSession?.name ?? ''),
+        concluida: false,
+        created_at: now,
+      }).select().single();
+      if (data) setTarefas(prev => [...prev, data]);
+      // Update proxima_reuniao if this task is sooner
+      const agDate = new Date(agData);
+      if (agDate > new Date() && (!lead.proxima_reuniao || agDate < new Date(lead.proxima_reuniao))) {
+        await supabase.from('crm_leads').update({ proxima_reuniao: agData }).eq('id', lead.id);
+        onSave({ proxima_reuniao: agData });
+      }
+      setShowAgendarTarefa(false);
+      setAgTitulo(''); setAgData(''); setAgResponsavel('');
+      setTab('tarefas');
+    } catch (err) { console.error('Failed to schedule task:', err); }
+    setAgSaving(false);
+  };
+
   const handleSaveReuniao = async () => {
     if (!rrImageFile) { setRrImageError(true); return; }
     if (rrResultado === 'Perdido' && !rrMotivoPerda.trim()) { setRrErroMotivo(true); return; }
@@ -745,6 +869,12 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers }
       proxima_reuniao: rrProximaReuniao || undefined,
       valor_contrato: rrValorContrato || undefined, valor_cc: rrValorCc || undefined,
       prazo_meses: rrPrazoMeses || undefined, valor_mrr: computedMrr ?? undefined,
+      razao_social: rrRazaoSocial || undefined, tipo_pessoa: rrTipoPessoa || undefined,
+      cpf_cnpj: rrCpfCnpj || undefined, endereco_completo: rrEndereco || undefined,
+      email_contato: rrEmailContato || undefined, telefone_contato: rrTelefoneContato || undefined,
+      nome_responsavel: rrNomeResponsavel || undefined,
+      forma_pagamento: rrFormaPagamento || undefined,
+      data_primeiro_vencimento: rrDataPrimeiroVencimento || undefined,
     });
 
     // 1. crm_atividades
@@ -756,7 +886,7 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers }
     }).select().single();
 
     // 2. Update lead
-    const leadUpd: Partial<CRMLead> = { updated_at: now, etapa_desde: now };
+    const leadUpd: Partial<CRMLead> = { updated_at: now, etapa_desde: now, programa_apresentado: programaApresentado || null };
     if (rrResultado === 'Venda') {
       leadUpd.etapa = 'fechado'; leadUpd.status = 'ganho';
       leadUpd.valor_contrato = rrValorContrato ? parseFloat(rrValorContrato) : null;
@@ -770,6 +900,51 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers }
     }
     await supabase.from('crm_leads').update(leadUpd).eq('id', lead.id);
     await onSave(leadUpd);
+
+    // Auto-create client on Venda
+    if (rrResultado === 'Venda') {
+      try {
+        const parsedContrato = rrValorContrato ? parseFloat(rrValorContrato) : 0;
+        const parsedMrr = computedMrr ?? 0;
+        await supabase.from('clients').insert({
+          name: lead.nome,
+          responsible: lead.responsavel ?? '',
+          plan: lead.programa_apresentado === 'Pro' ? 'Pro' : lead.programa_apresentado === 'Lite' ? 'Lite' : 'Basic',
+          status: 'Onboarding',
+          entry_date: new Date().toISOString().split('T')[0],
+          contract_duration: parsedMrr ? Math.round(parsedContrato / parsedMrr) : 12,
+          docs: { access: '', transcription: '' },
+          tags: [],
+          platforms: [],
+          funnels: [],
+          onboarding_checklist: [],
+          monthly_meetings: [],
+          comments: [],
+          offers: [],
+          situation: '',
+        });
+      } catch (err) { console.error('Failed to create client:', err); }
+
+      // Notify Juliana via n8n (fire-and-forget)
+      try {
+        fetch('https://webhook.m2black.com/webhook/venda-fechada', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            nome: lead.nome,
+            telefone: lead.telefone,
+            programa: lead.programa_apresentado,
+            valor_contrato: rrValorContrato ? parseFloat(rrValorContrato) : null,
+            valor_cc: rrValorCc ? parseFloat(rrValorCc) : null,
+            valor_mrr: computedMrr,
+            responsavel: lead.responsavel,
+            razao_social: rrRazaoSocial,
+            cnpj: rrCpfCnpj,
+            responsavel_empresa: rrNomeResponsavel,
+          }),
+        }).catch(e => console.warn('Webhook venda-fechada (CORS em dev):', e.message));
+      } catch (e) { console.warn('Webhook venda-fechada:', e); }
+    }
 
     // 3. comercial_tasks
     try {
@@ -800,6 +975,9 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers }
     // 5. Update local state
     if (ativData) setAtividades(prev => [ativData, ...prev]);
     if (leadUpd.etapa) setEtapa(leadUpd.etapa);
+    if (leadUpd.valor_contrato != null) setValorContrato(leadUpd.valor_contrato);
+    if (leadUpd.valor_cc != null) setValorCc(leadUpd.valor_cc);
+    if (leadUpd.valor_mrr != null) setValorMrr(leadUpd.valor_mrr);
     setReuniaoRealizada(false);
     setRrSaving(false);
     setTab('timeline');
@@ -833,9 +1011,7 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers }
               <div className="flex items-center gap-1.5">
                 <button onClick={() => {
                   onDelete(lead.id);
-                  supabase.from('crm_atividades').delete().eq('lead_id', lead.id);
-                  supabase.from('crm_tarefas').delete().eq('lead_id', lead.id);
-                  supabase.from('crm_leads').delete().eq('id', lead.id);
+                  supabase.from('crm_leads').update({ deletado_em: new Date().toISOString() }).eq('id', lead.id);
                 }} className="px-2.5 py-1 rounded-lg bg-red-500/20 text-red-400 text-[11px] font-semibold hover:bg-red-500/30 transition-colors">Confirmar exclusão</button>
                 <button onClick={() => setConfirmDelete(false)} className="px-2.5 py-1 rounded-lg bg-white/5 text-gray-400 text-[11px] font-semibold hover:bg-white/10 transition-colors">Cancelar</button>
               </div>
@@ -932,7 +1108,7 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers }
             {((lead.valor_contrato != null && lead.valor_contrato > 0) || (lead.valor_cc != null && lead.valor_cc > 0) || (lead.programa_apresentado != null && lead.programa_apresentado !== '') || atividades.some(a => a.tipo === 'reuniao' && a.status_reuniao === 'Compareceu')) && (
               <div className="bg-white/5 rounded-xl p-3 space-y-2">
                 <p className="text-[9px] font-bold uppercase tracking-widest text-brand-primary">Negociação</p>
-                {lead.programa_apresentado && <div className="flex justify-between text-xs"><span className="text-gray-500">Programa</span><span className="text-white font-bold">{lead.programa_apresentado}</span></div>}
+                {lead.programa_apresentado && <div className="flex justify-between text-xs"><span className="text-gray-500">Programa</span><span className={getProgramaStyle(lead.programa_apresentado)}>{lead.programa_apresentado}</span></div>}
                 {lead.valor_contrato != null && <div className="flex justify-between text-xs"><span className="text-gray-500">Contrato</span><span className="text-brand-primary font-bold">R$ {Number(lead.valor_contrato).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span></div>}
                 {lead.valor_cc != null && <div className="flex justify-between text-xs"><span className="text-gray-500">Cash Collect</span><span className="text-white font-bold">R$ {Number(lead.valor_cc).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span></div>}
               </div>
@@ -1035,6 +1211,19 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers }
                       ))}
                     </div>
 
+                    {/* Programa Apresentado */}
+                    <div>
+                      <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">Programa Apresentado</label>
+                      <select value={programaApresentado} onChange={e => setProgramaApresentado(e.target.value)}
+                        className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-brand-primary appearance-none"
+                      >
+                        <option value="" className="bg-bg-main">Selecionar...</option>
+                        <option value="Basic" className="bg-bg-main">Basic</option>
+                        <option value="Lite" className="bg-bg-main">Lite</option>
+                        <option value="Pro" className="bg-bg-main">Pro</option>
+                      </select>
+                    </div>
+
                     {/* Resultado */}
                     <div>
                       <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">Resultado</label>
@@ -1072,6 +1261,80 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers }
                     </div>
                     {rrMrr != null && !isNaN(rrMrr) && (
                       <div className="text-[10px] text-gray-400">MRR calculado: <span className="text-brand-primary font-bold">R$ {rrMrr.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>
+                    )}
+
+                    {/* Venda — dados do cliente */}
+                    {rrResultado === 'Venda' && (
+                      <div className="border-t border-white/5 pt-3 space-y-3">
+                        <p className="text-[9px] font-bold uppercase tracking-widest text-brand-primary">Dados do Cliente</p>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">Razão Social</label>
+                            <input value={rrRazaoSocial} onChange={e => setRrRazaoSocial(e.target.value)}
+                              className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-1.5 text-sm text-white focus:outline-none focus:border-brand-primary"
+                            />
+                          </div>
+                          <div>
+                            <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">Tipo de Pessoa</label>
+                            <select value={rrTipoPessoa} onChange={e => setRrTipoPessoa(e.target.value as 'PF' | 'PJ')}
+                              className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-1.5 text-sm text-white focus:outline-none focus:border-brand-primary appearance-none"
+                            >
+                              <option value="PJ" className="bg-bg-main">Pessoa Jurídica (CNPJ)</option>
+                              <option value="PF" className="bg-bg-main">Pessoa Física (CPF)</option>
+                            </select>
+                          </div>
+                        </div>
+                        <div>
+                          <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">CPF / CNPJ</label>
+                          <input value={rrCpfCnpj} onChange={e => setRrCpfCnpj(e.target.value)}
+                            className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-1.5 text-sm text-white focus:outline-none focus:border-brand-primary"
+                            placeholder={rrTipoPessoa === 'PF' ? '000.000.000-00' : '00.000.000/0000-00'}
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">Endereço Completo</label>
+                          <input value={rrEndereco} onChange={e => setRrEndereco(e.target.value)}
+                            className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-1.5 text-sm text-white focus:outline-none focus:border-brand-primary"
+                          />
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">Email de Contato</label>
+                            <input type="email" value={rrEmailContato} onChange={e => setRrEmailContato(e.target.value)}
+                              className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-1.5 text-sm text-white focus:outline-none focus:border-brand-primary"
+                            />
+                          </div>
+                          <div>
+                            <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">Telefone</label>
+                            <input value={rrTelefoneContato} onChange={e => setRrTelefoneContato(e.target.value)}
+                              className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-1.5 text-sm text-white focus:outline-none focus:border-brand-primary"
+                            />
+                          </div>
+                        </div>
+                        <div>
+                          <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">Nome do Responsável</label>
+                          <input value={rrNomeResponsavel} onChange={e => setRrNomeResponsavel(e.target.value)}
+                            className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-1.5 text-sm text-white focus:outline-none focus:border-brand-primary"
+                          />
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">Forma de Pagamento</label>
+                            <select value={rrFormaPagamento} onChange={e => setRrFormaPagamento(e.target.value)}
+                              className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-1.5 text-sm text-white focus:outline-none focus:border-brand-primary appearance-none"
+                            >
+                              <option value="" className="bg-bg-main">Selecionar...</option>
+                              {['À vista', '2x', '3x', '6x', '12x', 'Boleto mensal', 'Cartão recorrente'].map(f => <option key={f} value={f} className="bg-bg-main">{f}</option>)}
+                            </select>
+                          </div>
+                          <div>
+                            <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">Data do 1º Vencimento</label>
+                            <input type="date" value={rrDataPrimeiroVencimento} onChange={e => setRrDataPrimeiroVencimento(e.target.value)}
+                              className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-1.5 text-sm text-gray-300 focus:outline-none focus:border-brand-primary"
+                            />
+                          </div>
+                        </div>
+                      </div>
                     )}
 
                     {/* Perdido */}
@@ -1115,16 +1378,67 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers }
               </div>
             )}
 
-            {/* Nova Atividade inline */}
+            {/* Nova Atividade + Agendar Tarefa inline */}
             <div className="border-t border-white/5 pt-3">
               {showAtivForm ? (
-                <NovaAtividadeForm leadId={lead.id} leadName={lead.nome} userSession={userSession} onSaved={handleAtivSaved} onCancel={() => setShowAtivForm(false)} onLeadUpdated={handleLeadUpdated} />
+                <NovaAtividadeForm lead={lead} leadId={lead.id} leadName={lead.nome} userSession={userSession} onSaved={handleAtivSaved} onCancel={() => setShowAtivForm(false)} onLeadUpdated={handleLeadUpdated} />
+              ) : showAgendarTarefa ? (
+                <div className="space-y-3 bg-white/[0.02] border border-white/10 rounded-xl p-4">
+                  <p className="text-[9px] font-bold uppercase tracking-widest text-brand-primary">Agendar Tarefa</p>
+                  <div>
+                    <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">Título da tarefa <span className="text-red-400">*</span></label>
+                    <input value={agTitulo} onChange={e => setAgTitulo(e.target.value)}
+                      className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-1.5 text-sm text-white focus:outline-none focus:border-brand-primary"
+                      placeholder="Ex: Reunião de follow-up"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">Data e hora <span className="text-red-400">*</span></label>
+                    <input type="datetime-local" value={agData} onChange={e => setAgData(e.target.value)}
+                      className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-1.5 text-sm text-gray-300 focus:outline-none focus:border-brand-primary"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">Responsável</label>
+                    <select value={agResponsavel} onChange={e => setAgResponsavel(e.target.value)}
+                      className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-1.5 text-sm text-white focus:outline-none focus:border-brand-primary appearance-none"
+                    >
+                      <option value="" className="bg-bg-main">Selecionar...</option>
+                      {teamMembers.filter(m => ['admin','comercial'].includes((m.role ?? '').toLowerCase()))
+                        .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'))
+                        .map(m => <option key={m.id} value={m.name} className="bg-bg-main">{m.name}</option>)}
+                    </select>
+                  </div>
+                  <div className="flex gap-2">
+                    <button onClick={() => setShowAgendarTarefa(false)}
+                      className="flex-1 py-1.5 rounded-xl bg-white/5 border border-white/10 text-xs text-gray-400 hover:text-white transition-colors"
+                    >Cancelar</button>
+                    <button onClick={handleAgendarTarefa} disabled={agSaving || !agTitulo.trim() || !agData}
+                      className="flex-1 py-1.5 rounded-xl bg-brand-primary text-black text-xs font-bold hover:bg-brand-primary/80 disabled:opacity-40 transition-colors flex items-center justify-center gap-2"
+                    >
+                      {agSaving && <Loader2 size={12} className="animate-spin" />}
+                      Salvar
+                    </button>
+                  </div>
+                </div>
               ) : (
-                <button onClick={() => { setShowAtivForm(true); setTab('timeline'); }}
-                  className="w-full py-2 rounded-xl border border-dashed border-white/15 text-xs text-gray-500 hover:text-brand-primary hover:border-brand-primary/40 transition-all flex items-center justify-center gap-2"
-                >
-                  <Plus size={13} /> Registrar nova atividade
-                </button>
+                <div className="flex gap-2">
+                  <div className="flex-1">
+                    <button onClick={() => { setShowAtivForm(true); setTab('timeline'); }}
+                      className="w-full py-2 rounded-xl border border-dashed border-white/15 text-xs text-gray-500 hover:text-brand-primary hover:border-brand-primary/40 transition-all flex items-center justify-center gap-2"
+                    >
+                      <Plus size={13} /> Registrar atividade
+                    </button>
+                    <p className="text-[9px] text-gray-700 text-center mt-1">Para atividades já realizadas</p>
+                  </div>
+                  <div className="flex-1">
+                    <button onClick={() => setShowAgendarTarefa(true)}
+                      className="w-full py-2 rounded-xl border border-dashed border-white/15 text-xs text-gray-500 hover:text-brand-primary hover:border-brand-primary/40 transition-all flex items-center justify-center gap-2"
+                    >
+                      <Calendar size={13} /> Agendar Tarefa
+                    </button>
+                  </div>
+                </div>
               )}
             </div>
 
@@ -1144,9 +1458,9 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers }
               <button onClick={() => setShowAtivForm(!showAtivForm)}
                 className="w-full py-2 rounded-xl bg-brand-primary/10 border border-brand-primary/30 text-xs text-brand-primary hover:bg-brand-primary/20 transition-all flex items-center justify-center gap-2"
               >
-                <Plus size={13} /> Nova atividade
+                <Plus size={13} /> Registrar atividade
               </button>
-              {showAtivForm && <NovaAtividadeForm leadId={lead.id} leadName={lead.nome} userSession={userSession} onSaved={handleAtivSaved} onCancel={() => setShowAtivForm(false)} onLeadUpdated={handleLeadUpdated} />}
+              {showAtivForm && <NovaAtividadeForm lead={lead} leadId={lead.id} leadName={lead.nome} userSession={userSession} onSaved={handleAtivSaved} onCancel={() => setShowAtivForm(false)} onLeadUpdated={handleLeadUpdated} />}
               {atividades.length === 0 && !showAtivForm && (
                 <div className="py-12 text-center text-xs text-gray-600">Nenhuma atividade registrada ainda.</div>
               )}
@@ -1287,7 +1601,7 @@ export default function CRMView({ userSession, teamMembers, openLeadByName, onLe
     let from = 0;
     let hasMore = true;
     while (hasMore) {
-      let query = supabase.from('crm_leads').select('*').order('created_at', { ascending: false }).range(from, from + PAGE_SIZE - 1);
+      let query = supabase.from('crm_leads').select('*').is('deletado_em', null).order('created_at', { ascending: false }).range(from, from + PAGE_SIZE - 1);
       if (!isAdmin) query = query.eq('responsavel', userSession?.name ?? '');
       const { data, error } = await query;
       if (error) { console.error(error); break; }
