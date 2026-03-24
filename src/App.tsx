@@ -3116,6 +3116,8 @@ export default function App() {
   const [userSession, setUserSession] = useState<UserSession | null>(null);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [demands, setDemands] = useState<Demand[]>([]);
+  const [demandFilter, setDemandFilter] = useState<'todos' | 'pendente' | 'concluido'>('pendente');
+  const [demandPriorityFilter, setDemandPriorityFilter] = useState<'todas' | 'alta' | 'media' | 'baixa'>('todas');
   const [isLoading, setIsLoading] = useState(true);
   
   const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
@@ -3432,14 +3434,11 @@ export default function App() {
     return <LoginScreen onLogin={setUserSession} teamMembers={teamMembers} agencyConfig={agencyConfig} />;
   }
 
-  const [demandFilter, setDemandFilter] = useState<'todos' | 'pendente' | 'concluido'>('pendente');
-  const [demandPriorityFilter, setDemandPriorityFilter] = useState<'todas' | 'alta' | 'media' | 'baixa'>('todas');
-
   const renderDemandas = () => {
-    const role = (userSession?.role ?? '').toLowerCase();
-    const isAdmin = role === 'admin';
+    const myName = userSession?.name ?? '';
     const filtered = demands.filter(d => {
-      if (!isAdmin && d.assignedTo !== userSession?.name && d.assignedName !== userSession?.name) return false;
+      // Mostra: demandas atribuídas a mim OU criadas por mim
+      if (d.assignedName !== myName && d.commentAuthor !== myName) return false;
       if (demandFilter !== 'todos' && d.status !== demandFilter) return false;
       if (demandPriorityFilter !== 'todas' && d.priority !== demandPriorityFilter) return false;
       return true;
