@@ -3934,7 +3934,7 @@ export default function App() {
         transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
         className="bg-bg-sidebar border-r border-white/5 flex flex-col z-40 overflow-hidden flex-shrink-0"
       >
-        <div className="min-w-[208px]">
+        <div className="min-w-[208px] flex flex-col h-full overflow-y-auto overflow-x-hidden scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
         <div className="flex items-center gap-3 mb-10 px-2">
           {agencyConfig.logoUrl ? (
             <div className="w-10 h-10 rounded-xl overflow-hidden shadow-glow border border-white/10">
