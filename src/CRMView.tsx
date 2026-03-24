@@ -1074,6 +1074,8 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
                     alert('Erro ao excluir lead. Tente novamente.');
                     return;
                   }
+                  // Remove tarefas associadas ao lead excluído
+                  await supabase.from('crm_tarefas').delete().eq('lead_id', lead.id);
                   onDelete(lead.id);
                 }} className="px-2.5 py-1 rounded-lg bg-red-500/20 text-red-400 text-[11px] font-semibold hover:bg-red-500/30 transition-colors">Confirmar exclusão</button>
                 <button onClick={() => setConfirmDelete(false)} className="px-2.5 py-1 rounded-lg bg-white/5 text-gray-400 text-[11px] font-semibold hover:bg-white/10 transition-colors">Cancelar</button>
@@ -1676,7 +1678,7 @@ function TaskAlarmPopup({ tarefa, lead, onDismiss, onOpenLead }: {
       initial={{ opacity: 0, y: -20, scale: 0.95 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
       exit={{ opacity: 0, y: -20, scale: 0.95 }}
-      className="fixed top-6 right-6 z-[999] w-[380px] bg-bg-card border-2 border-yellow-500/50 rounded-2xl shadow-[0_0_40px_rgba(234,179,8,0.2)] overflow-hidden"
+      className="w-[380px] bg-bg-card border-2 border-yellow-500/50 rounded-2xl shadow-[0_0_40px_rgba(234,179,8,0.2)] overflow-hidden"
     >
       {/* Header pulsante */}
       <div className="bg-yellow-500/10 border-b border-yellow-500/20 px-5 py-3 flex items-center justify-between">
@@ -1744,7 +1746,7 @@ function TaskAlarmPopup({ tarefa, lead, onDismiss, onOpenLead }: {
             </button>
           )}
           <button onClick={onDismiss}
-            className="flex-1 py-2.5 rounded-xl bg-white/5 border border-white/10 text-xs font-bold text-gray-400 hover:text-white hover:bg-white/10 transition-colors"
+            className="flex-1 py-2.5 rounded-xl bg-red-500/10 border border-red-500/30 text-xs font-bold text-red-400 hover:text-white hover:bg-red-500/20 transition-colors cursor-pointer"
           >
             Dispensar
           </button>
@@ -1854,9 +1856,14 @@ export default function CRMView({ userSession, teamMembers, openLeadByName, onLe
     });
     setLeads(unique);
 
-    // Load all tasks
-    const { data: t } = await supabase.from('crm_tarefas').select('*').eq('concluida', false);
-    setTarefas(t ?? []);
+    // Load all tasks (only for active leads) + cleanup orphaned tasks
+    const { data: t } = await supabase.from('crm_tarefas').select('*');
+    const activeLeadIds = new Set(unique.map(l => l.id));
+    const orphanIds = (t ?? []).filter(task => !activeLeadIds.has(task.lead_id)).map(task => task.id);
+    if (orphanIds.length > 0) {
+      await supabase.from('crm_tarefas').delete().in('id', orphanIds);
+    }
+    setTarefas((t ?? []).filter(task => activeLeadIds.has(task.lead_id) && !task.concluida));
     setLoading(false);
   }, [isAdmin, userSession?.name]);
 
@@ -1912,6 +1919,8 @@ export default function CRMView({ userSession, teamMembers, openLeadByName, onLe
 
   const handleDeleteLead = (leadId: string) => {
     setLeads(prev => prev.filter(l => l.id !== leadId));
+    setTarefas(prev => prev.filter(t => t.lead_id !== leadId));
+    setAlarmTarefas(prev => prev.filter(t => t.lead_id !== leadId));
     setSelectedLead(null);
   };
 
@@ -2053,11 +2062,12 @@ export default function CRMView({ userSession, teamMembers, openLeadByName, onLe
       )}
 
       {/* Task Alarm Popups */}
+      <div className="pointer-events-none" style={{ position: 'fixed', inset: 0, zIndex: 998 }}>
       <AnimatePresence>
         {alarmTarefas.map((tarefa, i) => {
           const lead = leads.find(l => l.id === tarefa.lead_id);
           return (
-            <div key={tarefa.id} style={{ top: `${24 + i * 8}px`, right: '24px', position: 'fixed', zIndex: 999 + i }}>
+            <div key={tarefa.id} style={{ top: `${24 + i * 320}px`, right: '24px', position: 'fixed', zIndex: 999 + i, pointerEvents: 'auto' }} className="pointer-events-auto">
               <TaskAlarmPopup
                 tarefa={tarefa}
                 lead={lead}
@@ -2068,6 +2078,7 @@ export default function CRMView({ userSession, teamMembers, openLeadByName, onLe
           );
         })}
       </AnimatePresence>
+      </div>
     </div>
   );
 }
