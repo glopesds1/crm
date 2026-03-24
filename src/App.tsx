@@ -2368,13 +2368,13 @@ const ClientModal = ({ client, allTags, teamMembers, onClose, onUpdateClient, on
           </div>
 
           {/* Right Col: Communication (Exclusive) */}
-          <div className="lg:col-span-4 flex flex-col h-full bg-bg-sidebar/20">
-            <div className="flex-1 flex flex-col min-h-0 p-6">
+          <div className="lg:col-span-4 flex flex-col bg-bg-sidebar/20">
+            <div className="flex flex-col min-h-0 p-6 h-full">
               <div className="flex items-center justify-between mb-6">
                 <h3 className="text-sm font-bold uppercase tracking-widest text-brand-primary">Comentários e Atividades</h3>
               </div>
-              
-              <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 space-y-6">
+
+              <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 space-y-6 max-h-[60vh]">
                 {client.comments.length > 0 ? client.comments.map(comment => (
                   <div key={comment.id} className="flex gap-3">
                     <div className="w-8 h-8 rounded-full bg-white/10 flex-shrink-0 flex items-center justify-center text-[10px] font-bold border border-white/5">
