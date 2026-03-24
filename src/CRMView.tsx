@@ -415,7 +415,7 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
         company_name: tipo === 'reuniao' && razaoSocial ? razaoSocial : null,
         responsible_name: tipo === 'reuniao' && nomeResponsavel ? nomeResponsavel : null,
         completion_time: format(new Date(), 'dd/MM/yyyy HH:mm'),
-        image_url: uploadedImageUrl,
+        image_url: uploadedImageUrl || '',
         created_at: new Date().toISOString(),
       };
       console.log('[comercial_tasks] Inserting:', JSON.stringify(taskData, null, 2));
@@ -967,7 +967,7 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers }
         contract_value: rrValorContrato ? parseFloat(rrValorContrato) : null,
         cash_collect: rrValorCc ? parseFloat(rrValorCc) : null,
         next_meeting_date: rrProximaReuniao || null, loss_reason: rrMotivoPerda || null,
-        image_url: uploadedUrl, completion_time: format(new Date(), 'dd/MM/yyyy HH:mm'),
+        image_url: uploadedUrl || '', completion_time: format(new Date(), 'dd/MM/yyyy HH:mm'),
         created_at: now, answered: null, touchpoint: null, scheduled: false,
         company_name: null, responsible_name: null,
       };
