@@ -739,7 +739,7 @@ const fileToBase64 = (file: File): Promise<string> => {
   });
 };
 
-const generateActionItemsWithAI = async (pdfBase64: string, mimeType: string): Promise<string[]> => {
+const generateActionItemsWithAI = async (pdfBase64: string, mimeType: string): Promise<{ items: string[]; resumo: string }> => {
   const GEMINI_KEY = import.meta.env.VITE_GEMINI_API_KEY;
   if (!GEMINI_KEY) throw new Error('Chave da API Gemini não configurada');
 

@@ -564,6 +564,24 @@ function PageMetas({ data, userSession }: { data: any; userSession: any }) {
   const [editVal, setEditVal] = useState('');
   const isAdmin = (userSession?.role ?? '').toLowerCase() === 'admin';
 
+  // Negociando — apenas leads do mês vigente (Supabase)
+  const [negociando, setNegociando] = useState<{ contrato: number; cc: number; mrr: number }>({ contrato: 0, cc: 0, mrr: 0 });
+  useEffect(() => {
+    const mesInicio = format(startOfMonth(new Date()), 'yyyy-MM-dd');
+    supabase.from('crm_leads')
+      .select('valor_contrato,valor_cc,valor_mrr')
+      .in('etapa', ['rm_realizada', 'fup_ativa'])
+      .is('deletado_em', null)
+      .gte('etapa_desde', mesInicio)
+      .then(({ data: leads }) => {
+        if (!leads) return;
+        const contrato = leads.reduce((acc, l: any) => acc + (parseFloat(l.valor_contrato) || 0), 0);
+        const cc = leads.reduce((acc, l: any) => acc + (parseFloat(l.valor_cc) || 0), 0);
+        const mrr = leads.reduce((acc, l: any) => acc + (parseFloat(l.valor_mrr) || 0), 0);
+        setNegociando({ contrato, cc, mrr });
+      });
+  }, []);
+
   // Carrega metas do Supabase (fonte de verdade), não do webhook
   useEffect(() => {
     Promise.all([
@@ -734,9 +752,9 @@ function PageMetas({ data, userSession }: { data: any; userSession: any }) {
             <span className="text-[9px] font-bold uppercase tracking-widest" style={{ color: '#aaa' }}>Negociando</span>
           </div>
           {[
-            { label: 'Contrato',     v: m.contrato_realizado, n: m.contrato_negociando },
-            { label: 'Cash Collect', v: m.cc_realizado,       n: m.cc_negociando },
-            { label: 'MRR',          v: m.mrr_realizado,      n: m.mrr_negociando },
+            { label: 'Contrato',     v: m.contrato_realizado, n: negociando.contrato },
+            { label: 'Cash Collect', v: m.cc_realizado,       n: negociando.cc },
+            { label: 'MRR',          v: m.mrr_realizado,      n: negociando.mrr },
           ].map(row => (
             <div key={row.label} className="grid grid-cols-3 items-center py-2 border-b border-white/5 last:border-0">
               <span className="text-xs font-bold" style={{ color: '#aaa' }}>{row.label}</span>
