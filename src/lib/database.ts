@@ -81,6 +81,7 @@ function memberToDb(m: TeamMember): Record<string, unknown> {
     status: m.status,
     color: m.color,
     photo_url: m.photoUrl ?? '',
+    phone: m.phone ?? '',
   };
   if (m.password) row.password = m.password;
   return row;
@@ -96,6 +97,7 @@ function dbToMember(row: Record<string, unknown>): TeamMember {
     status: row.status as TeamMember['status'],
     color: (row.color as string) ?? '#00FF88',
     photoUrl: (row.photo_url as string) || '',
+    phone: (row.phone as string) || '',
   };
 }
 

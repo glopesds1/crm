@@ -54,6 +54,7 @@ export type TeamMember = {
   status: 'Ativo' | 'Inativo';
   color: string;
   photoUrl?: string;
+  phone?: string;
 };
 
 export type Client = {

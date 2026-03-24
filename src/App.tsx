@@ -1840,7 +1840,8 @@ const TeamMemberModal = ({
     password: '',
     confirmPassword: '',
     status: 'Ativo' as 'Ativo' | 'Inativo',
-    photoUrl: ''
+    photoUrl: '',
+    phone: ''
   });
   const [showPassword, setShowPassword] = useState(false);
 
@@ -1863,7 +1864,8 @@ const TeamMemberModal = ({
         password: '',
         confirmPassword: '',
         status: member.status,
-        photoUrl: member.photoUrl || ''
+        photoUrl: member.photoUrl || '',
+        phone: member.phone || ''
       });
     } else {
       setFormData({
@@ -1873,7 +1875,8 @@ const TeamMemberModal = ({
         password: '',
         confirmPassword: '',
         status: 'Ativo',
-        photoUrl: ''
+        photoUrl: '',
+        phone: ''
       });
     }
   }, [member, isOpen]);
@@ -1890,7 +1893,8 @@ const TeamMemberModal = ({
       ...formData,
       id: member?.id || `tm-${Date.now()}`,
       color: member?.color || COLOR_PALETTE[Math.floor(Math.random() * COLOR_PALETTE.length)],
-      photoUrl: formData.photoUrl
+      photoUrl: formData.photoUrl,
+      phone: formData.phone
     });
     onClose();
   };
@@ -1961,6 +1965,17 @@ const TeamMemberModal = ({
               onChange={e => setFormData({ ...formData, email: e.target.value })}
               className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-brand-primary transition-all"
               placeholder="alex@m2black.com"
+            />
+          </div>
+
+          <div>
+            <label className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-2 block">Telefone (WhatsApp)</label>
+            <input
+              type="tel"
+              value={formData.phone}
+              onChange={e => setFormData({ ...formData, phone: e.target.value })}
+              className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-brand-primary transition-all"
+              placeholder="5531999999999"
             />
           </div>
 
@@ -3703,7 +3718,9 @@ export default function App() {
 
             <h3 className="text-lg font-bold text-white">{member.name}</h3>
             <p className="text-brand-primary text-xs font-bold uppercase tracking-widest mt-1">{member.role}</p>
-            <p className="text-gray-500 text-xs mt-3 mb-6">{member.email}</p>
+            <p className="text-gray-500 text-xs mt-3">{member.email}</p>
+            {member.phone && <p className="text-gray-600 text-[10px] mt-1 mb-4">{member.phone}</p>}
+            {!member.phone && <div className="mb-6" />}
 
             <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-white/5 border border-white/5">
               <div className={`w-1.5 h-1.5 rounded-full ${member.status === 'Ativo' ? 'bg-brand-primary shadow-[0_0_8px_rgba(0,255,136,0.5)]' : 'bg-gray-600'}`} />
