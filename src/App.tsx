@@ -99,7 +99,7 @@ import {
   getAgencyConfig, updateAgencyConfig,
   getTags, saveTag, deleteTag,
   getComercialTasks, createComercialTask, deleteComercialTask,
-  getDemands, createDemand, updateDemand
+  getDemands, createDemand, updateDemand, deleteDemand
 } from './lib/database';
 import { supabase } from './lib/supabase';
 
@@ -3562,6 +3562,21 @@ export default function App() {
                     >
                       <Check size={16} />
                     </button>
+                    {/* Só quem criou pode excluir */}
+                    {demand.commentAuthor === myName && (
+                      <button
+                        onClick={async () => {
+                          if (!confirm('Excluir esta demanda?')) return;
+                          try {
+                            await deleteDemand(demand.id);
+                            setDemands(prev => prev.filter(d => d.id !== demand.id));
+                          } catch { alert('Erro ao excluir demanda.'); }
+                        }}
+                        className="p-2 rounded-lg bg-white/5 text-gray-400 hover:text-red-400 hover:bg-red-500/10 transition-all"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    )}
                   </div>
                 </div>
               </motion.div>
