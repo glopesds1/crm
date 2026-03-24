@@ -150,16 +150,17 @@ export default function DashboardView({ userSession }: { userSession: any }) {
     setError(null);
     setData(null);
     try {
-      const todayStr = format(new Date(), 'yyyy-MM-dd');
-      const di = p === 'reunioes' ? todayStr : r.inicio;
-      const df = p === 'reunioes' ? todayStr : r.fim;
+      const di = r.inicio;
+      const df = r.fim;
       const url = `${WEBHOOK_BASE}?page=${p}&data_inicio=${di}&data_fim=${df}`;
       const res = await fetch(url);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = await res.json();
       setData(json);
     } catch (e: any) {
-      setError(e.message ?? 'Erro ao buscar dados');
+      setError(e.message === 'Failed to fetch'
+        ? 'Requisição bloqueada — desative o bloqueador de anúncios para este site e recarregue.'
+        : (e.message ?? 'Erro ao buscar dados'));
     } finally {
       setLoading(false);
     }
@@ -173,8 +174,10 @@ export default function DashboardView({ userSession }: { userSession: any }) {
     const monthEnd    = format(tomorrow,             'yyyy-MM-dd');
     const days90Start = format(subDays(today, 90),  'yyyy-MM-dd');
 
+    const todayStr = format(today, 'yyyy-MM-dd');
     if      (page === 'overview')  setRange({ inicio: yearStart,   fim: yearEnd });
     else if (page === 'metas')     setRange({ inicio: monthStart,  fim: monthEnd });
+    else if (page === 'reunioes')  setRange({ inicio: todayStr,    fim: todayStr });
     else if (page === 'analise')   setRange({ inicio: days90Start, fim: monthEnd });
     else if (page === 'anuncios')  setRange({ inicio: monthStart,  fim: monthEnd });
     else if (page === 'sdr')       setRange({ inicio: days90Start, fim: monthEnd });
@@ -241,11 +244,16 @@ export default function DashboardView({ userSession }: { userSession: any }) {
               />
             </div>
           </>)}
-          {/* Reuniões: sempre hoje */}
           {page === 'reunioes' && (
-            <span className="px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-widest bg-white/5 border border-white/10 text-gray-400">
-              {format(today, 'dd/MM/yyyy')}
-            </span>
+            <div className="flex items-center gap-2">
+              <Calendar size={14} className="text-gray-500" />
+              <input
+                type="date"
+                value={range.inicio}
+                onChange={e => { const d = e.target.value; setRange({ inicio: d, fim: d }); }}
+                className="bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-gray-300 focus:outline-none focus:border-brand-primary"
+              />
+            </div>
           )}
           <button
             onClick={() => fetchData(page, range)}
