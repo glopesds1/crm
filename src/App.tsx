@@ -1833,9 +1833,20 @@ const TeamMemberModal = ({
     role: '',
     password: '',
     confirmPassword: '',
-    status: 'Ativo' as 'Ativo' | 'Inativo'
+    status: 'Ativo' as 'Ativo' | 'Inativo',
+    photoUrl: ''
   });
   const [showPassword, setShowPassword] = useState(false);
+
+  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) { alert('Selecione uma imagem.'); return; }
+    if (file.size > 2 * 1024 * 1024) { alert('Imagem muito grande. Máximo 2MB.'); return; }
+    const reader = new FileReader();
+    reader.onload = () => setFormData(prev => ({ ...prev, photoUrl: reader.result as string }));
+    reader.readAsDataURL(file);
+  };
 
   React.useEffect(() => {
     if (member) {
@@ -1845,7 +1856,8 @@ const TeamMemberModal = ({
         role: member.role,
         password: '',
         confirmPassword: '',
-        status: member.status
+        status: member.status,
+        photoUrl: member.photoUrl || ''
       });
     } else {
       setFormData({
@@ -1854,7 +1866,8 @@ const TeamMemberModal = ({
         role: '',
         password: '',
         confirmPassword: '',
-        status: 'Ativo'
+        status: 'Ativo',
+        photoUrl: ''
       });
     }
   }, [member, isOpen]);
@@ -1870,7 +1883,8 @@ const TeamMemberModal = ({
     onSave({
       ...formData,
       id: member?.id || `tm-${Date.now()}`,
-      color: member?.color || COLOR_PALETTE[Math.floor(Math.random() * COLOR_PALETTE.length)]
+      color: member?.color || COLOR_PALETTE[Math.floor(Math.random() * COLOR_PALETTE.length)],
+      photoUrl: formData.photoUrl
     });
     onClose();
   };
@@ -1898,6 +1912,28 @@ const TeamMemberModal = ({
         </div>
 
         <form onSubmit={handleSubmit} className="p-8 space-y-5">
+          {/* Foto do colaborador */}
+          <div className="flex flex-col items-center gap-3">
+            <label className="relative cursor-pointer group">
+              {formData.photoUrl ? (
+                <div className="w-24 h-24 rounded-2xl overflow-hidden border-2 border-white/10 group-hover:border-brand-primary/50 transition-all">
+                  <img src={formData.photoUrl} alt="Foto" className="w-full h-full object-cover" />
+                </div>
+              ) : (
+                <div className="w-24 h-24 rounded-2xl bg-white/5 border-2 border-dashed border-white/15 flex flex-col items-center justify-center gap-1 group-hover:border-brand-primary/50 transition-all">
+                  <User size={24} className="text-gray-500 group-hover:text-brand-primary transition-colors" />
+                  <span className="text-[9px] text-gray-500 group-hover:text-brand-primary transition-colors">Adicionar foto</span>
+                </div>
+              )}
+              <input type="file" accept="image/*" className="hidden" onChange={handlePhotoUpload} />
+            </label>
+            {formData.photoUrl && (
+              <button type="button" onClick={() => setFormData(prev => ({ ...prev, photoUrl: '' }))} className="text-[10px] text-gray-500 hover:text-red-400 transition-colors">
+                Remover foto
+              </button>
+            )}
+          </div>
+
           <div>
             <label className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-2 block">Nome Completo</label>
             <input 
@@ -3594,12 +3630,18 @@ export default function App() {
               </button>
             </div>
 
-            <div 
-              className="w-20 h-20 rounded-2xl flex items-center justify-center text-2xl font-black mb-4 shadow-glow"
-              style={{ backgroundColor: `${member.color}22`, color: member.color, border: `1px solid ${member.color}44` }}
-            >
-              {member.name.split(' ').map(n => n[0]).join('')}
-            </div>
+            {member.photoUrl ? (
+              <div className="w-20 h-20 rounded-2xl overflow-hidden mb-4 shadow-glow" style={{ border: `1px solid ${member.color}44` }}>
+                <img src={member.photoUrl} alt={member.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+              </div>
+            ) : (
+              <div
+                className="w-20 h-20 rounded-2xl flex items-center justify-center text-2xl font-black mb-4 shadow-glow"
+                style={{ backgroundColor: `${member.color}22`, color: member.color, border: `1px solid ${member.color}44` }}
+              >
+                {member.name.split(' ').map(n => n[0]).join('')}
+              </div>
+            )}
 
             <h3 className="text-lg font-bold text-white">{member.name}</h3>
             <p className="text-brand-primary text-xs font-bold uppercase tracking-widest mt-1">{member.role}</p>

@@ -53,6 +53,7 @@ export type TeamMember = {
   password?: string;
   status: 'Ativo' | 'Inativo';
   color: string;
+  photoUrl?: string;
 };
 
 export type Client = {
