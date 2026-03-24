@@ -40,7 +40,9 @@ import {
   Sparkles,
   Loader2,
   ClipboardList,
-  AtSign
+  AtSign,
+  HelpCircle,
+  Send
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -3193,6 +3195,8 @@ export default function App() {
   const [isSearchModalOpen, setIsSearchModalOpen] = useState(false);
   const [isNotificationOpen, setIsNotificationOpen] = useState(false);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
+  const [isSupportModalOpen, setIsSupportModalOpen] = useState(false);
+  const [supportText, setSupportText] = useState('');
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [kanbanFilters, setKanbanFilters] = useState({ plans: [] as string[], responsible: 'all', status: 'Ativo' });
 
@@ -3990,6 +3994,7 @@ export default function App() {
         </nav>
 
         <div className="mt-auto pt-6 border-t border-white/5 relative">
+          <SidebarItem icon={HelpCircle} label="Suporte" active={false} onClick={() => setIsSupportModalOpen(true)} />
           {canSee('Configurações') && <SidebarItem icon={Settings} label="Configurações" active={activeTab === 'Configurações'} onClick={() => setActiveTab('Configurações')} />}
           <div className="mt-6 p-4 rounded-xl bg-white/5 border border-white/5 flex items-center gap-3 relative">
             {(() => { const me = teamMembers.find(t => t.name === userSession.name); return me?.photoUrl ? (
@@ -4202,11 +4207,79 @@ export default function App() {
       </AnimatePresence>
 
       <AnimatePresence>
-        <ClientRegistrationModal 
+        <ClientRegistrationModal
           isOpen={isRegistrationModalOpen}
           onClose={() => setIsRegistrationModalOpen(false)}
           onCreate={handleCreateClient}
         />
+      </AnimatePresence>
+
+      {/* Modal de Suporte */}
+      <AnimatePresence>
+        {isSupportModalOpen && (
+          <motion.div
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[200] p-4"
+            onClick={() => setIsSupportModalOpen(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-bg-card border border-white/10 rounded-2xl p-6 w-full max-w-md shadow-2xl"
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-10 h-10 rounded-xl bg-brand-primary/20 flex items-center justify-center">
+                  <HelpCircle size={20} className="text-brand-primary" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold">Suporte</h3>
+                  <p className="text-xs text-gray-500">Reporte um problema ou dificuldade</p>
+                </div>
+                <button onClick={() => setIsSupportModalOpen(false)} className="ml-auto text-gray-500 hover:text-white">
+                  <X size={18} />
+                </button>
+              </div>
+              <textarea
+                value={supportText}
+                onChange={e => setSupportText(e.target.value)}
+                className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-brand-primary transition-all resize-none h-32"
+                placeholder="Descreva o problema ou dificuldade que está tendo..."
+                autoFocus
+              />
+              <button
+                disabled={!supportText.trim()}
+                onClick={async () => {
+                  if (!supportText.trim()) return;
+                  try {
+                    const demand: Demand = {
+                      id: `dem-${Date.now()}`,
+                      clientId: 'suporte',
+                      clientName: 'Suporte App',
+                      assignedTo: teamMembers.find(m => m.name === 'Thalisson')?.id || '',
+                      assignedName: 'Thalisson',
+                      text: `[SUPORTE] ${supportText.trim()}`,
+                      priority: 'alta',
+                      status: 'pendente',
+                      commentAuthor: userSession.name,
+                      createdAt: new Date().toISOString(),
+                    };
+                    const saved = await createDemand(demand);
+                    setDemands(prev => [saved, ...prev]);
+                    setSupportText('');
+                    setIsSupportModalOpen(false);
+                  } catch (err) {
+                    console.error('Erro ao criar suporte:', err);
+                    alert('Erro ao enviar reporte.');
+                  }
+                }}
+                className="mt-4 w-full flex items-center justify-center gap-2 bg-brand-primary text-black font-bold py-3 rounded-xl hover:brightness-110 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <Send size={16} />
+                Enviar Reporte
+              </button>
+            </motion.div>
+          </motion.div>
+        )}
       </AnimatePresence>
     </div>
   );
