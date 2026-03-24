@@ -829,7 +829,6 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
     if (etapa !== lead.etapa) upd.etapa_desde = new Date().toISOString();
     await onSave(upd);
     setSaving(false);
-    onClose();
   };
 
   const handleAtivSaved = (a: CRMAtividade) => {
@@ -915,11 +914,12 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
 
     // 2. Update lead
     const leadUpd: Partial<CRMLead> = { updated_at: now, etapa_desde: now, programa_apresentado: programaApresentado || null };
+    // Always save financial values if provided
+    if (rrValorContrato) leadUpd.valor_contrato = parseFloat(rrValorContrato);
+    if (rrValorCc) leadUpd.valor_cc = parseFloat(rrValorCc);
+    if (computedMrr != null) leadUpd.valor_mrr = computedMrr;
     if (rrResultado === 'Venda') {
       leadUpd.etapa = 'fechado'; leadUpd.status = 'ganho';
-      leadUpd.valor_contrato = rrValorContrato ? parseFloat(rrValorContrato) : null;
-      leadUpd.valor_cc = rrValorCc ? parseFloat(rrValorCc) : null;
-      leadUpd.valor_mrr = computedMrr;
     } else if (rrResultado === 'Perdido') {
       leadUpd.etapa = 'perdido'; leadUpd.status = 'perdido';
       leadUpd.motivo_perda = rrMotivoPerda || null;
@@ -1043,10 +1043,17 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
 
   const fmtAtivDate = (d: string) => new Date(d).toLocaleDateString('pt-BR', { day:'2-digit', month:'2-digit', year:'2-digit', hour:'2-digit', minute:'2-digit' });
 
+  useEffect(() => {
+    const handleEsc = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', handleEsc);
+    return () => window.removeEventListener('keydown', handleEsc);
+  }, [onClose]);
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm" onClick={onClose}>
       <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
         className="bg-bg-card border border-white/10 rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto shadow-2xl"
+        onClick={e => e.stopPropagation()}
       >
         {/* Header */}
         <div className="flex items-start justify-between p-5 border-b border-white/5">

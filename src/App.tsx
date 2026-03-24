@@ -55,7 +55,7 @@ import {
 } from 'recharts';
 import { jsPDF } from 'jspdf';
 import 'jspdf-autotable';
-import { format, parseISO, isWithinInterval, subDays, startOfMonth, endOfMonth, eachMonthOfInterval, subMonths } from 'date-fns';
+import { format, parseISO, isWithinInterval, subDays, startOfDay, startOfWeek, startOfMonth, endOfMonth, endOfDay, eachMonthOfInterval, subMonths } from 'date-fns';
 import DashboardView from './DashboardView';
 import CRMView from './CRMView';
 import PlaybooksView from './PlaybooksView';
@@ -92,8 +92,9 @@ import {
   getTeamMembers, createTeamMember, updateTeamMember, deleteTeamMember,
   getAgencyConfig, updateAgencyConfig,
   getTags, saveTag, deleteTag,
-  getComercialTasks, createComercialTask, deleteComercialTask
+  getComercialTasks, deleteComercialTask
 } from './lib/database';
+import { supabase } from './lib/supabase';
 
 // --- Helper Functions ---
 
@@ -2089,190 +2090,51 @@ const LoadingScreen = () => (
 );
 
 
-const ComercialView = ({ teamMembers, activeSubTab, setActiveSubTab, userSession, onOpenInCRM }: {
+const ComercialView = ({ teamMembers, userSession, onOpenInCRM }: {
   teamMembers: TeamMember[],
-  activeSubTab: 'History' | 'PreVendas' | 'Vendas',
-  setActiveSubTab: (tab: 'History' | 'PreVendas' | 'Vendas') => void,
   userSession: UserSession | null,
   onOpenInCRM?: (companyName: string) => void
 }) => {
   const [selectedCollaborator, setSelectedCollaborator] = useState('');
   const [tasks, setTasks] = useState<ComercialTask[]>([]);
   const [viewingTask, setViewingTask] = useState<ComercialTask | null>(null);
-
-  // Ligação state
-  const [newImageLigacao, setNewImageLigacao] = useState<string | null>(null);
-  const [newDateLigacao, setNewDateLigacao] = useState(format(new Date(), 'yyyy-MM-dd'));
-  const [newTimeLigacao, setNewTimeLigacao] = useState(format(new Date(), 'HH:mm'));
-  const [answered, setAnswered] = useState<'Atendeu' | 'Não atendeu' | null>(null);
-  const [scheduled, setScheduled] = useState(false);
-  const [touchpoint, setTouchpoint] = useState<string>('');
-
-  // Reunião state
-  const [newImageReuniao, setNewImageReuniao] = useState<string | null>(null);
-  const [newDateReuniao, setNewDateReuniao] = useState(format(new Date(), 'yyyy-MM-dd'));
-  const [newTimeReuniao, setNewTimeReuniao] = useState(format(new Date(), 'HH:mm'));
-  const [meetingStatus, setMeetingStatus] = useState<'Compareceu' | 'Não compareceu' | null>(null);
-  const [saleStatus, setSaleStatus] = useState<'Venda' | 'Marcou R2+' | 'Perdido' | null>(null);
-
-  // Vendas specific fields state
-  const [contractValue, setContractValue] = useState<string>('');
-  const [cashCollect, setCashCollect] = useState<string>('');
-  const [termMonths, setTermMonths] = useState<string>('');
-  const [companyName, setCompanyName] = useState('');
-  const [cnpj, setCnpj] = useState('');
-  const [address, setAddress] = useState('');
-  const [contactEmail, setContactEmail] = useState('');
-  const [phone, setPhone] = useState('');
-  const [responsibleName, setResponsibleName] = useState('');
-  const [meetingSummary, setMeetingSummary] = useState('');
-  const [nextMeetingDate, setNextMeetingDate] = useState('');
-  const [lossReason, setLossReason] = useState('');
+  const [periodo, setPeriodo] = useState<'hoje' | 'semana' | 'mes' | 'custom'>('mes');
+  const [customInicio, setCustomInicio] = useState(format(startOfMonth(new Date()), 'yyyy-MM-dd'));
+  const [customFim, setCustomFim] = useState(format(new Date(), 'yyyy-MM-dd'));
 
   // Load tasks from Supabase on mount
   useEffect(() => {
     getComercialTasks().then(setTasks).catch(console.error);
-    // Auto-set collaborator for non-admin users
     if ((userSession?.role ?? '').toLowerCase() !== 'admin') {
       setSelectedCollaborator(userSession?.name ?? '');
     }
   }, []);
 
-  // Reset state when sub-tab changes
-  useEffect(() => {
-    setSelectedCollaborator('');
-    
-    // Reset Ligação state
-    setNewImageLigacao(null);
-    setNewDateLigacao(format(new Date(), 'yyyy-MM-dd'));
-    setNewTimeLigacao(format(new Date(), 'HH:mm'));
-    setAnswered(null);
-    setScheduled(false);
-    setTouchpoint('');
-
-    // Reset Reunião state
-    setNewImageReuniao(null);
-    setNewDateReuniao(format(new Date(), 'yyyy-MM-dd'));
-    setNewTimeReuniao(format(new Date(), 'HH:mm'));
-    setMeetingStatus(null);
-    setSaleStatus(null);
-
-    // Reset Vendas specific fields
-    setContractValue('');
-    setCashCollect('');
-    setTermMonths('');
-    setCompanyName('');
-    setCnpj('');
-    setAddress('');
-    setContactEmail('');
-    setPhone('');
-    setResponsibleName('');
-    setMeetingSummary('');
-    setNextMeetingDate('');
-    setLossReason('');
-  }, [activeSubTab]);
-
-  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>, category: 'Ligação' | 'Reunião') => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        if (category === 'Ligação') {
-          setNewImageLigacao(reader.result as string);
-        } else {
-          setNewImageReuniao(reader.result as string);
-        }
-      };
-      reader.readAsDataURL(file);
-    }
-  };
-
-  const handleAddTask = async (category: 'Ligação' | 'Reunião') => {
-    const image = category === 'Ligação' ? newImageLigacao : newImageReuniao;
-    const date = category === 'Ligação' ? newDateLigacao : newDateReuniao;
-    const time = category === 'Ligação' ? newTimeLigacao : newTimeReuniao;
-
-    // For non-admin, always use the logged user's name
-    const isAdmin = (userSession?.role ?? '').toLowerCase() === 'admin';
-    const effectiveCollaborator = isAdmin ? selectedCollaborator : (userSession?.name ?? '');
-    if (!effectiveCollaborator) {
-      alert('Por favor, selecione um colaborador.');
-      return;
-    }
-
-    const newTask: ComercialTask = {
-      id: `task-${Date.now()}`,
-      type: activeSubTab as 'PreVendas' | 'Vendas',
-      category,
-      collaborator: effectiveCollaborator,
-      imageUrl: image || '',
-      completionTime: time,
-      answered: category === 'Ligação' ? answered : null,
-      meetingStatus: category === 'Reunião' ? meetingStatus : undefined,
-      scheduled: category === 'Ligação' ? scheduled : false,
-      touchpoint: category === 'Ligação' && touchpoint ? parseInt(touchpoint) : undefined,
-      saleStatus: category === 'Reunião' ? saleStatus : undefined,
-      contractValue: category === 'Reunião' && contractValue ? parseFloat(contractValue) : undefined,
-      cashCollect: category === 'Reunião' && cashCollect ? parseFloat(cashCollect) : undefined,
-      termMonths: category === 'Reunião' && termMonths ? parseInt(termMonths) : undefined,
-      companyName: category === 'Reunião' ? companyName : undefined,
-      cnpj: category === 'Reunião' ? cnpj : undefined,
-      address: category === 'Reunião' ? address : undefined,
-      contactEmail: category === 'Reunião' ? contactEmail : undefined,
-      phone: category === 'Reunião' ? phone : undefined,
-      responsibleName: category === 'Reunião' ? responsibleName : undefined,
-      meetingSummary: category === 'Reunião' ? meetingSummary : undefined,
-      nextMeetingDate: category === 'Reunião' ? nextMeetingDate : undefined,
-      lossReason: category === 'Reunião' ? lossReason : undefined,
-      createdAt: `${date}T${time}:00Z`,
-    };
-
-    try {
-      const saved = await createComercialTask(newTask);
-      setTasks([saved, ...tasks]);
-    } catch (err) {
-      console.error('Erro ao salvar tarefa:', err);
-      alert('Erro ao salvar. Verifique a conexão com o banco.');
-      return;
-    }
-    
-    if (category === 'Ligação') {
-      setNewImageLigacao(null);
-      setNewDateLigacao(format(new Date(), 'yyyy-MM-dd'));
-      setNewTimeLigacao(format(new Date(), 'HH:mm'));
-      setAnswered(null);
-      setScheduled(false);
-      setTouchpoint('');
-    } else {
-      setNewImageReuniao(null);
-      setNewDateReuniao(format(new Date(), 'yyyy-MM-dd'));
-      setNewTimeReuniao(format(new Date(), 'HH:mm'));
-      setMeetingStatus(null);
-      setSaleStatus(null);
-      setContractValue('');
-      setCashCollect('');
-      setTermMonths('');
-      setCompanyName('');
-      setCnpj('');
-      setAddress('');
-      setContactEmail('');
-      setPhone('');
-      setResponsibleName('');
-      setMeetingSummary('');
-      setNextMeetingDate('');
-      setLossReason('');
-    }
-  };
+  const dateRange = useMemo(() => {
+    const now = new Date();
+    if (periodo === 'hoje') return { start: startOfDay(now), end: endOfDay(now) };
+    if (periodo === 'semana') return { start: startOfWeek(now, { weekStartsOn: 1 }), end: endOfDay(now) };
+    if (periodo === 'mes') return { start: startOfMonth(now), end: endOfDay(now) };
+    return { start: startOfDay(parseISO(customInicio)), end: endOfDay(parseISO(customFim)) };
+  }, [periodo, customInicio, customFim]);
 
   const filteredTasks = useMemo(() => {
     const isAdmin = (userSession?.role ?? '').toLowerCase() === 'admin';
+    let filtered = tasks;
     if (!isAdmin) {
-      // Non-admin always sees only their own tasks
-      return tasks.filter(t => t.collaborator === (userSession?.name ?? ''));
+      filtered = filtered.filter(t => t.collaborator === (userSession?.name ?? ''));
+    } else if (selectedCollaborator !== '' && selectedCollaborator !== 'all') {
+      filtered = filtered.filter(t => t.collaborator === selectedCollaborator);
     }
-    if (selectedCollaborator === 'all' || selectedCollaborator === '') return tasks;
-    return tasks.filter(t => t.collaborator === selectedCollaborator);
-  }, [tasks, selectedCollaborator, userSession]);
+    // Filter by date range
+    filtered = filtered.filter(t => {
+      try {
+        const d = parseISO(t.createdAt);
+        return d >= dateRange.start && d <= dateRange.end;
+      } catch { return true; }
+    });
+    return filtered;
+  }, [tasks, selectedCollaborator, userSession, dateRange]);
 
   const handleDeleteTask = async (id: string) => {
     if (!confirm('Tem certeza que deseja excluir este registro?')) return;
@@ -2285,59 +2147,247 @@ const ComercialView = ({ teamMembers, activeSubTab, setActiveSubTab, userSession
     }
   };
 
+  // Summary stats from tasks
+  const summary = useMemo(() => {
+    const src = filteredTasks;
+    const ligacoes = src.filter(t => t.category === 'Ligação');
+    const reunioes = src.filter(t => t.category === 'Reunião');
+    const atendeu = ligacoes.filter(t => t.answered === 'Atendeu').length;
+    const naoAtendeu = ligacoes.filter(t => t.answered === 'Não atendeu').length;
+    const marcacoes = ligacoes.filter(t => t.scheduled).length;
+    const compareceu = reunioes.filter(t => t.meetingStatus === 'Compareceu').length;
+    const naoCompareceu = reunioes.filter(t => t.meetingStatus === 'Não compareceu').length;
+    const vendas = reunioes.filter(t => t.saleStatus === 'Venda').length;
+    const perdidos = reunioes.filter(t => t.saleStatus === 'Perdido').length;
+    const r2 = reunioes.filter(t => t.saleStatus === 'Marcou R2+').length;
+    const totalContrato = reunioes.reduce((acc, t) => acc + (t.contractValue ?? 0), 0);
+    const totalCc = reunioes.reduce((acc, t) => acc + (t.cashCollect ?? 0), 0);
+    return { ligacoes: ligacoes.length, reunioes: reunioes.length, atendeu, naoAtendeu, marcacoes, compareceu, naoCompareceu, vendas, perdidos, r2, totalContrato, totalCc };
+  }, [filteredTasks]);
+
+  // Metas editáveis para o funil comercial
+  const [funilMetas, setFunilMetas] = useState<Record<string, number>>({});
+  const [editFunilMeta, setEditFunilMeta] = useState<string | null>(null);
+  const [editFunilVal, setEditFunilVal] = useState('');
+  const isAdminComercial = (userSession?.role ?? '').toLowerCase() === 'admin';
+
+  useEffect(() => {
+    supabase.from('comercial_metas_funil').select('*').eq('id', 1).single()
+      .then(({ data: d }) => { if (d) { const { id: _id, updated_at: _u, ...rest } = d as Record<string, unknown>; setFunilMetas(Object.fromEntries(Object.entries(rest).map(([k, v]) => [k, Number(v) || 0]))); } });
+  }, []);
+
+  const saveFunilMeta = async (key: string, val: string) => {
+    const n = parseFloat(val) || 0;
+    const updated = { ...funilMetas, [key]: n };
+    setFunilMetas(updated);
+    await supabase.from('comercial_metas_funil').upsert({ id: 1, ...updated, updated_at: new Date().toISOString() });
+    setEditFunilMeta(null);
+  };
+
   return (
     <div className="space-y-8">
       <div className="flex justify-between items-center">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Comercial</h1>
-          <p className="text-gray-400 mt-1">Relatório e checklist de atividades do time comercial.</p>
+          <h1 className="text-3xl font-bold tracking-tight">Relatório</h1>
+          <p className="text-gray-400 mt-1">Visão geral e histórico de atividades do time comercial.</p>
         </div>
       </div>
 
-      {activeSubTab === 'History' ? (
         <div className="space-y-8">
-          <div className="glass-card p-6 flex flex-wrap items-center justify-between gap-6">
-            <div className="flex items-center gap-6">
-              <div className="flex items-center gap-3">
-                <label className="text-[10px] font-bold uppercase tracking-widest text-brand-primary whitespace-nowrap">Colaborador</label>
-                <div className="relative min-w-[200px]">
-                  {(userSession?.role ?? '').toLowerCase() === 'admin' ? (
-                    <>
-                      <select 
-                        value={selectedCollaborator}
-                        onChange={e => setSelectedCollaborator(e.target.value)}
-                        className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-sm focus:outline-none focus:border-brand-primary transition-all appearance-none cursor-pointer"
-                      >
-                        <option value="" className="bg-bg-main">SELECIONE UM COLABORADOR</option>
-                        <option value="all" className="bg-bg-main">TODOS</option>
-                        {teamMembers.map(m => (
-                          <option key={m.id} value={m.name} className="bg-bg-main">{m.name}</option>
-                        ))}
-                      </select>
-                      <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" size={14} />
-                    </>
-                  ) : (
-                    <div className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-sm text-white font-medium">
-                      {userSession?.name ?? ''}
-                    </div>
-                  )}
-                </div>
+          {/* Filtros */}
+          <div className="glass-card p-6 flex flex-wrap items-center gap-6">
+            <div className="flex items-center gap-3">
+              <label className="text-[10px] font-bold uppercase tracking-widest text-brand-primary whitespace-nowrap">Colaborador</label>
+              <div className="relative min-w-[200px]">
+                {(userSession?.role ?? '').toLowerCase() === 'admin' ? (
+                  <>
+                    <select
+                      value={selectedCollaborator}
+                      onChange={e => setSelectedCollaborator(e.target.value)}
+                      className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-sm focus:outline-none focus:border-brand-primary transition-all appearance-none cursor-pointer"
+                    >
+                      <option value="" className="bg-bg-main">TODOS</option>
+                      {teamMembers.map(m => (
+                        <option key={m.id} value={m.name} className="bg-bg-main">{m.name}</option>
+                      ))}
+                    </select>
+                    <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" size={14} />
+                  </>
+                ) : (
+                  <div className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-sm text-white font-medium">
+                    {userSession?.name ?? ''}
+                  </div>
+                )}
               </div>
             </div>
 
-            <div className="flex gap-3">
-              <button 
-                onClick={() => setActiveSubTab('PreVendas')}
-                className="px-4 py-2 rounded-lg bg-white/5 border border-white/10 text-[10px] font-bold uppercase tracking-widest text-gray-400 hover:text-brand-primary hover:border-brand-primary/30 transition-all flex items-center gap-2"
-              >
-                <Plus size={14} /> Nova Pré-venda
-              </button>
-              <button 
-                onClick={() => setActiveSubTab('Vendas')}
-                className="px-4 py-2 rounded-lg bg-white/5 border border-white/10 text-[10px] font-bold uppercase tracking-widest text-gray-400 hover:text-brand-primary hover:border-brand-primary/30 transition-all flex items-center gap-2"
-              >
-                <Plus size={14} /> Nova Venda
-              </button>
+            <div className="h-8 w-px bg-white/10 hidden sm:block" />
+
+            <div className="flex items-center gap-3">
+              <label className="text-[10px] font-bold uppercase tracking-widest text-brand-primary whitespace-nowrap">Período</label>
+              <div className="flex gap-1.5">
+                {([['hoje', 'Hoje'], ['semana', 'Semana'], ['mes', 'Mês'], ['custom', 'Personalizado']] as const).map(([key, label]) => (
+                  <button
+                    key={key}
+                    onClick={() => setPeriodo(key)}
+                    className={`px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all border ${
+                      periodo === key
+                        ? 'bg-brand-primary/15 border-brand-primary/40 text-brand-primary'
+                        : 'bg-white/5 border-white/10 text-gray-500 hover:text-white hover:border-white/20'
+                    }`}
+                  >
+                    {key === 'custom' ? <Calendar size={13} /> : label}
+                  </button>
+                ))}
+              </div>
+              {periodo === 'custom' && (
+                <div className="flex items-center gap-2">
+                  <input type="date" value={customInicio} onChange={e => setCustomInicio(e.target.value)}
+                    className="bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-gray-300 focus:outline-none focus:border-brand-primary" />
+                  <span className="text-gray-600 text-xs">até</span>
+                  <input type="date" value={customFim} onChange={e => setCustomFim(e.target.value)}
+                    className="bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-gray-300 focus:outline-none focus:border-brand-primary" />
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Funis lado a lado */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Funil Pré-vendas */}
+            <div className="glass-card p-6">
+              <h3 className="text-sm font-bold uppercase tracking-widest text-blue-400 mb-5">Pré-vendas</h3>
+              <div className="space-y-0">
+                {(() => {
+                  const stages = [
+                    { key: 'pv_ligacoes', label: 'Ligações', value: summary.ligacoes, w: 100 },
+                    { key: 'pv_atendeu', label: 'Atendeu', value: summary.atendeu, w: 80 },
+                    { key: 'pv_marcacoes', label: 'Marcações', value: summary.marcacoes, w: 60 },
+                  ];
+                  return stages.map((e, i) => {
+                    const next = i < stages.length - 1 ? stages[i + 1] : null;
+                    const taxa = next && e.value > 0 ? (next.value / e.value) * 100 : null;
+                    const metaKey = next?.key ?? e.key;
+                    return (
+                      <div key={e.key} className="space-y-0">
+                        <div className="flex items-center" style={{ paddingLeft: `${(100 - e.w) / 2}%`, paddingRight: `${(100 - e.w) / 2}%` }}>
+                          <div className="flex-1 bg-white/10 rounded-xl px-3 py-2.5 flex items-center justify-between">
+                            <span className="text-xs font-bold text-gray-300">{e.label}</span>
+                            <span className="text-xl font-black text-white">{e.value}</span>
+                          </div>
+                        </div>
+                        {taxa !== null && (
+                          <div className="flex items-center justify-center gap-3 py-1.5">
+                            <div className="flex-1 h-px bg-white/5" />
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm font-bold text-gray-300">{taxa.toFixed(1)}%</span>
+                              <span className="text-gray-600">|</span>
+                              {editFunilMeta === metaKey ? (
+                                <div className="flex items-center gap-1">
+                                  <input autoFocus type="number" min="0" max="100" step="0.1"
+                                    value={editFunilVal} onChange={ev => setEditFunilVal(ev.target.value)}
+                                    onBlur={() => saveFunilMeta(metaKey, editFunilVal)}
+                                    onKeyDown={ev => ev.key === 'Enter' && saveFunilMeta(metaKey, editFunilVal)}
+                                    className="w-14 bg-white/10 border border-brand-primary rounded px-1 py-0.5 text-xs text-white text-center focus:outline-none"
+                                  />
+                                  <span className="text-xs text-gray-400">%</span>
+                                </div>
+                              ) : (
+                                <span
+                                  onClick={() => isAdminComercial ? (setEditFunilMeta(metaKey), setEditFunilVal(String(funilMetas[metaKey] || ''))) : null}
+                                  className={`text-[10px] font-bold text-gray-500 ${isAdminComercial ? 'cursor-pointer hover:text-brand-primary transition-colors' : ''}`}
+                                  title={isAdminComercial ? 'Clique para editar a meta' : ''}
+                                >
+                                  Meta: {funilMetas[metaKey] ? `${funilMetas[metaKey]}%` : '—'}
+                                </span>
+                              )}
+                            </div>
+                            <div className="flex-1 h-px bg-white/5" />
+                          </div>
+                        )}
+                      </div>
+                    );
+                  });
+                })()}
+              </div>
+              {/* Extra: Não atendeu */}
+              <div className="mt-4 pt-3 border-t border-white/5 flex items-center justify-between px-2">
+                <span className="text-[10px] font-bold uppercase tracking-widest text-gray-500">Não atendeu</span>
+                <span className="text-lg font-bold text-red-400">{summary.naoAtendeu}</span>
+              </div>
+              {isAdminComercial && <p className="text-[9px] text-gray-600 mt-3 text-center">Clique em "Meta" para editar a taxa alvo</p>}
+            </div>
+
+            {/* Funil Vendas */}
+            <div className="glass-card p-6">
+              <h3 className="text-sm font-bold uppercase tracking-widest text-purple-400 mb-5">Vendas</h3>
+              <div className="space-y-0">
+                {(() => {
+                  const stages = [
+                    { key: 'vd_reunioes', label: 'Reuniões', value: summary.reunioes, w: 100 },
+                    { key: 'vd_compareceu', label: 'Compareceu', value: summary.compareceu, w: 75 },
+                    { key: 'vd_vendas', label: 'Vendas', value: summary.vendas, w: 50 },
+                  ];
+                  return stages.map((e, i) => {
+                    const next = i < stages.length - 1 ? stages[i + 1] : null;
+                    const taxa = next && e.value > 0 ? (next.value / e.value) * 100 : null;
+                    const metaKey = next?.key ?? e.key;
+                    return (
+                      <div key={e.key} className="space-y-0">
+                        <div className="flex items-center" style={{ paddingLeft: `${(100 - e.w) / 2}%`, paddingRight: `${(100 - e.w) / 2}%` }}>
+                          <div className="flex-1 bg-white/10 rounded-xl px-3 py-2.5 flex items-center justify-between">
+                            <span className="text-xs font-bold text-gray-300">{e.label}</span>
+                            <span className="text-xl font-black text-white">{e.value}</span>
+                          </div>
+                        </div>
+                        {taxa !== null && (
+                          <div className="flex items-center justify-center gap-3 py-1.5">
+                            <div className="flex-1 h-px bg-white/5" />
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm font-bold text-gray-300">{taxa.toFixed(1)}%</span>
+                              <span className="text-gray-600">|</span>
+                              {editFunilMeta === metaKey ? (
+                                <div className="flex items-center gap-1">
+                                  <input autoFocus type="number" min="0" max="100" step="0.1"
+                                    value={editFunilVal} onChange={ev => setEditFunilVal(ev.target.value)}
+                                    onBlur={() => saveFunilMeta(metaKey, editFunilVal)}
+                                    onKeyDown={ev => ev.key === 'Enter' && saveFunilMeta(metaKey, editFunilVal)}
+                                    className="w-14 bg-white/10 border border-brand-primary rounded px-1 py-0.5 text-xs text-white text-center focus:outline-none"
+                                  />
+                                  <span className="text-xs text-gray-400">%</span>
+                                </div>
+                              ) : (
+                                <span
+                                  onClick={() => isAdminComercial ? (setEditFunilMeta(metaKey), setEditFunilVal(String(funilMetas[metaKey] || ''))) : null}
+                                  className={`text-[10px] font-bold text-gray-500 ${isAdminComercial ? 'cursor-pointer hover:text-brand-primary transition-colors' : ''}`}
+                                  title={isAdminComercial ? 'Clique para editar a meta' : ''}
+                                >
+                                  Meta: {funilMetas[metaKey] ? `${funilMetas[metaKey]}%` : '—'}
+                                </span>
+                              )}
+                            </div>
+                            <div className="flex-1 h-px bg-white/5" />
+                          </div>
+                        )}
+                      </div>
+                    );
+                  });
+                })()}
+              </div>
+              {/* Extras: No-show, R2+, Perdidos */}
+              <div className="mt-4 pt-3 border-t border-white/5 space-y-2 px-2">
+                {[
+                  { label: 'No-show', value: summary.naoCompareceu, color: 'text-red-400' },
+                  { label: 'Marcou R2+', value: summary.r2, color: 'text-blue-400' },
+                  { label: 'Perdidos', value: summary.perdidos, color: 'text-red-400' },
+                ].map(s => (
+                  <div key={s.label} className="flex items-center justify-between">
+                    <span className="text-[10px] font-bold uppercase tracking-widest text-gray-500">{s.label}</span>
+                    <span className={`text-lg font-bold ${s.color}`}>{s.value}</span>
+                  </div>
+                ))}
+              </div>
+              {isAdminComercial && <p className="text-[9px] text-gray-600 mt-3 text-center">Clique em "Meta" para editar a taxa alvo</p>}
             </div>
           </div>
 
@@ -2363,7 +2413,7 @@ const ComercialView = ({ teamMembers, activeSubTab, setActiveSubTab, userSession
                     )}
                     <div className="absolute inset-0 bg-gradient-to-t from-bg-main/90 via-bg-main/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end justify-between p-4">
                       <button 
-                        onClick={() => handleDeleteTask(task.id)}
+                        onClick={(e) => { e.stopPropagation(); handleDeleteTask(task.id); }}
                         className="p-2 rounded-lg bg-red-500/20 text-red-400 hover:bg-red-500 hover:text-white transition-all backdrop-blur-sm"
                       >
                         <Trash2 size={16} />
@@ -2529,458 +2579,6 @@ const ComercialView = ({ teamMembers, activeSubTab, setActiveSubTab, userSession
             </div>
           </div>
         </div>
-      ) : (
-        <div className="glass-card p-6 space-y-8">
-          <div className="flex flex-wrap items-center justify-between gap-6">
-            <div className="flex items-center gap-6">
-              <div className="flex items-center gap-3">
-                <label className="text-[10px] font-bold uppercase tracking-widest text-brand-primary whitespace-nowrap">Colaborador</label>
-                <div className="relative min-w-[200px]">
-                  {(userSession?.role ?? '').toLowerCase() === 'admin' ? (
-                    <>
-                      <select 
-                        value={selectedCollaborator}
-                        onChange={e => setSelectedCollaborator(e.target.value)}
-                        className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-sm focus:outline-none focus:border-brand-primary transition-all appearance-none cursor-pointer"
-                      >
-                        <option value="" className="bg-bg-main">SELECIONE UM COLABORADOR</option>
-                        {teamMembers.map(m => (
-                          <option key={m.id} value={m.name} className="bg-bg-main">{m.name}</option>
-                        ))}
-                      </select>
-                      <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" size={14} />
-                    </>
-                  ) : (
-                    <div className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-sm text-white font-medium">
-                      {userSession?.name ?? ''}
-                    </div>
-                  )}
-                </div>
-              </div>
-              <h3 className="text-[10px] font-bold uppercase tracking-widest text-brand-primary">NOVA ATIVIDADE - {activeSubTab === 'PreVendas' ? 'PRÉ-VENDAS' : 'VENDAS'}</h3>
-            </div>
-            <button 
-              onClick={() => setActiveSubTab('History')}
-              className="px-4 py-2 rounded-lg bg-white/5 border border-white/10 text-[10px] font-bold uppercase tracking-widest text-gray-400 hover:text-white transition-all"
-            >
-              Voltar ao Histórico
-            </button>
-          </div>
-
-          {/* LIGAÇÃO SECTION */}
-          <div className="pt-6 border-t border-white/5 space-y-6">
-            <h3 className="text-[10px] font-bold uppercase tracking-widest text-brand-primary">LIGAÇÃO</h3>
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-              <div className="lg:col-span-7">
-                <label className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-2 block flex items-center gap-1">
-                  Print da Ação <span className="text-red-500">*</span> <span className="text-[8px] opacity-70">(Obrigatório)</span>
-                </label>
-                <div className="relative">
-                  <input 
-                    type="file" 
-                    accept="image/*"
-                    onChange={(e) => handleImageChange(e, 'Ligação')}
-                    className="hidden"
-                    id="task-image-upload-ligacao"
-                  />
-                  <label 
-                    htmlFor="task-image-upload-ligacao"
-                    className="flex flex-col items-center justify-center w-full h-64 border-2 border-dashed border-white/10 rounded-xl cursor-pointer hover:border-brand-primary/50 transition-all bg-white/5 overflow-hidden group"
-                  >
-                    {newImageLigacao ? (
-                      <img src={newImageLigacao} alt="Preview" className="w-full h-full object-cover" />
-                    ) : (
-                      <>
-                        <Plus size={32} className="text-gray-500 mb-3 group-hover:text-brand-primary transition-colors" />
-                        <span className="text-[10px] font-bold text-gray-500 uppercase group-hover:text-brand-primary transition-colors">Upload Print Ligação</span>
-                      </>
-                    )}
-                  </label>
-                </div>
-              </div>
-                <div className="lg:col-span-5 space-y-6">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-2 block">Data Concluída</label>
-                      <div className="relative">
-                        <Calendar className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500" size={18} />
-                        <input 
-                          type="date" 
-                          value={newDateLigacao}
-                          onChange={e => setNewDateLigacao(e.target.value)}
-                          className="w-full bg-white/5 border border-white/10 rounded-xl pl-12 pr-4 py-3 text-sm focus:outline-none focus:border-brand-primary transition-all"
-                        />
-                      </div>
-                    </div>
-                    <div>
-                      <label className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-2 block">Hora Concluída</label>
-                      <div className="relative">
-                        <Clock className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500" size={18} />
-                        <input 
-                          type="time" 
-                          value={newTimeLigacao}
-                          onChange={e => setNewTimeLigacao(e.target.value)}
-                          className="w-full bg-white/5 border border-white/10 rounded-xl pl-12 pr-4 py-3 text-sm focus:outline-none focus:border-brand-primary transition-all"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                <div>
-                  <label className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-2 block">Status da Chamada / TP</label>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => setAnswered('Atendeu')}
-                      className={`flex-1 py-3 rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all border ${
-                        answered === 'Atendeu' 
-                          ? 'bg-brand-primary/20 border-brand-primary text-brand-primary' 
-                          : 'bg-white/5 border-white/10 text-gray-500 hover:border-white/20'
-                      }`}
-                    >
-                      Atendeu
-                    </button>
-                    <button
-                      onClick={() => setAnswered('Não atendeu')}
-                      className={`flex-1 py-3 rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all border ${
-                        answered === 'Não atendeu' 
-                          ? 'bg-red-500/20 border-red-500 text-red-500' 
-                          : 'bg-white/5 border-white/10 text-gray-500 hover:border-white/20'
-                      }`}
-                    >
-                      Não atendeu
-                    </button>
-                    <input 
-                      type="number" 
-                      value={touchpoint}
-                      onChange={e => setTouchpoint(e.target.value)}
-                      placeholder="TP"
-                      className="w-14 bg-white/5 border border-white/10 rounded-xl px-2 py-3 text-center text-sm focus:outline-none focus:border-brand-primary transition-all"
-                      title="Touchpoint"
-                    />
-                  </div>
-                </div>
-                <div>
-                  <label className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-2 block">Agendamento</label>
-                  <button
-                    onClick={() => setScheduled(!scheduled)}
-                    className={`w-full py-3 rounded-xl text-xs font-bold uppercase tracking-widest transition-all border flex items-center justify-center gap-2 ${
-                      scheduled 
-                        ? 'bg-blue-500/20 border-blue-500 text-blue-400 shadow-[0_0_15px_rgba(59,130,246,0.3)]' 
-                        : 'bg-white/5 border-white/10 text-gray-500 hover:border-white/20'
-                    }`}
-                  >
-                    <Calendar size={16} />
-                    {scheduled ? 'Marcado' : 'Não Marcado'}
-                  </button>
-                </div>
-                <button 
-                  onClick={() => handleAddTask('Ligação')}
-                  disabled={!newImageLigacao}
-                  className={`w-full py-4 font-bold rounded-xl transition-all flex items-center justify-center gap-2 text-[10px] uppercase tracking-widest ${
-                    newImageLigacao 
-                      ? 'bg-brand-primary text-bg-main shadow-glow hover:scale-[1.02] active:scale-[0.98]' 
-                      : 'bg-white/5 border border-white/10 text-gray-600 cursor-not-allowed'
-                  }`}
-                >
-                  <Check size={18} /> REGISTRAR LIGAÇÃO
-                </button>
-                {scheduled && (
-                  <button 
-                    onClick={() => window.open('https://booking.builderall.com/c/agendamentoarv/gabrielfonseca', '_blank')}
-                    className="w-full py-4 bg-blue-500/20 border border-blue-500 text-blue-400 shadow-[0_0_15px_rgba(59,130,246,0.3)] font-bold rounded-xl hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center gap-2 text-[10px] uppercase tracking-widest"
-                  >
-                    📅 ABRIR AGENDAMENTO R1
-                  </button>
-                )}
-              </div>
-            </div>
-          </div>
-
-          {/* REUNIÃO SECTION */}
-          {activeSubTab !== 'PreVendas' && (
-            <div className="pt-8 border-t border-white/5 space-y-6">
-              <h3 className="text-[10px] font-bold uppercase tracking-widest text-brand-primary">REUNIÃO</h3>
-              <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-                <div className="lg:col-span-7">
-                  <label className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-2 block flex items-center gap-1">
-                    Print da Ação <span className="text-red-500">*</span> <span className="text-[8px] opacity-70">(Obrigatório)</span>
-                  </label>
-                  <div className="relative">
-                    <input 
-                      type="file" 
-                      accept="image/*"
-                      onChange={(e) => handleImageChange(e, 'Reunião')}
-                      className="hidden"
-                      id="task-image-upload-reuniao"
-                    />
-                    <label 
-                      htmlFor="task-image-upload-reuniao"
-                      className="flex flex-col items-center justify-center w-full h-64 border-2 border-dashed border-white/10 rounded-xl cursor-pointer hover:border-brand-primary/50 transition-all bg-white/5 overflow-hidden group"
-                    >
-                      {newImageReuniao ? (
-                        <img src={newImageReuniao} alt="Preview" className="w-full h-full object-cover" />
-                      ) : (
-                        <>
-                          <Plus size={32} className="text-gray-500 mb-3 group-hover:text-brand-primary transition-colors" />
-                          <span className="text-[10px] font-bold text-gray-500 uppercase group-hover:text-brand-primary transition-colors">Upload Print Reunião</span>
-                        </>
-                      )}
-                    </label>
-                  </div>
-                </div>
-                <div className="lg:col-span-5 space-y-6">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-2 block">Data Concluída</label>
-                      <div className="relative">
-                        <Calendar className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500" size={18} />
-                        <input 
-                          type="date" 
-                          value={newDateReuniao}
-                          onChange={e => setNewDateReuniao(e.target.value)}
-                          className="w-full bg-white/5 border border-white/10 rounded-xl pl-12 pr-4 py-3 text-sm focus:outline-none focus:border-brand-primary transition-all"
-                        />
-                      </div>
-                    </div>
-                    <div>
-                      <label className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-2 block">Hora Concluída</label>
-                      <div className="relative">
-                        <Clock className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500" size={18} />
-                        <input 
-                          type="time" 
-                          value={newTimeReuniao}
-                          onChange={e => setNewTimeReuniao(e.target.value)}
-                          className="w-full bg-white/5 border border-white/10 rounded-xl pl-12 pr-4 py-3 text-sm focus:outline-none focus:border-brand-primary transition-all"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                  <div>
-                    <label className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-2 block">Status da Reunião</label>
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => setMeetingStatus('Compareceu')}
-                        className={`flex-1 py-3 rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all border ${
-                          meetingStatus === 'Compareceu' 
-                            ? 'bg-brand-primary/20 border-brand-primary text-brand-primary' 
-                            : 'bg-white/5 border-white/10 text-gray-500 hover:border-white/20'
-                        }`}
-                      >
-                        Compareceu
-                      </button>
-                      <button
-                        onClick={() => setMeetingStatus('Não compareceu')}
-                        className={`flex-1 py-3 rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all border ${
-                          meetingStatus === 'Não compareceu' 
-                            ? 'bg-red-500/20 border-red-500 text-red-500' 
-                            : 'bg-white/5 border-white/10 text-gray-500 hover:border-white/20'
-                        }`}
-                      >
-                        Não compareceu
-                      </button>
-                    </div>
-                  </div>
-                  {activeSubTab === 'Vendas' && (
-                    <div>
-                      <label className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-2 block">Status da Venda</label>
-                      <div className="flex gap-2">
-                        <button
-                          onClick={() => setSaleStatus('Venda')}
-                          className={`flex-1 py-2 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all border ${
-                            saleStatus === 'Venda' 
-                              ? 'bg-brand-primary/20 border-brand-primary text-brand-primary' 
-                              : 'bg-white/5 border-white/10 text-gray-500 hover:border-white/20'
-                          }`}
-                        >
-                          Venda
-                        </button>
-                        <button
-                          onClick={() => setSaleStatus('Marcou R2+')}
-                          className={`flex-1 py-2 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all border ${
-                            saleStatus === 'Marcou R2+' 
-                              ? 'bg-blue-500/20 border-blue-500 text-blue-400' 
-                              : 'bg-white/5 border-white/10 text-gray-500 hover:border-white/20'
-                          }`}
-                        >
-                          Marcou R2+
-                        </button>
-                        <button
-                          onClick={() => setSaleStatus('Perdido')}
-                          className={`flex-1 py-2 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all border ${
-                            saleStatus === 'Perdido' 
-                              ? 'bg-red-500/20 border-red-500 text-red-500' 
-                              : 'bg-white/5 border-white/10 text-gray-500 hover:border-white/20'
-                          }`}
-                        >
-                          Perdido
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                  <button 
-                    onClick={() => handleAddTask('Reunião')}
-                    disabled={!newImageReuniao}
-                    className={`w-full py-4 font-bold rounded-xl transition-all flex items-center justify-center gap-2 text-[10px] uppercase tracking-widest ${
-                      newImageReuniao 
-                        ? 'bg-brand-primary text-bg-main shadow-glow hover:scale-[1.02] active:scale-[0.98]' 
-                        : 'bg-white/5 border border-white/10 text-gray-600 cursor-not-allowed'
-                    }`}
-                  >
-                    <Check size={18} /> REGISTRAR REUNIÃO
-                  </button>
-                  {meetingStatus === 'Compareceu' && saleStatus === 'Marcou R2+' && (
-                    <button 
-                      onClick={() => window.open('https://booking.builderall.com/c/agendamentoarv/afe005497d550a5b4ac112bbe4c68538/2Ol7j4kw', '_blank')}
-                      className="w-full py-4 bg-blue-500/20 border border-blue-500 text-blue-400 shadow-[0_0_15px_rgba(59,130,246,0.3)] font-bold rounded-xl hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center gap-2 text-[10px] uppercase tracking-widest"
-                    >
-                      📅 AGENDAR R2+
-                    </button>
-                  )}
-                </div>
-              </div>
-
-              {activeSubTab === 'Vendas' && saleStatus && (
-                <motion.div 
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="pt-6 border-t border-white/5 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
-                >
-                  {(saleStatus === 'Venda' || saleStatus === 'Marcou R2+' || saleStatus === 'Perdido') && (
-                    <>
-                      <div>
-                        <label className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-2 block">Valor do Contrato (R$)</label>
-                        <input 
-                          type="number" 
-                          value={contractValue}
-                          onChange={e => setContractValue(e.target.value)}
-                          placeholder="0.00"
-                          className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-brand-primary transition-all"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-2 block">Cash Collect (R$)</label>
-                        <input 
-                          type="number" 
-                          value={cashCollect}
-                          onChange={e => setCashCollect(e.target.value)}
-                          placeholder="0.00"
-                          className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-brand-primary transition-all"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-2 block">Prazo (Meses)</label>
-                        <input 
-                          type="number" 
-                          value={termMonths}
-                          onChange={e => setTermMonths(e.target.value)}
-                          placeholder="Ex: 12"
-                          className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-brand-primary transition-all"
-                        />
-                      </div>
-                    </>
-                  )}
-
-                  {saleStatus === 'Venda' && (
-                    <>
-                      <div>
-                        <label className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-2 block">Razão Social</label>
-                        <input 
-                          type="text" 
-                          value={companyName}
-                          onChange={e => setCompanyName(e.target.value)}
-                          className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-brand-primary transition-all"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-2 block">CNPJ</label>
-                        <input 
-                          type="text" 
-                          value={cnpj}
-                          onChange={e => setCnpj(e.target.value)}
-                          className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-brand-primary transition-all"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-2 block">Endereço Completo</label>
-                        <input 
-                          type="text" 
-                          value={address}
-                          onChange={e => setAddress(e.target.value)}
-                          className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-brand-primary transition-all"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-2 block">Email de Contato</label>
-                        <input 
-                          type="email" 
-                          value={contactEmail}
-                          onChange={e => setContactEmail(e.target.value)}
-                          className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-brand-primary transition-all"
-                        />
-                      </div>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <div>
-                          <label className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-2 block">Telefone</label>
-                          <input 
-                            type="tel" 
-                            value={phone}
-                            onChange={e => setPhone(e.target.value)}
-                            className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-brand-primary transition-all"
-                          />
-                        </div>
-                        <div>
-                          <label className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-2 block">Nome do Responsável</label>
-                          <input 
-                            type="text" 
-                            value={responsibleName}
-                            onChange={e => setResponsibleName(e.target.value)}
-                            className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-brand-primary transition-all"
-                          />
-                        </div>
-                      </div>
-                    </>
-                  )}
-
-                  {(saleStatus === 'Marcou R2+' || saleStatus === 'Perdido') && (
-                    <div className="md:col-span-2 lg:col-span-3">
-                      <label className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-2 block">Resumo da Reunião</label>
-                      <textarea 
-                        value={meetingSummary}
-                        onChange={e => setMeetingSummary(e.target.value)}
-                        rows={3}
-                        className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-brand-primary transition-all resize-none"
-                      />
-                    </div>
-                  )}
-
-                  {saleStatus === 'Marcou R2+' && (
-                    <div>
-                      <label className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-2 block">Próxima Reunião</label>
-                      <input 
-                        type="datetime-local" 
-                        value={nextMeetingDate}
-                        onChange={e => setNextMeetingDate(e.target.value)}
-                        className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-brand-primary transition-all"
-                      />
-                    </div>
-                  )}
-
-                  {saleStatus === 'Perdido' && (
-                    <div className="md:col-span-2 lg:col-span-3">
-                      <label className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-2 block">Motivo de Perda</label>
-                      <textarea 
-                        value={lossReason}
-                        onChange={e => setLossReason(e.target.value)}
-                        rows={3}
-                        className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-brand-primary transition-all resize-none"
-                      />
-                    </div>
-                  )}
-                </motion.div>
-              )}
-            </div>
-          )}
-        </div>
-      )}
 
       {/* Task detail modal */}
       <AnimatePresence>
@@ -3158,8 +2756,7 @@ export default function App() {
     };
     return (permissions[role] ?? permissions['admin']).includes(tab);
   };
-  const [aquisicaoSubTab, setAquisicaoSubTab] = useState<'CRM' | 'Comercial'>('CRM');
-  const [comercialSubTab, setComercialSubTab] = useState<'History' | 'PreVendas' | 'Vendas'>('History');
+  const [aquisicaoSubTab, setAquisicaoSubTab] = useState<'CRM' | 'Relatorio'>('CRM');
   const [openCRMLeadName, setOpenCRMLeadName] = useState('');
   const [clients, setClients] = useState<Client[]>([]);
   const [allTags, setAllTags] = useState<Record<string, Tag>>(INITIAL_TAGS);
@@ -3800,34 +3397,12 @@ export default function App() {
                     CRM
                   </button>
                   <button
-                    onClick={() => setAquisicaoSubTab('Comercial')}
-                    className={`w-full text-left px-4 py-2 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all ${aquisicaoSubTab === 'Comercial' ? 'text-brand-primary bg-white/5' : 'text-gray-500 hover:text-white'}`}
+                    onClick={() => setAquisicaoSubTab('Relatorio')}
+                    className={`w-full text-left px-4 py-2 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all ${aquisicaoSubTab === 'Relatorio' ? 'text-brand-primary bg-white/5' : 'text-gray-500 hover:text-white'}`}
                   >
-                    Comercial
+                    Relatório
                   </button>
 
-                  {aquisicaoSubTab === 'Comercial' && (
-                    <div className="ml-4 space-y-1 border-l border-white/5 pl-2">
-                      <button
-                        onClick={() => setComercialSubTab('PreVendas')}
-                        className={`w-full text-left px-4 py-1.5 rounded-lg text-[9px] font-bold uppercase tracking-widest transition-all ${comercialSubTab === 'PreVendas' ? 'text-brand-primary bg-white/5' : 'text-gray-500 hover:text-white'}`}
-                      >
-                        Pré-vendas
-                      </button>
-                      <button
-                        onClick={() => setComercialSubTab('Vendas')}
-                        className={`w-full text-left px-4 py-1.5 rounded-lg text-[9px] font-bold uppercase tracking-widest transition-all ${comercialSubTab === 'Vendas' ? 'text-brand-primary bg-white/5' : 'text-gray-500 hover:text-white'}`}
-                      >
-                        Vendas
-                      </button>
-                      <button
-                        onClick={() => setComercialSubTab('History')}
-                        className={`w-full text-left px-4 py-1.5 rounded-lg text-[9px] font-bold uppercase tracking-widest transition-all ${comercialSubTab === 'History' ? 'text-brand-primary bg-white/5' : 'text-gray-500 hover:text-white'}`}
-                      >
-                        Histórico
-                      </button>
-                    </div>
-                  )}
                 </div>
               </motion.div>
             )}
@@ -3868,7 +3443,7 @@ export default function App() {
               isOpen={isUserMenuOpen}
               onClose={() => setIsUserMenuOpen(false)}
               user={userSession}
-              onLogout={() => { setUserSession(null); setComercialSubTab('History'); setActiveTab('Dashboard'); }}
+              onLogout={() => { setUserSession(null); setActiveTab('Dashboard'); }}
             />
           </div>
         </div>
@@ -3885,7 +3460,7 @@ export default function App() {
             {activeTab === 'Aquisição' && (
               <>
                 <ChevronRight size={14} className="text-gray-700" />
-                <span className="text-xs font-bold text-white">{aquisicaoSubTab === 'CRM' ? 'CRM' : aquisicaoSubTab}</span>
+                <span className="text-xs font-bold text-white">{aquisicaoSubTab === 'CRM' ? 'CRM' : 'Relatório'}</span>
               </>
             )}
           </div>
@@ -3961,11 +3536,9 @@ export default function App() {
                   <CRMView userSession={userSession} teamMembers={teamMembers} openLeadByName={openCRMLeadName} onLeadOpened={() => setOpenCRMLeadName('')} onClientCreated={async () => { try { const { getClients } = await import('./lib/database'); const dbClients = await getClients(); setClients(dbClients); } catch (e) { console.error('Failed to refresh clients:', e); } }} />
                 </div>
               )}
-              {activeTab === 'Aquisição' && aquisicaoSubTab === 'Comercial' && (
+              {activeTab === 'Aquisição' && aquisicaoSubTab === 'Relatorio' && (
                 <ComercialView
                   teamMembers={teamMembers}
-                  activeSubTab={comercialSubTab}
-                  setActiveSubTab={setComercialSubTab}
                   userSession={userSession}
                   onOpenInCRM={(name) => { setOpenCRMLeadName(name); setAquisicaoSubTab('CRM'); }}
                 />
