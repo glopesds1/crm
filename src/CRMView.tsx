@@ -1060,9 +1060,14 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
             )}
             {isAdmin && confirmDelete && (
               <div className="flex items-center gap-1.5">
-                <button onClick={() => {
+                <button onClick={async () => {
+                  const { error } = await supabase.from('crm_leads').update({ deletado_em: new Date().toISOString(), updated_at: new Date().toISOString() }).eq('id', lead.id);
+                  if (error) {
+                    console.error('[crm_leads] Erro ao excluir:', JSON.stringify(error));
+                    alert('Erro ao excluir lead. Tente novamente.');
+                    return;
+                  }
                   onDelete(lead.id);
-                  supabase.from('crm_leads').update({ deletado_em: new Date().toISOString() }).eq('id', lead.id);
                 }} className="px-2.5 py-1 rounded-lg bg-red-500/20 text-red-400 text-[11px] font-semibold hover:bg-red-500/30 transition-colors">Confirmar exclusão</button>
                 <button onClick={() => setConfirmDelete(false)} className="px-2.5 py-1 rounded-lg bg-white/5 text-gray-400 text-[11px] font-semibold hover:bg-white/10 transition-colors">Cancelar</button>
               </div>
