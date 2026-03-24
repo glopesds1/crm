@@ -2210,9 +2210,13 @@ const ClientModal = ({ client, allTags, teamMembers, onClose, onUpdateClient, on
                 <div className="flex flex-wrap gap-2">
                   {teamMembers.map(member => (
                     <div key={member.id} className="flex items-center gap-2 bg-white/5 px-2 py-1 rounded-lg border border-white/5">
-                      <div className="w-5 h-5 rounded-full flex items-center justify-center text-[8px] font-bold" style={{ backgroundColor: `${member.color}33`, color: member.color }}>
-                        {member.name.split(' ').map(n => n[0]).join('')}
-                      </div>
+                      {member.photoUrl ? (
+                        <img src={member.photoUrl} alt={member.name} className="w-5 h-5 rounded-full object-cover" referrerPolicy="no-referrer" />
+                      ) : (
+                        <div className="w-5 h-5 rounded-full flex items-center justify-center text-[8px] font-bold" style={{ backgroundColor: `${member.color}33`, color: member.color }}>
+                          {member.name.split(' ').map(n => n[0]).join('')}
+                        </div>
+                      )}
                       <span className="text-[10px] text-gray-300">{member.name}</span>
                     </div>
                   ))}
@@ -2377,9 +2381,13 @@ const ClientModal = ({ client, allTags, teamMembers, onClose, onUpdateClient, on
               <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 space-y-6 max-h-[60vh]">
                 {client.comments.length > 0 ? client.comments.map(comment => (
                   <div key={comment.id} className="flex gap-3">
-                    <div className="w-8 h-8 rounded-full bg-white/10 flex-shrink-0 flex items-center justify-center text-[10px] font-bold border border-white/5">
-                      {comment.author[0]}
-                    </div>
+                    {(() => { const m = teamMembers.find(t => t.name === comment.author); return m?.photoUrl ? (
+                      <img src={m.photoUrl} alt={m.name} className="w-8 h-8 rounded-full object-cover flex-shrink-0 border border-white/5" referrerPolicy="no-referrer" />
+                    ) : (
+                      <div className="w-8 h-8 rounded-full bg-white/10 flex-shrink-0 flex items-center justify-center text-[10px] font-bold border border-white/5">
+                        {comment.author[0]}
+                      </div>
+                    ); })()}
                     <div className="flex-1">
                       <div className="flex items-center gap-2 mb-1">
                         <span className="text-xs font-bold text-white">{comment.author}</span>
@@ -2427,9 +2435,13 @@ const ClientModal = ({ client, allTags, teamMembers, onClose, onUpdateClient, on
                             onClick={() => insertMention(m)}
                             className={`w-full flex items-center gap-2 px-3 py-2 text-left transition-colors ${i === mentionIndex ? 'bg-brand-primary/10 text-brand-primary' : 'text-gray-300 hover:bg-white/5'}`}
                           >
-                            <div className="w-6 h-6 rounded-full flex items-center justify-center text-[9px] font-bold" style={{ backgroundColor: `${m.color}33`, color: m.color }}>
-                              {m.name.split(' ').map(n => n[0]).join('')}
-                            </div>
+                            {m.photoUrl ? (
+                              <img src={m.photoUrl} alt={m.name} className="w-6 h-6 rounded-full object-cover" referrerPolicy="no-referrer" />
+                            ) : (
+                              <div className="w-6 h-6 rounded-full flex items-center justify-center text-[9px] font-bold" style={{ backgroundColor: `${m.color}33`, color: m.color }}>
+                                {m.name.split(' ').map(n => n[0]).join('')}
+                              </div>
+                            )}
                             <div>
                               <p className="text-xs font-medium">{m.name}</p>
                               <p className="text-[9px] text-gray-500">{m.role}</p>
@@ -3948,12 +3960,14 @@ export default function App() {
         <div className="mt-auto pt-6 border-t border-white/5 relative">
           {canSee('Configurações') && <SidebarItem icon={Settings} label="Configurações" active={activeTab === 'Configurações'} onClick={() => setActiveTab('Configurações')} />}
           <div className="mt-6 p-4 rounded-xl bg-white/5 border border-white/5 flex items-center gap-3 relative">
-            <div 
-              className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold"
-              style={{ backgroundColor: userSession.color + '33', color: userSession.color }}
-            >
-              {userSession.name.split(' ').map(n => n[0]).join('')}
-            </div>
+            {(() => { const me = teamMembers.find(t => t.name === userSession.name); return me?.photoUrl ? (
+              <img src={me.photoUrl} alt={me.name} className="w-8 h-8 rounded-full object-cover" referrerPolicy="no-referrer" />
+            ) : (
+              <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold"
+                style={{ backgroundColor: userSession.color + '33', color: userSession.color }}>
+                {userSession.name.split(' ').map(n => n[0]).join('')}
+              </div>
+            ); })()}
             {!sidebarCollapsed && (
               <>
                 <div className="flex-1 min-w-0">
@@ -4034,10 +4048,11 @@ export default function App() {
                 onMarkRead={(id) => setNotifications(notifications.map(n => n.id === id ? { ...n, read: true } : n))}
               />
             </div>
-            <div 
-              className="w-8 h-8 rounded-full"
-              style={{ backgroundColor: userSession.color }}
-            />
+            {(() => { const me = teamMembers.find(t => t.name === userSession?.name); return me?.photoUrl ? (
+              <img src={me.photoUrl} alt={me.name} className="w-8 h-8 rounded-full object-cover" referrerPolicy="no-referrer" />
+            ) : (
+              <div className="w-8 h-8 rounded-full" style={{ backgroundColor: userSession.color }} />
+            ); })()}
           </div>
         </header>
 
