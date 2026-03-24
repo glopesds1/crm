@@ -517,7 +517,18 @@ const ClientRegistrationModal = ({ isOpen, onClose, onCreate }: { isOpen: boolea
     entryDate: new Date().toISOString().split('T')[0],
     contractDuration: 3,
     docsAccess: '',
-    docsTranscription: ''
+    docsTranscription: '',
+    tipoPessoa: 'PJ' as 'PF' | 'PJ',
+    razaoSocial: '',
+    cpfCnpj: '',
+    endereco: '',
+    emailContato: '',
+    telefoneContato: '',
+    nomeResponsavelFinanceiro: '',
+    valorContrato: '',
+    valorCc: '',
+    formaPagamento: '',
+    dataPrimeiroVencimento: '',
   });
 
   const exitDate = useMemo(() => {
@@ -627,10 +638,101 @@ const ClientRegistrationModal = ({ isOpen, onClose, onCreate }: { isOpen: boolea
               </div>
             </div>
 
+            {/* Dados Cadastrais */}
+            <div className="border-t border-white/10 pt-4">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-brand-primary mb-3">Dados Cadastrais</p>
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-2 block">Razão Social</label>
+                    <input value={formData.razaoSocial} onChange={e => setFormData({ ...formData, razaoSocial: e.target.value })}
+                      className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-brand-primary transition-all"
+                      placeholder="Razão social da empresa" />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-2 block">Tipo de Pessoa</label>
+                    <select value={formData.tipoPessoa} onChange={e => setFormData({ ...formData, tipoPessoa: e.target.value as 'PF' | 'PJ' })}
+                      className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-brand-primary transition-all appearance-none">
+                      <option value="PJ" className="bg-bg-main">Pessoa Jurídica (CNPJ)</option>
+                      <option value="PF" className="bg-bg-main">Pessoa Física (CPF)</option>
+                    </select>
+                  </div>
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-2 block">{formData.tipoPessoa === 'PF' ? 'CPF' : 'CNPJ'}</label>
+                  <input value={formData.cpfCnpj} onChange={e => setFormData({ ...formData, cpfCnpj: e.target.value })}
+                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-brand-primary transition-all"
+                    placeholder={formData.tipoPessoa === 'PF' ? '000.000.000-00' : '00.000.000/0000-00'} />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-2 block">Endereço Completo</label>
+                  <input value={formData.endereco} onChange={e => setFormData({ ...formData, endereco: e.target.value })}
+                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-brand-primary transition-all"
+                    placeholder="Rua, número, bairro, cidade - UF" />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-2 block">Email de Contato</label>
+                    <input type="email" value={formData.emailContato} onChange={e => setFormData({ ...formData, emailContato: e.target.value })}
+                      className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-brand-primary transition-all"
+                      placeholder="email@empresa.com" />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-2 block">Telefone de Contato</label>
+                    <input value={formData.telefoneContato} onChange={e => setFormData({ ...formData, telefoneContato: e.target.value })}
+                      className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-brand-primary transition-all"
+                      placeholder="(00) 00000-0000" />
+                  </div>
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-2 block">Responsável Financeiro</label>
+                  <input value={formData.nomeResponsavelFinanceiro} onChange={e => setFormData({ ...formData, nomeResponsavelFinanceiro: e.target.value })}
+                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-brand-primary transition-all"
+                    placeholder="Nome do responsável financeiro" />
+                </div>
+              </div>
+            </div>
+
+            {/* Dados Financeiros */}
+            <div className="border-t border-white/10 pt-4">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-brand-primary mb-3">Dados Financeiros</p>
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-2 block">Valor do Contrato (R$)</label>
+                    <input type="number" value={formData.valorContrato} onChange={e => setFormData({ ...formData, valorContrato: e.target.value })}
+                      className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-brand-primary transition-all"
+                      placeholder="0" />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-2 block">Cash Collect (R$)</label>
+                    <input type="number" value={formData.valorCc} onChange={e => setFormData({ ...formData, valorCc: e.target.value })}
+                      className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-brand-primary transition-all"
+                      placeholder="0" />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-2 block">Forma de Pagamento</label>
+                    <select value={formData.formaPagamento} onChange={e => setFormData({ ...formData, formaPagamento: e.target.value })}
+                      className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-brand-primary transition-all appearance-none">
+                      <option value="" className="bg-bg-main">Selecionar...</option>
+                      {['À vista', '2x', '3x', '6x', '12x', 'Boleto mensal', 'Cartão recorrente'].map(f => <option key={f} value={f} className="bg-bg-main">{f}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-2 block">Data do 1º Vencimento</label>
+                    <input type="date" value={formData.dataPrimeiroVencimento} onChange={e => setFormData({ ...formData, dataPrimeiroVencimento: e.target.value })}
+                      className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-brand-primary transition-all" />
+                  </div>
+                </div>
+              </div>
+            </div>
+
             <div>
               <label className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-2 block">Google Docs - Acessos</label>
-              <input 
-                type="url" 
+              <input
+                type="url"
                 value={formData.docsAccess}
                 onChange={e => setFormData({ ...formData, docsAccess: e.target.value })}
                 className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-brand-primary transition-all"
@@ -640,8 +742,8 @@ const ClientRegistrationModal = ({ isOpen, onClose, onCreate }: { isOpen: boolea
 
             <div>
               <label className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-2 block">Google Docs - Transcrição</label>
-              <input 
-                type="url" 
+              <input
+                type="url"
                 value={formData.docsTranscription}
                 onChange={e => setFormData({ ...formData, docsTranscription: e.target.value })}
                 className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-brand-primary transition-all"
@@ -653,9 +755,15 @@ const ClientRegistrationModal = ({ isOpen, onClose, onCreate }: { isOpen: boolea
           <button 
             onClick={() => {
               if (!formData.name || !formData.responsible) return;
+              const parsedContrato = formData.valorContrato ? parseFloat(formData.valorContrato) : 0;
+              const parsedCc = formData.valorCc ? parseFloat(formData.valorCc) : 0;
+              const parsedMrr = formData.contractDuration && parsedContrato ? parsedContrato / formData.contractDuration : 0;
               onCreate({
                 ...formData,
-                exitDate
+                exitDate,
+                valorContrato: parsedContrato,
+                valorCc: parsedCc,
+                valorMrr: parsedMrr,
               });
               onClose();
             }}
@@ -1759,8 +1867,101 @@ const ClientModal = ({ client, allTags, teamMembers, onClose, onUpdateClient, on
               </div>
             </section>
 
-            <OnboardingSection 
-              checklist={client.onboardingChecklist} 
+            {/* Dados Cadastrais */}
+            {(client.razaoSocial || client.cpfCnpj || client.valorContrato || client.emailContato) && (
+              <section>
+                <h3 className="text-sm font-bold uppercase tracking-widest text-brand-primary mb-4">Dados Cadastrais</h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 p-5 rounded-2xl bg-white/5 border border-white/5">
+                  <div>
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-1">Razão Social</p>
+                    <input value={client.razaoSocial ?? ''} onChange={e => onUpdateClient({ ...client, razaoSocial: e.target.value })}
+                      className="bg-transparent text-sm text-white focus:outline-none w-full border-b border-white/5 pb-1" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <p className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-1">Tipo</p>
+                      <select value={client.tipoPessoa ?? ''} onChange={e => onUpdateClient({ ...client, tipoPessoa: e.target.value })}
+                        className="bg-transparent text-sm text-white focus:outline-none w-full">
+                        <option value="" className="bg-bg-main">—</option>
+                        <option value="PJ" className="bg-bg-main">PJ</option>
+                        <option value="PF" className="bg-bg-main">PF</option>
+                      </select>
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-1">{client.tipoPessoa === 'PF' ? 'CPF' : 'CNPJ'}</p>
+                      <input value={client.cpfCnpj ?? ''} onChange={e => onUpdateClient({ ...client, cpfCnpj: e.target.value })}
+                        className="bg-transparent text-sm text-white focus:outline-none w-full border-b border-white/5 pb-1" />
+                    </div>
+                  </div>
+                  <div className="col-span-2">
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-1">Endereço</p>
+                    <input value={client.endereco ?? ''} onChange={e => onUpdateClient({ ...client, endereco: e.target.value })}
+                      className="bg-transparent text-sm text-white focus:outline-none w-full border-b border-white/5 pb-1" />
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-1">E-mail de Contato</p>
+                    <input value={client.emailContato ?? ''} onChange={e => onUpdateClient({ ...client, emailContato: e.target.value })}
+                      className="bg-transparent text-sm text-white focus:outline-none w-full border-b border-white/5 pb-1" />
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-1">Telefone de Contato</p>
+                    <input value={client.telefoneContato ?? ''} onChange={e => onUpdateClient({ ...client, telefoneContato: e.target.value })}
+                      className="bg-transparent text-sm text-white focus:outline-none w-full border-b border-white/5 pb-1" />
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-1">Responsável Financeiro</p>
+                    <input value={client.nomeResponsavelFinanceiro ?? ''} onChange={e => onUpdateClient({ ...client, nomeResponsavelFinanceiro: e.target.value })}
+                      className="bg-transparent text-sm text-white focus:outline-none w-full border-b border-white/5 pb-1" />
+                  </div>
+                </div>
+              </section>
+            )}
+
+            {/* Dados Financeiros */}
+            {(client.valorContrato || client.valorCc || client.valorMrr) && (
+              <section>
+                <h3 className="text-sm font-bold uppercase tracking-widest text-brand-primary mb-4">Dados Financeiros</h3>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 p-5 rounded-2xl bg-white/5 border border-white/5">
+                  <div>
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-2">Valor do Contrato</p>
+                    <div className="flex items-center gap-1">
+                      <span className="text-xs text-gray-500">R$</span>
+                      <input type="number" value={client.valorContrato ?? 0} onChange={e => onUpdateClient({ ...client, valorContrato: parseFloat(e.target.value) || 0 })}
+                        className="bg-transparent text-sm font-bold text-brand-primary focus:outline-none w-full" />
+                    </div>
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-2">Cash Collect</p>
+                    <div className="flex items-center gap-1">
+                      <span className="text-xs text-gray-500">R$</span>
+                      <input type="number" value={client.valorCc ?? 0} onChange={e => onUpdateClient({ ...client, valorCc: parseFloat(e.target.value) || 0 })}
+                        className="bg-transparent text-sm font-bold text-brand-primary focus:outline-none w-full" />
+                    </div>
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-2">MRR</p>
+                    <div className="flex items-center gap-1">
+                      <span className="text-xs text-gray-500">R$</span>
+                      <input type="number" value={client.valorMrr ?? 0} onChange={e => onUpdateClient({ ...client, valorMrr: parseFloat(e.target.value) || 0 })}
+                        className="bg-transparent text-sm font-bold text-brand-primary focus:outline-none w-full" />
+                    </div>
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-2">Forma de Pagamento</p>
+                    <input value={client.formaPagamento ?? ''} onChange={e => onUpdateClient({ ...client, formaPagamento: e.target.value })}
+                      className="bg-transparent text-sm text-white focus:outline-none w-full border-b border-white/5 pb-1" />
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-2">1º Vencimento</p>
+                    <input type="date" value={client.dataPrimeiroVencimento ?? ''} onChange={e => onUpdateClient({ ...client, dataPrimeiroVencimento: e.target.value })}
+                      className="bg-transparent text-sm font-bold text-white focus:outline-none w-full" />
+                  </div>
+                </div>
+              </section>
+            )}
+
+            <OnboardingSection
+              checklist={client.onboardingChecklist}
               onToggle={(id) => {
                 const newList = client.onboardingChecklist.map(item => 
                   item.id === id ? { ...item, completed: !item.completed } : item
@@ -3171,7 +3372,19 @@ export default function App() {
       entryDate: data.entryDate || new Date().toISOString().split('T')[0],
       contractDuration: data.contractDuration || 3,
       exitDate: data.exitDate || '',
-      isActive: true
+      isActive: true,
+      razaoSocial: data.razaoSocial ?? '',
+      tipoPessoa: data.tipoPessoa ?? '',
+      cpfCnpj: data.cpfCnpj ?? '',
+      endereco: data.endereco ?? '',
+      emailContato: data.emailContato ?? '',
+      telefoneContato: data.telefoneContato ?? '',
+      nomeResponsavelFinanceiro: data.nomeResponsavelFinanceiro ?? '',
+      valorContrato: data.valorContrato ?? 0,
+      valorCc: data.valorCc ?? 0,
+      valorMrr: data.valorMrr ?? 0,
+      formaPagamento: data.formaPagamento ?? '',
+      dataPrimeiroVencimento: data.dataPrimeiroVencimento ?? '',
     };
     
     try {
@@ -3713,7 +3926,7 @@ export default function App() {
               {activeTab === 'Playbooks' && <PlaybooksView />}
               {activeTab === 'Aquisição' && aquisicaoSubTab === 'CRM' && (
                 <div className="glass-card p-6">
-                  <CRMView userSession={userSession} teamMembers={teamMembers} openLeadByName={openCRMLeadName} onLeadOpened={() => setOpenCRMLeadName('')} />
+                  <CRMView userSession={userSession} teamMembers={teamMembers} openLeadByName={openCRMLeadName} onLeadOpened={() => setOpenCRMLeadName('')} onClientCreated={async () => { try { const { getClients } = await import('./lib/database'); const dbClients = await getClients(); setClients(dbClients); } catch (e) { console.error('Failed to refresh clients:', e); } }} />
                 </div>
               )}
               {activeTab === 'Aquisição' && aquisicaoSubTab === 'Comercial' && (

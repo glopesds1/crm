@@ -21,6 +21,18 @@ function clientToDb(c: Client): Record<string, unknown> {
     offers: c.offers ?? [],
     onboarding_checklist: c.onboardingChecklist ?? [],
     monthly_meetings: c.monthlyMeetings ?? [],
+    razao_social: c.razaoSocial ?? '',
+    tipo_pessoa: c.tipoPessoa ?? '',
+    cpf_cnpj: c.cpfCnpj ?? '',
+    endereco: c.endereco ?? '',
+    email_contato: c.emailContato ?? '',
+    telefone_contato: c.telefoneContato ?? '',
+    nome_responsavel_financeiro: c.nomeResponsavelFinanceiro ?? '',
+    valor_contrato: c.valorContrato ?? 0,
+    valor_cc: c.valorCc ?? 0,
+    valor_mrr: c.valorMrr ?? 0,
+    forma_pagamento: c.formaPagamento ?? '',
+    data_primeiro_vencimento: c.dataPrimeiroVencimento ?? '',
   };
 }
 
@@ -44,6 +56,18 @@ function dbToClient(row: Record<string, unknown>): Client {
     onboardingChecklist: (row.onboarding_checklist as Client['onboardingChecklist']) ?? [],
     monthlyMeetings: (row.monthly_meetings as Client['monthlyMeetings']) ?? [],
     isActive: true,
+    razaoSocial: (row.razao_social as string) ?? '',
+    tipoPessoa: (row.tipo_pessoa as string) ?? '',
+    cpfCnpj: (row.cpf_cnpj as string) ?? '',
+    endereco: (row.endereco as string) ?? '',
+    emailContato: (row.email_contato as string) ?? '',
+    telefoneContato: (row.telefone_contato as string) ?? '',
+    nomeResponsavelFinanceiro: (row.nome_responsavel_financeiro as string) ?? '',
+    valorContrato: (row.valor_contrato as number) ?? 0,
+    valorCc: (row.valor_cc as number) ?? 0,
+    valorMrr: (row.valor_mrr as number) ?? 0,
+    formaPagamento: (row.forma_pagamento as string) ?? '',
+    dataPrimeiroVencimento: (row.data_primeiro_vencimento as string) ?? '',
   };
 }
 

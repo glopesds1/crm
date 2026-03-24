@@ -67,6 +67,19 @@ export type Client = {
   contractDuration: number;
   exitDate: string;
   isActive: boolean;
+  // Dados cadastrais (venda)
+  razaoSocial?: string;
+  tipoPessoa?: string;
+  cpfCnpj?: string;
+  endereco?: string;
+  emailContato?: string;
+  telefoneContato?: string;
+  nomeResponsavelFinanceiro?: string;
+  valorContrato?: number;
+  valorCc?: number;
+  valorMrr?: number;
+  formaPagamento?: string;
+  dataPrimeiroVencimento?: string;
 };
 
 export type Column = {

@@ -9,6 +9,7 @@ import {
   ChevronDown, Trash2
 } from 'lucide-react';
 import type { TeamMember } from './types';
+import { DEFAULT_ONBOARDING_ITEMS } from './constants';
 
 // ── Types ─────────────────────────────────────────────────────
 interface CRMLead {
@@ -105,7 +106,7 @@ const TIPO_ICON: Record<string, any> = {
 };
 
 // ── Lead Card ─────────────────────────────────────────────────
-function LeadCard({ lead, proximaTarefa, onClick }: { lead: CRMLead; proximaTarefa?: CRMTarefa; onClick: () => void }) {
+function LeadCard({ lead, proximaTarefa, onClick }: { key?: React.Key; lead: CRMLead; proximaTarefa?: CRMTarefa; onClick: () => void }) {
   const etapa = ETAPA_MAP[lead.etapa];
   const fmtDate = (d: string) => { try { return format(new Date(d), 'dd/MM HH:mm'); } catch { return '—'; } };
   return (
@@ -158,8 +159,8 @@ function LeadCard({ lead, proximaTarefa, onClick }: { lead: CRMLead; proximaTare
 }
 
 // ── Nova Atividade Form ────────────────────────────────────────
-function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSaved, onCancel, onLeadUpdated }: {
-  lead?: CRMLead; leadId: string; leadName: string; userSession: any; onSaved: (a: CRMAtividade) => void; onCancel: () => void; onLeadUpdated?: (upd: Partial<CRMLead>) => void;
+function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSaved, onCancel, onLeadUpdated, onClientCreated }: {
+  lead?: CRMLead; leadId: string; leadName: string; userSession: any; onSaved: (a: CRMAtividade) => void; onCancel: () => void; onLeadUpdated?: (upd: Partial<CRMLead>) => void; onClientCreated?: () => void;
 }) {
   const [tipo, setTipo] = useState<'ligacao' | 'reuniao'>('ligacao');
   const [statusChamada, setStatusChamada] = useState<'Atendeu' | 'Não atendeu' | null>(null);
@@ -339,14 +340,35 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
               tags: [],
               platforms: [],
               funnels: [],
-              onboarding_checklist: [],
+              onboarding_checklist: DEFAULT_ONBOARDING_ITEMS.map((label, i) => ({
+                id: `ob-${i}-${Date.now()}`,
+                label,
+                completed: false,
+              })),
               monthly_meetings: [],
               comments: [],
               offers: [],
               situation: '',
+              razao_social: razaoSocial || '',
+              tipo_pessoa: tipoPessoa || '',
+              cpf_cnpj: cpfCnpj || '',
+              endereco: endereco || '',
+              email_contato: emailContato || '',
+              telefone_contato: telefoneContato || '',
+              nome_responsavel_financeiro: nomeResponsavel || '',
+              valor_contrato: parsedContrato,
+              valor_cc: valorCc ? parseFloat(valorCc) : 0,
+              valor_mrr: parsedMrr,
+              forma_pagamento: formaPagamento || '',
+              data_primeiro_vencimento: dataPrimeiroVencimento || '',
             };
             console.log('[clients] Inserting:', JSON.stringify(clienteData, null, 2));
-            await supabase.from('clients').insert(clienteData);
+            const { error: clientErr } = await supabase.from('clients').insert(clienteData);
+            if (clientErr) {
+              console.error('[clients] Insert error:', JSON.stringify(clientErr));
+            } else {
+              onClientCreated?.();
+            }
           } catch (err) { console.error('Failed to create client:', err); }
 
           // Notify Juliana via n8n (fire-and-forget)
@@ -719,11 +741,11 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
 }
 
 // ── Lead Modal ────────────────────────────────────────────────
-function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers }: {
+function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, onClientCreated }: {
   lead: CRMLead; onClose: () => void;
   onSave: (updated: Partial<CRMLead>) => Promise<void>;
   onDelete: (leadId: string) => void;
-  userSession: any; teamMembers: TeamMember[];
+  userSession: any; teamMembers: TeamMember[]; onClientCreated?: () => void;
 }) {
   const isAdmin = (userSession?.role ?? '').toLowerCase() === 'admin';
   const [etapa, setEtapa] = useState(lead.etapa);
@@ -932,6 +954,18 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers }
           comments: [],
           offers: [],
           situation: '',
+          razao_social: rrRazaoSocial || '',
+          tipo_pessoa: rrTipoPessoa || '',
+          cpf_cnpj: rrCpfCnpj || '',
+          endereco: rrEndereco || '',
+          email_contato: rrEmailContato || '',
+          telefone_contato: rrTelefoneContato || '',
+          nome_responsavel_financeiro: rrNomeResponsavel || '',
+          valor_contrato: parsedContrato,
+          valor_cc: rrValorCc ? parseFloat(rrValorCc) : 0,
+          valor_mrr: parsedMrr,
+          forma_pagamento: rrFormaPagamento || '',
+          data_primeiro_vencimento: rrDataPrimeiroVencimento || '',
         };
         console.log('[clients] Inserting:', JSON.stringify(clienteData, null, 2));
         await supabase.from('clients').insert(clienteData);
@@ -1398,7 +1432,7 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers }
             {/* Nova Atividade + Agendar Tarefa inline */}
             <div className="border-t border-white/5 pt-3">
               {showAtivForm ? (
-                <NovaAtividadeForm lead={lead} leadId={lead.id} leadName={lead.nome} userSession={userSession} onSaved={handleAtivSaved} onCancel={() => setShowAtivForm(false)} onLeadUpdated={handleLeadUpdated} />
+                <NovaAtividadeForm lead={lead} leadId={lead.id} leadName={lead.nome} userSession={userSession} onSaved={handleAtivSaved} onCancel={() => setShowAtivForm(false)} onLeadUpdated={handleLeadUpdated} onClientCreated={onClientCreated} />
               ) : showAgendarTarefa ? (
                 <div className="space-y-3 bg-white/[0.02] border border-white/10 rounded-xl p-4">
                   <p className="text-[9px] font-bold uppercase tracking-widest text-brand-primary">Agendar Tarefa</p>
@@ -1477,7 +1511,7 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers }
               >
                 <Plus size={13} /> Registrar atividade
               </button>
-              {showAtivForm && <NovaAtividadeForm lead={lead} leadId={lead.id} leadName={lead.nome} userSession={userSession} onSaved={handleAtivSaved} onCancel={() => setShowAtivForm(false)} onLeadUpdated={handleLeadUpdated} />}
+              {showAtivForm && <NovaAtividadeForm lead={lead} leadId={lead.id} leadName={lead.nome} userSession={userSession} onSaved={handleAtivSaved} onCancel={() => setShowAtivForm(false)} onLeadUpdated={handleLeadUpdated} onClientCreated={onClientCreated} />}
               {atividades.length === 0 && !showAtivForm && (
                 <div className="py-12 text-center text-xs text-gray-600">Nenhuma atividade registrada ainda.</div>
               )}
@@ -1598,7 +1632,7 @@ function NewLeadModal({ onClose, onSave, userSession, teamMembers }: {
 }
 
 // ── Main CRM View ─────────────────────────────────────────────
-export default function CRMView({ userSession, teamMembers, openLeadByName, onLeadOpened }: { userSession: any; teamMembers: TeamMember[]; openLeadByName?: string; onLeadOpened?: () => void }) {
+export default function CRMView({ userSession, teamMembers, openLeadByName, onLeadOpened, onClientCreated }: { userSession: any; teamMembers: TeamMember[]; openLeadByName?: string; onLeadOpened?: () => void; onClientCreated?: () => void }) {
   const [leads, setLeads] = useState<CRMLead[]>([]);
   const [tarefas, setTarefas] = useState<CRMTarefa[]>([]);
   const [loading, setLoading] = useState(true);
@@ -1615,13 +1649,33 @@ export default function CRMView({ userSession, teamMembers, openLeadByName, onLe
     setLoading(true);
     let allLeads: CRMLead[] = [];
     const PAGE_SIZE = 1000;
+    const SMALL_PAGE = 100;
     let from = 0;
     let hasMore = true;
     while (hasMore) {
       let query = supabase.from('crm_leads').select('*').is('deletado_em', null).order('created_at', { ascending: false }).range(from, from + PAGE_SIZE - 1);
       if (!isAdmin) query = query.eq('responsavel', userSession?.name ?? '');
       const { data, error } = await query;
-      if (error) { console.error(error); break; }
+      if (error) {
+        console.warn('[crm_leads] Erro na página', from, '— tentando em lotes menores:', error.message);
+        // Tenta buscar a mesma faixa em lotes menores para isolar o registro corrompido
+        let smallFrom = from;
+        const smallEnd = from + PAGE_SIZE;
+        while (smallFrom < smallEnd) {
+          let smallQuery = supabase.from('crm_leads').select('*').is('deletado_em', null).order('created_at', { ascending: false }).range(smallFrom, smallFrom + SMALL_PAGE - 1);
+          if (!isAdmin) smallQuery = smallQuery.eq('responsavel', userSession?.name ?? '');
+          const { data: smallData, error: smallError } = await smallQuery;
+          if (smallError) {
+            console.warn('[crm_leads] Lote corrompido ignorado:', smallFrom, '-', smallFrom + SMALL_PAGE - 1, smallError.message);
+          } else {
+            allLeads = [...allLeads, ...(smallData ?? [])];
+            if (!smallData || smallData.length < SMALL_PAGE) { hasMore = false; break; }
+          }
+          smallFrom += SMALL_PAGE;
+        }
+        from += PAGE_SIZE;
+        continue;
+      }
       if (!data || data.length < PAGE_SIZE) hasMore = false;
       allLeads = [...allLeads, ...(data ?? [])];
       from += PAGE_SIZE;
@@ -1827,7 +1881,7 @@ export default function CRMView({ userSession, teamMembers, openLeadByName, onLe
 
       {selectedLead && (
         <LeadModal lead={selectedLead} onClose={() => setSelectedLead(null)}
-          onSave={handleSaveLead} onDelete={handleDeleteLead} userSession={userSession} teamMembers={teamMembers}
+          onSave={handleSaveLead} onDelete={handleDeleteLead} userSession={userSession} teamMembers={teamMembers} onClientCreated={onClientCreated}
         />
       )}
       {showNewLead && (

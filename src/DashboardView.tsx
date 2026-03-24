@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { format, subDays, startOfMonth, startOfYear, endOfYear, addDays } from 'date-fns';
 import { supabase } from './lib/supabase';
 import {
@@ -789,7 +789,7 @@ function PageSemanal({ data, userSession }: { data: any; userSession: any }) {
   const isAdmin = (userSession?.role ?? '').toLowerCase() === 'admin';
 
   useEffect(() => {
-    supabase.from('dashboard_metas_semanal').select('*').eq('id', 1).single()
+    Promise.resolve(supabase.from('dashboard_metas_semanal').select('*').eq('id', 1).single())
       .then(({ data: d }) => { if (d) setMetas(d); })
       .catch(() => {});
   }, []);
