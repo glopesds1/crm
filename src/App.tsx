@@ -34,7 +34,9 @@ import {
   PieChart,
   FileText,
   Download,
-  ImageOff
+  ImageOff,
+  PanelLeftClose,
+  PanelLeftOpen
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -130,18 +132,19 @@ const generateMeetings = (entryDate: string, duration: number): MonthlyMeeting[]
 
 // --- Components ---
 
-const SidebarItem = ({ icon: Icon, label, active, onClick }: { icon: any, label: string, active?: boolean, onClick: () => void }) => (
-  <button 
+const SidebarItem = ({ icon: Icon, label, active, onClick, collapsed }: { icon: any, label: string, active?: boolean, onClick: () => void, collapsed?: boolean }) => (
+  <button
     onClick={onClick}
-    className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all duration-200 group ${
-      active 
-        ? 'bg-brand-primary/10 text-brand-primary' 
+    title={collapsed ? label : undefined}
+    className={`w-full flex items-center ${collapsed ? 'justify-center px-2' : 'gap-3 px-4'} py-3 rounded-lg transition-all duration-200 group ${
+      active
+        ? 'bg-brand-primary/10 text-brand-primary'
         : 'text-gray-400 hover:bg-white/5 hover:text-white'
     }`}
   >
-    <Icon size={20} className={active ? 'text-brand-primary' : 'group-hover:text-white'} />
-    <span className="font-medium text-sm">{label}</span>
-    {active && <motion.div layoutId="active-pill" className="ml-auto w-1.5 h-1.5 rounded-full bg-brand-primary" />}
+    <Icon size={20} className={`flex-shrink-0 ${active ? 'text-brand-primary' : 'group-hover:text-white'}`} />
+    {!collapsed && <span className="font-medium text-sm">{label}</span>}
+    {!collapsed && active && <motion.div layoutId="active-pill" className="ml-auto w-1.5 h-1.5 rounded-full bg-brand-primary" />}
   </button>
 );
 
@@ -3174,6 +3177,7 @@ export default function App() {
   const [isSearchModalOpen, setIsSearchModalOpen] = useState(false);
   const [isNotificationOpen, setIsNotificationOpen] = useState(false);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [kanbanFilters, setKanbanFilters] = useState({ plans: [] as string[], responsible: 'all', status: 'Ativo' });
 
@@ -3733,73 +3737,90 @@ export default function App() {
   return (
     <div className="flex h-screen bg-bg-main overflow-hidden">
       {/* Sidebar */}
-      <aside className="w-64 bg-bg-sidebar border-r border-white/5 flex flex-col p-6 z-40">
-        <div className="flex items-center gap-3 mb-10 px-2">
-          {agencyConfig.logoUrl ? (
-            <div className="w-10 h-10 rounded-xl overflow-hidden shadow-glow border border-white/10">
-              <img 
-                src={agencyConfig.logoUrl} 
-                alt={agencyConfig.name} 
-                className="w-full h-full object-cover"
-                referrerPolicy="no-referrer"
-              />
-            </div>
-          ) : (
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-brand-primary to-brand-secondary flex items-center justify-center shadow-glow">
-              <KanbanIcon size={24} className="text-bg-main font-bold" />
-            </div>
-          )}
-          <div>
-            <h2 className="font-black text-lg tracking-tighter leading-none">{agencyConfig.name.split(' ').slice(0, -1).join(' ')}</h2>
-            <span className="text-[10px] font-bold text-brand-primary tracking-[0.2em] uppercase">{agencyConfig.name.split(' ').slice(-1)}</span>
+      <aside className={`${sidebarCollapsed ? 'w-[72px]' : 'w-64'} bg-bg-sidebar border-r border-white/5 flex flex-col p-4 z-40 transition-all duration-300`}>
+        <div className={`flex items-center ${sidebarCollapsed ? 'justify-center' : 'justify-between px-2'} mb-8`}>
+          <div
+            className={`flex items-center ${sidebarCollapsed ? 'cursor-pointer' : 'gap-3'}`}
+            onClick={sidebarCollapsed ? () => setSidebarCollapsed(false) : undefined}
+            title={sidebarCollapsed ? 'Expandir menu' : undefined}
+          >
+            {agencyConfig.logoUrl ? (
+              <div className="w-10 h-10 rounded-xl overflow-hidden shadow-glow border border-white/10 flex-shrink-0">
+                <img
+                  src={agencyConfig.logoUrl}
+                  alt={agencyConfig.name}
+                  className="w-full h-full object-cover"
+                  referrerPolicy="no-referrer"
+                />
+              </div>
+            ) : (
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-brand-primary to-brand-secondary flex items-center justify-center shadow-glow flex-shrink-0">
+                <KanbanIcon size={24} className="text-bg-main font-bold" />
+              </div>
+            )}
+            {!sidebarCollapsed && (
+              <div>
+                <h2 className="font-black text-lg tracking-tighter leading-none">{agencyConfig.name.split(' ').slice(0, -1).join(' ')}</h2>
+                <span className="text-[10px] font-bold text-brand-primary tracking-[0.2em] uppercase">{agencyConfig.name.split(' ').slice(-1)}</span>
+              </div>
+            )}
           </div>
+          {!sidebarCollapsed && (
+            <button
+              onClick={() => setSidebarCollapsed(true)}
+              title="Recolher menu"
+              className="p-1.5 rounded-lg text-gray-500 hover:text-white hover:bg-white/5 transition-all"
+            >
+              <PanelLeftClose size={18} />
+            </button>
+          )}
         </div>
 
         <nav className="flex-1 space-y-2">
-          {canSee('Dashboard') && <SidebarItem icon={LayoutDashboard} label="Dashboard" active={activeTab === 'Dashboard'} onClick={() => setActiveTab('Dashboard')} />}
-          {canSee('Clientes') && <SidebarItem icon={Users} label="Clientes" active={activeTab === 'Clientes'} onClick={() => setActiveTab('Clientes')} />}
-          {canSee('Kanban de Operação') && <SidebarItem icon={KanbanIcon} label="Kanban de Operação" active={activeTab === 'Kanban de Operação'} onClick={() => setActiveTab('Kanban de Operação')} />}
-          {canSee('Equipe') && <SidebarItem icon={Users} label="Equipe" active={activeTab === 'Equipe'} onClick={() => setActiveTab('Equipe')} />}
-          {canSee('Relatórios') && <SidebarItem icon={BarChart3} label="Relatórios" active={activeTab === 'Relatórios'} onClick={() => setActiveTab('Relatórios')} />}
-          {canSee('Playbooks') && <SidebarItem icon={BookOpen} label="Playbooks" active={activeTab === 'Playbooks'} onClick={() => setActiveTab('Playbooks')} />}
-          
+          {canSee('Dashboard') && <SidebarItem icon={LayoutDashboard} label="Dashboard" active={activeTab === 'Dashboard'} onClick={() => setActiveTab('Dashboard')} collapsed={sidebarCollapsed} />}
+          {canSee('Clientes') && <SidebarItem icon={Users} label="Clientes" active={activeTab === 'Clientes'} onClick={() => setActiveTab('Clientes')} collapsed={sidebarCollapsed} />}
+          {canSee('Kanban de Operação') && <SidebarItem icon={KanbanIcon} label="Kanban de Operação" active={activeTab === 'Kanban de Operação'} onClick={() => setActiveTab('Kanban de Operação')} collapsed={sidebarCollapsed} />}
+          {canSee('Equipe') && <SidebarItem icon={Users} label="Equipe" active={activeTab === 'Equipe'} onClick={() => setActiveTab('Equipe')} collapsed={sidebarCollapsed} />}
+          {canSee('Relatórios') && <SidebarItem icon={BarChart3} label="Relatórios" active={activeTab === 'Relatórios'} onClick={() => setActiveTab('Relatórios')} collapsed={sidebarCollapsed} />}
+          {canSee('Playbooks') && <SidebarItem icon={BookOpen} label="Playbooks" active={activeTab === 'Playbooks'} onClick={() => setActiveTab('Playbooks')} collapsed={sidebarCollapsed} />}
+
           <div className="space-y-1">
-            {canSee('Aquisição') && <SidebarItem icon={Briefcase} label="Aquisição" active={activeTab === 'Aquisição'} onClick={() => { setActiveTab('Aquisição'); setAquisicaoSubTab('CRM'); }} />}
-            {activeTab === 'Aquisição' && (
-              <motion.div 
+            {canSee('Aquisição') && <SidebarItem icon={Briefcase} label="Aquisição" active={activeTab === 'Aquisição'} onClick={() => { setActiveTab('Aquisição'); setAquisicaoSubTab('CRM'); }} collapsed={sidebarCollapsed} />}
+            {activeTab === 'Aquisição' && !sidebarCollapsed && (
+              <motion.div
                 initial={{ opacity: 0, y: -10 }}
                 animate={{ opacity: 1, y: 0 }}
                 className="ml-9 space-y-1"
               >
                 <div className="space-y-1">
-                  <button 
+                  <button
                     onClick={() => setAquisicaoSubTab('CRM')}
                     className={`w-full text-left px-4 py-2 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all ${aquisicaoSubTab === 'CRM' ? 'text-brand-primary bg-white/5' : 'text-gray-500 hover:text-white'}`}
                   >
                     CRM
                   </button>
-                  <button 
+                  <button
                     onClick={() => setAquisicaoSubTab('Comercial')}
                     className={`w-full text-left px-4 py-2 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all ${aquisicaoSubTab === 'Comercial' ? 'text-brand-primary bg-white/5' : 'text-gray-500 hover:text-white'}`}
                   >
                     Comercial
                   </button>
-                  
-                  {aquisicaoSubTab === 'Comercial' && ( // sub-items de Comercial
+
+                  {aquisicaoSubTab === 'Comercial' && (
                     <div className="ml-4 space-y-1 border-l border-white/5 pl-2">
-                      <button 
+                      <button
                         onClick={() => setComercialSubTab('PreVendas')}
                         className={`w-full text-left px-4 py-1.5 rounded-lg text-[9px] font-bold uppercase tracking-widest transition-all ${comercialSubTab === 'PreVendas' ? 'text-brand-primary bg-white/5' : 'text-gray-500 hover:text-white'}`}
                       >
                         Pré-vendas
                       </button>
-                      <button 
+                      <button
                         onClick={() => setComercialSubTab('Vendas')}
                         className={`w-full text-left px-4 py-1.5 rounded-lg text-[9px] font-bold uppercase tracking-widest transition-all ${comercialSubTab === 'Vendas' ? 'text-brand-primary bg-white/5' : 'text-gray-500 hover:text-white'}`}
                       >
                         Vendas
                       </button>
-                      <button 
+                      <button
                         onClick={() => setComercialSubTab('History')}
                         className={`w-full text-left px-4 py-1.5 rounded-lg text-[9px] font-bold uppercase tracking-widest transition-all ${comercialSubTab === 'History' ? 'text-brand-primary bg-white/5' : 'text-gray-500 hover:text-white'}`}
                       >
@@ -3814,29 +3835,40 @@ export default function App() {
         </nav>
 
         <div className="mt-auto pt-6 border-t border-white/5 relative">
-          {canSee('Configurações') && <SidebarItem icon={Settings} label="Configurações" active={activeTab === 'Configurações'} onClick={() => setActiveTab('Configurações')} />}
-          <div className="mt-6 p-4 rounded-xl bg-white/5 border border-white/5 flex items-center gap-3 relative">
-            <div 
-              className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold"
+          {canSee('Configurações') && <SidebarItem icon={Settings} label="Configurações" active={activeTab === 'Configurações'} onClick={() => setActiveTab('Configurações')} collapsed={sidebarCollapsed} />}
+          <div className={`mt-6 ${sidebarCollapsed ? 'p-2' : 'p-4'} rounded-xl bg-white/5 border border-white/5 flex items-center ${sidebarCollapsed ? 'justify-center' : 'gap-3'} relative`}>
+            <div
+              className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0"
               style={{ backgroundColor: userSession.color + '33', color: userSession.color }}
             >
-              {userSession.name.split(' ').map(n => n[0]).join('')}
+              {userSession.name.split(' ').map((n: string) => n[0]).join('')}
             </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-xs font-bold truncate">{userSession.name}</p>
-              <p className="text-[10px] text-gray-500 truncate">{userSession.role}</p>
-            </div>
-            <button 
-              onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
-              className="text-gray-600 hover:text-white transition-colors"
-            >
-              <MoreVertical size={14} />
-            </button>
-            <UserMenu 
-              isOpen={isUserMenuOpen} 
-              onClose={() => setIsUserMenuOpen(false)} 
-              user={userSession} 
-              onLogout={() => { setUserSession(null); setComercialSubTab('History'); setActiveTab('Dashboard'); }} 
+            {!sidebarCollapsed && (
+              <>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-bold truncate">{userSession.name}</p>
+                  <p className="text-[10px] text-gray-500 truncate">{userSession.role}</p>
+                </div>
+                <button
+                  onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
+                  className="text-gray-600 hover:text-white transition-colors"
+                >
+                  <MoreVertical size={14} />
+                </button>
+              </>
+            )}
+            {sidebarCollapsed && (
+              <button
+                onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
+                className="absolute inset-0 rounded-xl"
+                title={userSession.name}
+              />
+            )}
+            <UserMenu
+              isOpen={isUserMenuOpen}
+              onClose={() => setIsUserMenuOpen(false)}
+              user={userSession}
+              onLogout={() => { setUserSession(null); setComercialSubTab('History'); setActiveTab('Dashboard'); }}
             />
           </div>
         </div>
