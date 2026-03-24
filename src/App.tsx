@@ -2039,7 +2039,7 @@ const ClientModal = ({ client, allTags, teamMembers, onClose, onUpdateClient, on
   allTags: Record<string, Tag>,
   teamMembers: TeamMember[],
   onClose: () => void,
-  onUpdateClient: (updated: Client) => void,
+  onUpdateClient: (updated: Client, oldName?: string) => void,
   onSaveTag: (tag: Tag) => void,
   onDeleteTag: (id: string) => void,
   onCreateDemand: (demand: Demand) => void,
@@ -2048,6 +2048,7 @@ const ClientModal = ({ client, allTags, teamMembers, onClose, onUpdateClient, on
   const [newComment, setNewComment] = useState('');
   const [editName, setEditName] = useState(client.name);
   const [editResponsible, setEditResponsible] = useState(client.responsible);
+  const [originalName] = useState(client.name);
 
   React.useEffect(() => { setEditName(client.name); }, [client.name]);
   React.useEffect(() => { setEditResponsible(client.responsible); }, [client.responsible]);
@@ -2138,7 +2139,7 @@ const ClientModal = ({ client, allTags, teamMembers, onClose, onUpdateClient, on
                 type="text"
                 value={editName}
                 onChange={e => setEditName(e.target.value)}
-                onBlur={() => { if (editName !== client.name && editName.trim()) onUpdateClient({ ...client, name: editName.trim() }); }}
+                onBlur={() => { if (editName.trim() && editName.trim() !== originalName) onUpdateClient({ ...client, name: editName.trim() }, originalName); }}
                 onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
                 className="text-2xl font-bold tracking-tight bg-transparent border-b border-transparent hover:border-white/20 focus:border-brand-primary focus:outline-none transition-all px-0 py-0"
               />
@@ -3284,17 +3285,13 @@ export default function App() {
     });
   }, [clients, searchQuery, kanbanFilters]);
 
-  const handleUpdateClient = async (updated: Client) => {
+  const handleUpdateClient = async (updated: Client, oldName?: string) => {
     try {
-      // Detectar mudança de nome para atualizar demandas
-      const oldClient = clients.find(c => c.id === updated.id);
-      const nameChanged = oldClient && oldClient.name !== updated.name;
-
       const result = await updateClient(updated);
       setClients(clients.map(c => c.id === result.id ? result : c));
 
       // Atualizar nome do cliente nas demandas existentes
-      if (nameChanged) {
+      if (oldName && oldName !== updated.name) {
         const affectedDemands = demands.filter(d => d.clientId === updated.id);
         for (const d of affectedDemands) {
           const updatedDemand = { ...d, clientName: updated.name };
