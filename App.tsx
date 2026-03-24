@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { 
-  LayoutDashboard, BookOpen, 
+  LayoutDashboard, 
   Users, 
   Kanban as KanbanIcon, 
   BarChart3, 
@@ -33,10 +33,7 @@ import {
   DollarSign,
   PieChart,
   FileText,
-  Download,
-  ImageOff,
-  PanelLeftClose,
-  PanelLeft
+  Download
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -56,9 +53,6 @@ import {
 import { jsPDF } from 'jspdf';
 import 'jspdf-autotable';
 import { format, parseISO, isWithinInterval, subDays, startOfMonth, endOfMonth, eachMonthOfInterval, subMonths } from 'date-fns';
-import DashboardView from './DashboardView';
-import CRMView from './CRMView';
-import PlaybooksView from './PlaybooksView';
 import { ptBR } from 'date-fns/locale';
 
 import { 
@@ -91,8 +85,7 @@ import {
   getClients, createClient, updateClient, deleteClient,
   getTeamMembers, createTeamMember, updateTeamMember, deleteTeamMember,
   getAgencyConfig, updateAgencyConfig,
-  getTags, saveTag, deleteTag,
-  getComercialTasks, createComercialTask, deleteComercialTask
+  getTags, saveTag, deleteTag
 } from './lib/database';
 
 // --- Helper Functions ---
@@ -722,24 +715,22 @@ const OnboardingSection = ({ checklist, onToggle }: { checklist: OnboardingItem[
   );
 };
 
-const MeetingsSection = ({ meetings, onToggle, onUpdateTranscription }: { meetings: MonthlyMeeting[], onToggle: (id: string) => void, onUpdateTranscription: (id: string, url: string) => void }) => {
-  const [editingId, setEditingId] = React.useState<string | null>(null);
-  const [tempUrl, setTempUrl] = React.useState('');
-
+const MeetingsSection = ({ meetings, onToggle }: { meetings: MonthlyMeeting[], onToggle: (id: string) => void }) => {
   return (
     <section>
       <h3 className="text-sm font-bold uppercase tracking-widest text-brand-primary mb-4">Reuniões Mensais</h3>
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
         {meetings.map(meeting => (
-          <div
+          <div 
             key={meeting.id}
-            className={`p-4 rounded-xl border flex flex-col gap-3 transition-all ${
-              meeting.completed
-                ? 'bg-brand-primary/5 border-brand-primary/20'
+            onClick={() => onToggle(meeting.id)}
+            className={`p-4 rounded-xl border flex flex-col gap-3 cursor-pointer transition-all ${
+              meeting.completed 
+                ? 'bg-brand-primary/5 border-brand-primary/20' 
                 : 'bg-white/5 border-white/5 hover:border-white/20'
             }`}
           >
-            <div className="flex justify-between items-start cursor-pointer" onClick={() => onToggle(meeting.id)}>
+            <div className="flex justify-between items-start">
               <div>
                 <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1">Reunião {meeting.number.toString().padStart(2, '0')}</p>
                 <p className={`text-sm font-bold ${meeting.completed ? 'text-brand-primary' : 'text-white'}`}>{meeting.month} {meeting.year}</p>
@@ -750,69 +741,10 @@ const MeetingsSection = ({ meetings, onToggle, onUpdateTranscription }: { meetin
                 {meeting.completed && <Check size={14} />}
               </div>
             </div>
-
-            {meeting.completed && (
-              <div className="pt-2 border-t border-brand-primary/10 space-y-2">
-                {meeting.completionDate && (
-                  <p className="text-[10px] text-brand-primary/60 font-medium">Realizada em: {formatDate(meeting.completionDate)}</p>
-                )}
-
-                {editingId === meeting.id ? (
-                  <div className="flex gap-2" onClick={(e) => e.stopPropagation()}>
-                    <input
-                      type="url"
-                      value={tempUrl}
-                      onChange={(e) => setTempUrl(e.target.value)}
-                      placeholder="Cole o link da transcrição..."
-                      className="flex-1 bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-[11px] text-white placeholder-gray-500 focus:outline-none focus:border-brand-primary/50"
-                      autoFocus
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          onUpdateTranscription(meeting.id, tempUrl);
-                          setEditingId(null);
-                          setTempUrl('');
-                        }
-                        if (e.key === 'Escape') {
-                          setEditingId(null);
-                          setTempUrl('');
-                        }
-                      }}
-                    />
-                    <button
-                      onClick={() => { onUpdateTranscription(meeting.id, tempUrl); setEditingId(null); setTempUrl(''); }}
-                      className="p-1.5 rounded-lg bg-brand-primary/20 text-brand-primary hover:bg-brand-primary/30 transition-colors"
-                    >
-                      <Check size={12} />
-                    </button>
-                  </div>
-                ) : meeting.transcriptionUrl ? (
-                  <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-                    <a
-                      href={meeting.transcriptionUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex items-center gap-1.5 text-[10px] text-brand-primary/80 hover:text-brand-primary transition-colors truncate"
-                    >
-                      <FileText size={12} />
-                      <span className="truncate">Transcrição</span>
-                      <ExternalLink size={10} />
-                    </a>
-                    <button
-                      onClick={() => { setEditingId(meeting.id); setTempUrl(meeting.transcriptionUrl || ''); }}
-                      className="p-1 rounded text-gray-500 hover:text-white transition-colors"
-                    >
-                      <Edit2 size={10} />
-                    </button>
-                  </div>
-                ) : (
-                  <button
-                    onClick={(e) => { e.stopPropagation(); setEditingId(meeting.id); setTempUrl(''); }}
-                    className="flex items-center gap-1.5 text-[10px] text-gray-500 hover:text-brand-primary transition-colors"
-                  >
-                    <Plus size={12} />
-                    <span>Adicionar transcrição</span>
-                  </button>
-                )}
+            
+            {meeting.completed && meeting.completionDate && (
+              <div className="pt-2 border-t border-brand-primary/10">
+                <p className="text-[10px] text-brand-primary/60 font-medium">Realizada em: {formatDate(meeting.completionDate)}</p>
               </div>
             )}
           </div>
@@ -1832,22 +1764,15 @@ const ClientModal = ({ client, allTags, teamMembers, onClose, onUpdateClient, on
               }}
             />
 
-            <MeetingsSection
+            <MeetingsSection 
               meetings={client.monthlyMeetings}
               onToggle={(id) => {
-                const newList = client.monthlyMeetings.map(meeting =>
-                  meeting.id === id ? {
-                    ...meeting,
+                const newList = client.monthlyMeetings.map(meeting => 
+                  meeting.id === id ? { 
+                    ...meeting, 
                     completed: !meeting.completed,
-                    completionDate: !meeting.completed ? new Date().toLocaleDateString('pt-BR') : undefined,
-                    transcriptionUrl: !meeting.completed ? meeting.transcriptionUrl : undefined
+                    completionDate: !meeting.completed ? new Date().toLocaleDateString('pt-BR') : undefined
                   } : meeting
-                );
-                onUpdateClient({ ...client, monthlyMeetings: newList });
-              }}
-              onUpdateTranscription={(id, url) => {
-                const newList = client.monthlyMeetings.map(meeting =>
-                  meeting.id === id ? { ...meeting, transcriptionUrl: url } : meeting
                 );
                 onUpdateClient({ ...client, monthlyMeetings: newList });
               }}
@@ -1955,199 +1880,56 @@ const LoadingScreen = () => (
 );
 
 
-const ComercialView = ({ teamMembers, activeSubTab, setActiveSubTab, userSession, onOpenInCRM }: {
-  teamMembers: TeamMember[],
-  activeSubTab: 'History' | 'PreVendas' | 'Vendas',
-  setActiveSubTab: (tab: 'History' | 'PreVendas' | 'Vendas') => void,
-  userSession: UserSession | null,
-  onOpenInCRM?: (companyName: string) => void
-}) => {
-  const [selectedCollaborator, setSelectedCollaborator] = useState('');
+const ComercialView = ({ teamMembers }: { teamMembers: TeamMember[] }) => {
+  const [selectedCollaborator, setSelectedCollaborator] = useState('Vitória Mendes');
   const [tasks, setTasks] = useState<ComercialTask[]>([]);
-  
-  // Ligação state
-  const [newImageLigacao, setNewImageLigacao] = useState<string | null>(null);
-  const [newDateLigacao, setNewDateLigacao] = useState(format(new Date(), 'yyyy-MM-dd'));
-  const [newTimeLigacao, setNewTimeLigacao] = useState(format(new Date(), 'HH:mm'));
-  const [answered, setAnswered] = useState<'Atendeu' | 'Não atendeu' | null>(null);
-  const [scheduled, setScheduled] = useState(false);
-  const [touchpoint, setTouchpoint] = useState<string>('');
+  const [newImage, setNewImage] = useState<string | null>(null);
+  const [newTime, setNewTime] = useState(format(new Date(), 'HH:mm'));
 
-  // Reunião state
-  const [newImageReuniao, setNewImageReuniao] = useState<string | null>(null);
-  const [newDateReuniao, setNewDateReuniao] = useState(format(new Date(), 'yyyy-MM-dd'));
-  const [newTimeReuniao, setNewTimeReuniao] = useState(format(new Date(), 'HH:mm'));
-  const [meetingStatus, setMeetingStatus] = useState<'Compareceu' | 'Não compareceu' | null>(null);
-  const [saleStatus, setSaleStatus] = useState<'Venda' | 'Marcou R2+' | 'Perdido' | null>(null);
-
-  // Vendas specific fields state
-  const [contractValue, setContractValue] = useState<string>('');
-  const [cashCollect, setCashCollect] = useState<string>('');
-  const [termMonths, setTermMonths] = useState<string>('');
-  const [companyName, setCompanyName] = useState('');
-  const [cnpj, setCnpj] = useState('');
-  const [address, setAddress] = useState('');
-  const [contactEmail, setContactEmail] = useState('');
-  const [phone, setPhone] = useState('');
-  const [responsibleName, setResponsibleName] = useState('');
-  const [meetingSummary, setMeetingSummary] = useState('');
-  const [nextMeetingDate, setNextMeetingDate] = useState('');
-  const [lossReason, setLossReason] = useState('');
-
-  // Load tasks from Supabase on mount
+  // Load tasks from localStorage on mount
   useEffect(() => {
-    getComercialTasks().then(setTasks).catch(console.error);
-    // Auto-set collaborator for non-admin users
-    if ((userSession?.role ?? '').toLowerCase() !== 'admin') {
-      setSelectedCollaborator(userSession?.name ?? '');
+    const savedTasks = localStorage.getItem('comercial_tasks');
+    if (savedTasks) {
+      setTasks(JSON.parse(savedTasks));
     }
   }, []);
 
-  // Reset state when sub-tab changes
+  // Save tasks to localStorage whenever they change
   useEffect(() => {
-    setSelectedCollaborator('');
-    
-    // Reset Ligação state
-    setNewImageLigacao(null);
-    setNewDateLigacao(format(new Date(), 'yyyy-MM-dd'));
-    setNewTimeLigacao(format(new Date(), 'HH:mm'));
-    setAnswered(null);
-    setScheduled(false);
-    setTouchpoint('');
+    localStorage.setItem('comercial_tasks', JSON.stringify(tasks));
+  }, [tasks]);
 
-    // Reset Reunião state
-    setNewImageReuniao(null);
-    setNewDateReuniao(format(new Date(), 'yyyy-MM-dd'));
-    setNewTimeReuniao(format(new Date(), 'HH:mm'));
-    setMeetingStatus(null);
-    setSaleStatus(null);
-
-    // Reset Vendas specific fields
-    setContractValue('');
-    setCashCollect('');
-    setTermMonths('');
-    setCompanyName('');
-    setCnpj('');
-    setAddress('');
-    setContactEmail('');
-    setPhone('');
-    setResponsibleName('');
-    setMeetingSummary('');
-    setNextMeetingDate('');
-    setLossReason('');
-  }, [activeSubTab]);
-
-  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>, category: 'Ligação' | 'Reunião') => {
+  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       const reader = new FileReader();
       reader.onloadend = () => {
-        if (category === 'Ligação') {
-          setNewImageLigacao(reader.result as string);
-        } else {
-          setNewImageReuniao(reader.result as string);
-        }
+        setNewImage(reader.result as string);
       };
       reader.readAsDataURL(file);
     }
   };
 
-  const handleAddTask = async (category: 'Ligação' | 'Reunião') => {
-    const image = category === 'Ligação' ? newImageLigacao : newImageReuniao;
-    const date = category === 'Ligação' ? newDateLigacao : newDateReuniao;
-    const time = category === 'Ligação' ? newTimeLigacao : newTimeReuniao;
-
-    // For non-admin, always use the logged user's name
-    const isAdmin = (userSession?.role ?? '').toLowerCase() === 'admin';
-    const effectiveCollaborator = isAdmin ? selectedCollaborator : (userSession?.name ?? '');
-    if (!effectiveCollaborator) {
-      alert('Por favor, selecione um colaborador.');
+  const handleAddTask = () => {
+    if (!newImage) {
+      alert('Por favor, adicione uma imagem.');
       return;
     }
-
     const newTask: ComercialTask = {
       id: `task-${Date.now()}`,
-      type: activeSubTab as 'PreVendas' | 'Vendas',
-      category,
-      collaborator: effectiveCollaborator,
-      imageUrl: image || '',
-      completionTime: time,
-      answered: category === 'Ligação' ? answered : null,
-      meetingStatus: category === 'Reunião' ? meetingStatus : undefined,
-      scheduled: category === 'Ligação' ? scheduled : false,
-      touchpoint: category === 'Ligação' && touchpoint ? parseInt(touchpoint) : undefined,
-      saleStatus: category === 'Reunião' ? saleStatus : undefined,
-      contractValue: category === 'Reunião' && contractValue ? parseFloat(contractValue) : undefined,
-      cashCollect: category === 'Reunião' && cashCollect ? parseFloat(cashCollect) : undefined,
-      termMonths: category === 'Reunião' && termMonths ? parseInt(termMonths) : undefined,
-      companyName: category === 'Reunião' ? companyName : undefined,
-      cnpj: category === 'Reunião' ? cnpj : undefined,
-      address: category === 'Reunião' ? address : undefined,
-      contactEmail: category === 'Reunião' ? contactEmail : undefined,
-      phone: category === 'Reunião' ? phone : undefined,
-      responsibleName: category === 'Reunião' ? responsibleName : undefined,
-      meetingSummary: category === 'Reunião' ? meetingSummary : undefined,
-      nextMeetingDate: category === 'Reunião' ? nextMeetingDate : undefined,
-      lossReason: category === 'Reunião' ? lossReason : undefined,
-      createdAt: `${date}T${time}:00Z`,
+      collaborator: selectedCollaborator,
+      imageUrl: newImage,
+      completionTime: newTime,
+      createdAt: new Date().toISOString(),
     };
-
-    try {
-      const saved = await createComercialTask(newTask);
-      setTasks([saved, ...tasks]);
-    } catch (err) {
-      console.error('Erro ao salvar tarefa:', err);
-      alert('Erro ao salvar. Verifique a conexão com o banco.');
-      return;
-    }
-    
-    if (category === 'Ligação') {
-      setNewImageLigacao(null);
-      setNewDateLigacao(format(new Date(), 'yyyy-MM-dd'));
-      setNewTimeLigacao(format(new Date(), 'HH:mm'));
-      setAnswered(null);
-      setScheduled(false);
-      setTouchpoint('');
-    } else {
-      setNewImageReuniao(null);
-      setNewDateReuniao(format(new Date(), 'yyyy-MM-dd'));
-      setNewTimeReuniao(format(new Date(), 'HH:mm'));
-      setMeetingStatus(null);
-      setSaleStatus(null);
-      setContractValue('');
-      setCashCollect('');
-      setTermMonths('');
-      setCompanyName('');
-      setCnpj('');
-      setAddress('');
-      setContactEmail('');
-      setPhone('');
-      setResponsibleName('');
-      setMeetingSummary('');
-      setNextMeetingDate('');
-      setLossReason('');
-    }
+    setTasks([newTask, ...tasks]);
+    setNewImage(null);
+    setNewTime(format(new Date(), 'HH:mm'));
   };
 
-  const filteredTasks = useMemo(() => {
-    const isAdmin = (userSession?.role ?? '').toLowerCase() === 'admin';
-    if (!isAdmin) {
-      // Non-admin always sees only their own tasks
-      return tasks.filter(t => t.collaborator === (userSession?.name ?? ''));
-    }
-    if (selectedCollaborator === 'all' || selectedCollaborator === '') return tasks;
-    return tasks.filter(t => t.collaborator === selectedCollaborator);
-  }, [tasks, selectedCollaborator, userSession]);
-
-  const handleDeleteTask = async (id: string) => {
+  const handleDeleteTask = (id: string) => {
     if (!confirm('Tem certeza que deseja excluir este registro?')) return;
-    try {
-      await deleteComercialTask(id);
-      setTasks(tasks.filter(t => t.id !== id));
-    } catch (err) {
-      console.error('Erro ao deletar tarefa:', err);
-      alert('Erro ao deletar. Verifique a conexão com o banco.');
-    }
+    setTasks(tasks.filter(t => t.id !== id));
   };
 
   return (
@@ -2159,692 +1941,125 @@ const ComercialView = ({ teamMembers, activeSubTab, setActiveSubTab, userSession
         </div>
       </div>
 
-      {activeSubTab === 'History' ? (
-        <div className="space-y-8">
-          <div className="glass-card p-6 flex flex-wrap items-center justify-between gap-6">
-            <div className="flex items-center gap-6">
-              <div className="flex items-center gap-3">
-                <label className="text-[10px] font-bold uppercase tracking-widest text-brand-primary whitespace-nowrap">Colaborador</label>
-                <div className="relative min-w-[200px]">
-                  {(userSession?.role ?? '').toLowerCase() === 'admin' ? (
-                    <>
-                      <select 
-                        value={selectedCollaborator}
-                        onChange={e => setSelectedCollaborator(e.target.value)}
-                        className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-sm focus:outline-none focus:border-brand-primary transition-all appearance-none cursor-pointer"
-                      >
-                        <option value="" className="bg-bg-main">SELECIONE UM COLABORADOR</option>
-                        <option value="all" className="bg-bg-main">TODOS</option>
-                        {teamMembers.map(m => (
-                          <option key={m.id} value={m.name} className="bg-bg-main">{m.name}</option>
-                        ))}
-                      </select>
-                      <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" size={14} />
-                    </>
-                  ) : (
-                    <div className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-sm text-white font-medium">
-                      {userSession?.name ?? ''}
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            <div className="flex gap-3">
-              <button 
-                onClick={() => setActiveSubTab('PreVendas')}
-                className="px-4 py-2 rounded-lg bg-white/5 border border-white/10 text-[10px] font-bold uppercase tracking-widest text-gray-400 hover:text-brand-primary hover:border-brand-primary/30 transition-all flex items-center gap-2"
+      <div className="glass-card p-6 space-y-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div>
+            <label className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-2 block">Colaborador</label>
+            <div className="relative">
+              <select 
+                value={selectedCollaborator}
+                onChange={e => setSelectedCollaborator(e.target.value)}
+                className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-brand-primary transition-all appearance-none cursor-pointer"
               >
-                <Plus size={14} /> Nova Pré-venda
-              </button>
-              <button 
-                onClick={() => setActiveSubTab('Vendas')}
-                className="px-4 py-2 rounded-lg bg-white/5 border border-white/10 text-[10px] font-bold uppercase tracking-widest text-gray-400 hover:text-brand-primary hover:border-brand-primary/30 transition-all flex items-center gap-2"
-              >
-                <Plus size={14} /> Nova Venda
-              </button>
-            </div>
-          </div>
-
-          <div className="space-y-4">
-            <h3 className="text-sm font-bold uppercase tracking-widest text-brand-primary">Histórico de Atividades</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {filteredTasks.map(task => (
-                <motion.div 
-                  key={task.id}
-                  layout
-                  initial={{ opacity: 0, scale: 0.9 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  className="glass-card overflow-hidden group border border-white/5 hover:border-brand-primary/20"
-                >
-                  <div className="aspect-video w-full relative overflow-hidden bg-bg-sidebar">
-                    {task.imageUrl ? (
-                      <img src={task.imageUrl} alt="Print" className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center bg-white/5">
-                        <ImageOff size={32} className="text-gray-700" />
-                      </div>
-                    )}
-                    <div className="absolute inset-0 bg-gradient-to-t from-bg-main/90 via-bg-main/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end justify-between p-4">
-                      <button 
-                        onClick={() => handleDeleteTask(task.id)}
-                        className="p-2 rounded-lg bg-red-500/20 text-red-400 hover:bg-red-500 hover:text-white transition-all backdrop-blur-sm"
-                      >
-                        <Trash2 size={16} />
-                      </button>
-                        <div className="flex flex-col items-end gap-2">
-                          <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-brand-primary/20 border border-brand-primary/30 backdrop-blur-md">
-                            <Clock size={12} className="text-brand-primary" />
-                            <span className="text-[10px] font-bold text-brand-primary">{task.completionTime}</span>
-                          </div>
-                          <div className="px-3 py-1 rounded-full bg-white/10 border border-white/20 backdrop-blur-md text-[8px] font-bold uppercase tracking-widest text-white">
-                            {task.category}
-                          </div>
-                          <div className={`px-3 py-1 rounded-full border backdrop-blur-md text-[8px] font-bold uppercase tracking-widest ${
-                            task.type === 'PreVendas' ? 'bg-blue-500/20 border-blue-500/30 text-blue-400' : 'bg-purple-500/20 border-purple-500/30 text-purple-400'
-                          }`}>
-                            {task.type === 'PreVendas' ? 'PRÉ-VENDAS' : 'VENDAS'}
-                          </div>
-                          {task.answered && (
-                            <div className={`px-3 py-1 rounded-full border backdrop-blur-md text-[8px] font-bold uppercase tracking-widest ${
-                              task.answered === 'Atendeu' ? 'bg-brand-primary/20 border-brand-primary/30 text-brand-primary' : 'bg-red-500/20 border-red-500/30 text-red-400'
-                            }`}>
-                              {task.answered}
-                            </div>
-                          )}
-                          {task.touchpoint && (
-                            <div className="px-3 py-1 rounded-full bg-white/10 border border-white/20 backdrop-blur-md text-[8px] font-bold uppercase tracking-widest text-white">
-                              Touchpoint: {task.touchpoint}
-                            </div>
-                          )}
-                          {task.meetingStatus && (
-                            <div className={`px-3 py-1 rounded-full border backdrop-blur-md text-[8px] font-bold uppercase tracking-widest ${
-                              task.meetingStatus === 'Compareceu' ? 'bg-brand-primary/20 border-brand-primary/30 text-brand-primary' : 'bg-red-500/20 border-red-500/30 text-red-400'
-                            }`}>
-                              {task.meetingStatus}
-                            </div>
-                          )}
-                          {task.scheduled && (
-                            <div className="px-3 py-1 rounded-full bg-blue-500/20 border border-blue-500/30 backdrop-blur-md text-[8px] font-bold uppercase tracking-widest text-blue-400 flex items-center gap-1">
-                              <Calendar size={10} /> Marcado
-                            </div>
-                          )}
-                          {task.saleStatus && (
-                            <div className={`px-3 py-1 rounded-full border backdrop-blur-md text-[8px] font-bold uppercase tracking-widest ${
-                              task.saleStatus === 'Venda' ? 'bg-brand-primary/20 border-brand-primary/30 text-brand-primary' :
-                              task.saleStatus === 'Marcou R2+' ? 'bg-blue-500/20 border-blue-500/30 text-blue-400' :
-                              'bg-red-500/20 border-red-500/30 text-red-400'
-                            }`}>
-                              {task.saleStatus}
-                            </div>
-                          )}
-                        </div>
-                    </div>
-                  </div>
-                  <div className="p-4 space-y-3 bg-bg-card/50">
-                    <div className="flex justify-between items-center">
-                      <div className="text-xs font-bold text-white flex items-center gap-2">
-                        <div className="w-1.5 h-1.5 rounded-full bg-brand-primary" />
-                        {task.collaborator}
-                      </div>
-                      <div className="text-[10px] font-bold text-gray-600 uppercase tracking-tighter">
-                        ID: {task.id.split('-')[1]}
-                      </div>
-                    </div>
-                    
-                    <div className="pt-3 border-t border-white/5 space-y-2">
-                        {/* Ligação info */}
-                        {task.category === 'Ligação' && (
-                          <>
-                            {task.answered && (
-                              <div className="flex justify-between text-[10px]">
-                                <span className="text-gray-500 uppercase font-bold">Status:</span>
-                                <span className={task.answered === 'Atendeu' ? 'text-brand-primary font-bold' : 'text-red-400 font-bold'}>{task.answered}</span>
-                              </div>
-                            )}
-                            {task.touchpoint !== undefined && (
-                              <div className="flex justify-between text-[10px]">
-                                <span className="text-gray-500 uppercase font-bold">Touchpoint:</span>
-                                <span className="text-white font-bold">{task.touchpoint}</span>
-                              </div>
-                            )}
-                            <div className="flex justify-between text-[10px]">
-                              <span className="text-gray-500 uppercase font-bold">Marcou reunião:</span>
-                              <span className={task.scheduled ? 'text-brand-primary font-bold' : 'text-red-400 font-bold'}>
-                                {task.scheduled ? 'Sim' : 'Não'}
-                              </span>
-                            </div>
-                          </>
-                        )}
-                        {/* Reunião info */}
-                        {task.category !== 'Ligação' && (
-                          <>
-                            {task.meetingStatus && (
-                              <div className="flex justify-between text-[10px]">
-                                <span className="text-gray-500 uppercase font-bold">Status:</span>
-                                <span className={task.meetingStatus === 'Compareceu' ? 'text-brand-primary font-bold' : 'text-red-400 font-bold'}>{task.meetingStatus}</span>
-                              </div>
-                            )}
-                            {task.saleStatus && (
-                              <div className="flex justify-between text-[10px]">
-                                <span className="text-gray-500 uppercase font-bold">Resultado:</span>
-                                <span className={
-                                  task.saleStatus === 'Venda' ? 'text-brand-primary font-bold' :
-                                  task.saleStatus === 'Marcou R2+' ? 'text-blue-400 font-bold' :
-                                  'text-red-400 font-bold'
-                                }>{task.saleStatus}</span>
-                              </div>
-                            )}
-                            {task.responsibleName && (
-                              <div className="flex justify-between text-[10px]">
-                                <span className="text-gray-500 uppercase font-bold">Responsável:</span>
-                                <span className="text-white font-medium">{task.responsibleName}</span>
-                              </div>
-                            )}
-                            {task.contractValue != null && (
-                              <div className="flex justify-between text-[10px]">
-                                <span className="text-gray-500 uppercase font-bold">Contrato:</span>
-                                <span className="text-brand-primary font-bold">R$ {(task.contractValue ?? 0).toLocaleString()}</span>
-                              </div>
-                            )}
-                            {task.cashCollect != null && (
-                              <div className="flex justify-between text-[10px]">
-                                <span className="text-gray-500 uppercase font-bold">Cash:</span>
-                                <span className="text-brand-primary font-bold">R$ {(task.cashCollect ?? 0).toLocaleString()}</span>
-                              </div>
-                            )}
-                            {task.nextMeetingDate && (
-                              <div className="flex justify-between text-[10px]">
-                                <span className="text-gray-500 uppercase font-bold">Próxima R2:</span>
-                                <span className="text-blue-400 font-bold">{format(parseISO(task.nextMeetingDate), 'dd/MM HH:mm')}</span>
-                              </div>
-                            )}
-                            {task.lossReason && (
-                              <div className="text-[10px]">
-                                <span className="text-red-400 uppercase font-bold block mb-1">Motivo Perda:</span>
-                                <p className="text-gray-400 italic line-clamp-2">{task.lossReason}</p>
-                              </div>
-                            )}
-                          </>
-                        )}
-                      </div>
-
-                    <div className="flex justify-between items-center mt-1">
-                      <p className="text-[10px] text-gray-500 uppercase tracking-widest font-bold">{formatDate(task.createdAt)}</p>
-                      {task.companyName && onOpenInCRM && (
-                        <button
-                          onClick={(e) => { e.stopPropagation(); onOpenInCRM(task.companyName!); }}
-                          className="flex items-center gap-1 text-[9px] text-gray-500 hover:text-brand-primary transition-colors"
-                          title="Ver no CRM"
-                        >
-                          <ExternalLink size={10} /> CRM
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                </motion.div>
-              ))}
-              {filteredTasks.length === 0 && (
-                <div className="col-span-full py-20 text-center glass-card border-dashed border-2 border-white/5">
-                  <AlertTriangle size={48} className="text-gray-800 mx-auto mb-4" />
-                  <p className="text-gray-500 font-medium">Nenhuma atividade registrada ainda.</p>
-                </div>
-              )}
+                <option value="Vitória Mendes" className="bg-bg-main">Vitória Mendes</option>
+                {teamMembers.filter(m => m.name !== 'Vitória Mendes').map(m => (
+                  <option key={m.id} value={m.name} className="bg-bg-main">{m.name}</option>
+                ))}
+              </select>
+              <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" size={16} />
             </div>
           </div>
         </div>
-      ) : (
-        <div className="glass-card p-6 space-y-8">
-          <div className="flex flex-wrap items-center justify-between gap-6">
-            <div className="flex items-center gap-6">
-              <div className="flex items-center gap-3">
-                <label className="text-[10px] font-bold uppercase tracking-widest text-brand-primary whitespace-nowrap">Colaborador</label>
-                <div className="relative min-w-[200px]">
-                  {(userSession?.role ?? '').toLowerCase() === 'admin' ? (
-                    <>
-                      <select 
-                        value={selectedCollaborator}
-                        onChange={e => setSelectedCollaborator(e.target.value)}
-                        className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-sm focus:outline-none focus:border-brand-primary transition-all appearance-none cursor-pointer"
-                      >
-                        <option value="" className="bg-bg-main">SELECIONE UM COLABORADOR</option>
-                        {teamMembers.map(m => (
-                          <option key={m.id} value={m.name} className="bg-bg-main">{m.name}</option>
-                        ))}
-                      </select>
-                      <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" size={14} />
-                    </>
+
+        <div className="pt-6 border-t border-white/5">
+          <h3 className="text-sm font-bold uppercase tracking-widest text-brand-primary mb-4">Nova Atividade</h3>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-end">
+            <div className="md:col-span-1">
+              <label className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-2 block">Print da Ação</label>
+              <div className="relative">
+                <input 
+                  type="file" 
+                  accept="image/*"
+                  onChange={handleImageChange}
+                  className="hidden"
+                  id="task-image-upload"
+                />
+                <label 
+                  htmlFor="task-image-upload"
+                  className="flex flex-col items-center justify-center w-full h-40 border-2 border-dashed border-white/10 rounded-xl cursor-pointer hover:border-brand-primary/50 transition-all bg-white/5 overflow-hidden group"
+                >
+                  {newImage ? (
+                    <img src={newImage} alt="Preview" className="w-full h-full object-cover" />
                   ) : (
-                    <div className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-sm text-white font-medium">
-                      {userSession?.name ?? ''}
-                    </div>
+                    <>
+                      <Plus size={24} className="text-gray-500 mb-2 group-hover:text-brand-primary transition-colors" />
+                      <span className="text-[10px] font-bold text-gray-500 uppercase group-hover:text-brand-primary transition-colors">Upload Print</span>
+                    </>
                   )}
-                </div>
+                </label>
               </div>
-              <h3 className="text-[10px] font-bold uppercase tracking-widest text-brand-primary">NOVA ATIVIDADE - {activeSubTab === 'PreVendas' ? 'PRÉ-VENDAS' : 'VENDAS'}</h3>
+            </div>
+            <div>
+              <label className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-2 block">Hora Concluída</label>
+              <div className="relative">
+                <Clock className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500" size={18} />
+                <input 
+                  type="time" 
+                  value={newTime}
+                  onChange={e => setNewTime(e.target.value)}
+                  className="w-full bg-white/5 border border-white/10 rounded-xl pl-12 pr-4 py-3 text-sm focus:outline-none focus:border-brand-primary transition-all"
+                />
+              </div>
             </div>
             <button 
-              onClick={() => setActiveSubTab('History')}
-              className="px-4 py-2 rounded-lg bg-white/5 border border-white/10 text-[10px] font-bold uppercase tracking-widest text-gray-400 hover:text-white transition-all"
+              onClick={handleAddTask}
+              className="w-full py-3.5 bg-brand-primary text-bg-main font-bold rounded-xl shadow-glow hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center gap-2"
             >
-              Voltar ao Histórico
+              <Check size={18} /> REGISTRAR AÇÃO
             </button>
           </div>
+        </div>
+      </div>
 
-          {/* LIGAÇÃO SECTION */}
-          <div className="pt-6 border-t border-white/5 space-y-6">
-            <h3 className="text-[10px] font-bold uppercase tracking-widest text-brand-primary">LIGAÇÃO</h3>
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-              <div className="lg:col-span-7">
-                <label className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-2 block flex items-center gap-1">
-                  Print da Ação <span className="text-red-500">*</span> <span className="text-[8px] opacity-70">(Obrigatório)</span>
-                </label>
-                <div className="relative">
-                  <input 
-                    type="file" 
-                    accept="image/*"
-                    onChange={(e) => handleImageChange(e, 'Ligação')}
-                    className="hidden"
-                    id="task-image-upload-ligacao"
-                  />
-                  <label 
-                    htmlFor="task-image-upload-ligacao"
-                    className="flex flex-col items-center justify-center w-full h-64 border-2 border-dashed border-white/10 rounded-xl cursor-pointer hover:border-brand-primary/50 transition-all bg-white/5 overflow-hidden group"
-                  >
-                    {newImageLigacao ? (
-                      <img src={newImageLigacao} alt="Preview" className="w-full h-full object-cover" />
-                    ) : (
-                      <>
-                        <Plus size={32} className="text-gray-500 mb-3 group-hover:text-brand-primary transition-colors" />
-                        <span className="text-[10px] font-bold text-gray-500 uppercase group-hover:text-brand-primary transition-colors">Upload Print Ligação</span>
-                      </>
-                    )}
-                  </label>
-                </div>
-              </div>
-                <div className="lg:col-span-5 space-y-6">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-2 block">Data Concluída</label>
-                      <div className="relative">
-                        <Calendar className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500" size={18} />
-                        <input 
-                          type="date" 
-                          value={newDateLigacao}
-                          onChange={e => setNewDateLigacao(e.target.value)}
-                          className="w-full bg-white/5 border border-white/10 rounded-xl pl-12 pr-4 py-3 text-sm focus:outline-none focus:border-brand-primary transition-all"
-                        />
-                      </div>
-                    </div>
-                    <div>
-                      <label className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-2 block">Hora Concluída</label>
-                      <div className="relative">
-                        <Clock className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500" size={18} />
-                        <input 
-                          type="time" 
-                          value={newTimeLigacao}
-                          onChange={e => setNewTimeLigacao(e.target.value)}
-                          className="w-full bg-white/5 border border-white/10 rounded-xl pl-12 pr-4 py-3 text-sm focus:outline-none focus:border-brand-primary transition-all"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                <div>
-                  <label className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-2 block">Status da Chamada / TP</label>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => setAnswered('Atendeu')}
-                      className={`flex-1 py-3 rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all border ${
-                        answered === 'Atendeu' 
-                          ? 'bg-brand-primary/20 border-brand-primary text-brand-primary' 
-                          : 'bg-white/5 border-white/10 text-gray-500 hover:border-white/20'
-                      }`}
-                    >
-                      Atendeu
-                    </button>
-                    <button
-                      onClick={() => setAnswered('Não atendeu')}
-                      className={`flex-1 py-3 rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all border ${
-                        answered === 'Não atendeu' 
-                          ? 'bg-red-500/20 border-red-500 text-red-500' 
-                          : 'bg-white/5 border-white/10 text-gray-500 hover:border-white/20'
-                      }`}
-                    >
-                      Não atendeu
-                    </button>
-                    <input 
-                      type="number" 
-                      value={touchpoint}
-                      onChange={e => setTouchpoint(e.target.value)}
-                      placeholder="TP"
-                      className="w-14 bg-white/5 border border-white/10 rounded-xl px-2 py-3 text-center text-sm focus:outline-none focus:border-brand-primary transition-all"
-                      title="Touchpoint"
-                    />
-                  </div>
-                </div>
-                <div>
-                  <label className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-2 block">Agendamento</label>
-                  <button
-                    onClick={() => setScheduled(!scheduled)}
-                    className={`w-full py-3 rounded-xl text-xs font-bold uppercase tracking-widest transition-all border flex items-center justify-center gap-2 ${
-                      scheduled 
-                        ? 'bg-blue-500/20 border-blue-500 text-blue-400 shadow-[0_0_15px_rgba(59,130,246,0.3)]' 
-                        : 'bg-white/5 border-white/10 text-gray-500 hover:border-white/20'
-                    }`}
-                  >
-                    <Calendar size={16} />
-                    {scheduled ? 'Marcado' : 'Não Marcado'}
-                  </button>
-                </div>
-                <button 
-                  onClick={() => handleAddTask('Ligação')}
-                  disabled={!newImageLigacao}
-                  className={`w-full py-4 font-bold rounded-xl transition-all flex items-center justify-center gap-2 text-[10px] uppercase tracking-widest ${
-                    newImageLigacao 
-                      ? 'bg-brand-primary text-bg-main shadow-glow hover:scale-[1.02] active:scale-[0.98]' 
-                      : 'bg-white/5 border border-white/10 text-gray-600 cursor-not-allowed'
-                  }`}
-                >
-                  <Check size={18} /> REGISTRAR LIGAÇÃO
-                </button>
-                {scheduled && (
+      <div className="space-y-4">
+        <h3 className="text-sm font-bold uppercase tracking-widest text-brand-primary">Atividades Recentes</h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {tasks.map(task => (
+            <motion.div 
+              key={task.id}
+              layout
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              className="glass-card overflow-hidden group border border-white/5 hover:border-brand-primary/20"
+            >
+              <div className="aspect-video w-full relative overflow-hidden bg-bg-sidebar">
+                <img src={task.imageUrl} alt="Print" className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
+                <div className="absolute inset-0 bg-gradient-to-t from-bg-main/90 via-bg-main/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end justify-between p-4">
                   <button 
-                    onClick={() => window.open('https://booking.builderall.com/c/agendamentoarv/gabrielfonseca', '_blank')}
-                    className="w-full py-4 bg-blue-500/20 border border-blue-500 text-blue-400 shadow-[0_0_15px_rgba(59,130,246,0.3)] font-bold rounded-xl hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center gap-2 text-[10px] uppercase tracking-widest"
+                    onClick={() => handleDeleteTask(task.id)}
+                    className="p-2 rounded-lg bg-red-500/20 text-red-400 hover:bg-red-500 hover:text-white transition-all backdrop-blur-sm"
                   >
-                    📅 ABRIR AGENDAMENTO R1
+                    <Trash2 size={16} />
                   </button>
-                )}
-              </div>
-            </div>
-          </div>
-
-          {/* REUNIÃO SECTION */}
-          {activeSubTab !== 'PreVendas' && (
-            <div className="pt-8 border-t border-white/5 space-y-6">
-              <h3 className="text-[10px] font-bold uppercase tracking-widest text-brand-primary">REUNIÃO</h3>
-              <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-                <div className="lg:col-span-7">
-                  <label className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-2 block flex items-center gap-1">
-                    Print da Ação <span className="text-red-500">*</span> <span className="text-[8px] opacity-70">(Obrigatório)</span>
-                  </label>
-                  <div className="relative">
-                    <input 
-                      type="file" 
-                      accept="image/*"
-                      onChange={(e) => handleImageChange(e, 'Reunião')}
-                      className="hidden"
-                      id="task-image-upload-reuniao"
-                    />
-                    <label 
-                      htmlFor="task-image-upload-reuniao"
-                      className="flex flex-col items-center justify-center w-full h-64 border-2 border-dashed border-white/10 rounded-xl cursor-pointer hover:border-brand-primary/50 transition-all bg-white/5 overflow-hidden group"
-                    >
-                      {newImageReuniao ? (
-                        <img src={newImageReuniao} alt="Preview" className="w-full h-full object-cover" />
-                      ) : (
-                        <>
-                          <Plus size={32} className="text-gray-500 mb-3 group-hover:text-brand-primary transition-colors" />
-                          <span className="text-[10px] font-bold text-gray-500 uppercase group-hover:text-brand-primary transition-colors">Upload Print Reunião</span>
-                        </>
-                      )}
-                    </label>
+                  <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-brand-primary/20 border border-brand-primary/30 backdrop-blur-md">
+                    <Clock size={12} className="text-brand-primary" />
+                    <span className="text-[10px] font-bold text-brand-primary">{task.completionTime}</span>
                   </div>
                 </div>
-                <div className="lg:col-span-5 space-y-6">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-2 block">Data Concluída</label>
-                      <div className="relative">
-                        <Calendar className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500" size={18} />
-                        <input 
-                          type="date" 
-                          value={newDateReuniao}
-                          onChange={e => setNewDateReuniao(e.target.value)}
-                          className="w-full bg-white/5 border border-white/10 rounded-xl pl-12 pr-4 py-3 text-sm focus:outline-none focus:border-brand-primary transition-all"
-                        />
-                      </div>
-                    </div>
-                    <div>
-                      <label className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-2 block">Hora Concluída</label>
-                      <div className="relative">
-                        <Clock className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500" size={18} />
-                        <input 
-                          type="time" 
-                          value={newTimeReuniao}
-                          onChange={e => setNewTimeReuniao(e.target.value)}
-                          className="w-full bg-white/5 border border-white/10 rounded-xl pl-12 pr-4 py-3 text-sm focus:outline-none focus:border-brand-primary transition-all"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                  <div>
-                    <label className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-2 block">Status da Reunião</label>
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => setMeetingStatus('Compareceu')}
-                        className={`flex-1 py-3 rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all border ${
-                          meetingStatus === 'Compareceu' 
-                            ? 'bg-brand-primary/20 border-brand-primary text-brand-primary' 
-                            : 'bg-white/5 border-white/10 text-gray-500 hover:border-white/20'
-                        }`}
-                      >
-                        Compareceu
-                      </button>
-                      <button
-                        onClick={() => setMeetingStatus('Não compareceu')}
-                        className={`flex-1 py-3 rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all border ${
-                          meetingStatus === 'Não compareceu' 
-                            ? 'bg-red-500/20 border-red-500 text-red-500' 
-                            : 'bg-white/5 border-white/10 text-gray-500 hover:border-white/20'
-                        }`}
-                      >
-                        Não compareceu
-                      </button>
-                    </div>
-                  </div>
-                  {activeSubTab === 'Vendas' && (
-                    <div>
-                      <label className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-2 block">Status da Venda</label>
-                      <div className="flex gap-2">
-                        <button
-                          onClick={() => setSaleStatus('Venda')}
-                          className={`flex-1 py-2 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all border ${
-                            saleStatus === 'Venda' 
-                              ? 'bg-brand-primary/20 border-brand-primary text-brand-primary' 
-                              : 'bg-white/5 border-white/10 text-gray-500 hover:border-white/20'
-                          }`}
-                        >
-                          Venda
-                        </button>
-                        <button
-                          onClick={() => setSaleStatus('Marcou R2+')}
-                          className={`flex-1 py-2 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all border ${
-                            saleStatus === 'Marcou R2+' 
-                              ? 'bg-blue-500/20 border-blue-500 text-blue-400' 
-                              : 'bg-white/5 border-white/10 text-gray-500 hover:border-white/20'
-                          }`}
-                        >
-                          Marcou R2+
-                        </button>
-                        <button
-                          onClick={() => setSaleStatus('Perdido')}
-                          className={`flex-1 py-2 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all border ${
-                            saleStatus === 'Perdido' 
-                              ? 'bg-red-500/20 border-red-500 text-red-500' 
-                              : 'bg-white/5 border-white/10 text-gray-500 hover:border-white/20'
-                          }`}
-                        >
-                          Perdido
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                  <button 
-                    onClick={() => handleAddTask('Reunião')}
-                    disabled={!newImageReuniao}
-                    className={`w-full py-4 font-bold rounded-xl transition-all flex items-center justify-center gap-2 text-[10px] uppercase tracking-widest ${
-                      newImageReuniao 
-                        ? 'bg-brand-primary text-bg-main shadow-glow hover:scale-[1.02] active:scale-[0.98]' 
-                        : 'bg-white/5 border border-white/10 text-gray-600 cursor-not-allowed'
-                    }`}
-                  >
-                    <Check size={18} /> REGISTRAR REUNIÃO
-                  </button>
-                  {meetingStatus === 'Compareceu' && saleStatus === 'Marcou R2+' && (
-                    <button 
-                      onClick={() => window.open('https://booking.builderall.com/c/agendamentoarv/afe005497d550a5b4ac112bbe4c68538/2Ol7j4kw', '_blank')}
-                      className="w-full py-4 bg-blue-500/20 border border-blue-500 text-blue-400 shadow-[0_0_15px_rgba(59,130,246,0.3)] font-bold rounded-xl hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center gap-2 text-[10px] uppercase tracking-widest"
-                    >
-                      📅 AGENDAR R2+
-                    </button>
-                  )}
+              </div>
+              <div className="p-4 flex justify-between items-center bg-bg-card/50">
+                <div>
+                  <p className="text-xs font-bold text-white flex items-center gap-2">
+                    <div className="w-1.5 h-1.5 rounded-full bg-brand-primary" />
+                    {task.collaborator}
+                  </p>
+                  <p className="text-[10px] text-gray-500 uppercase tracking-widest font-bold mt-1 ml-3.5">{formatDate(task.createdAt)}</p>
+                </div>
+                <div className="text-[10px] font-bold text-gray-600 uppercase tracking-tighter">
+                  ID: {task.id.split('-')[1]}
                 </div>
               </div>
-
-              {activeSubTab === 'Vendas' && saleStatus && (
-                <motion.div 
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="pt-6 border-t border-white/5 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
-                >
-                  {(saleStatus === 'Venda' || saleStatus === 'Marcou R2+' || saleStatus === 'Perdido') && (
-                    <>
-                      <div>
-                        <label className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-2 block">Valor do Contrato (R$)</label>
-                        <input 
-                          type="number" 
-                          value={contractValue}
-                          onChange={e => setContractValue(e.target.value)}
-                          placeholder="0.00"
-                          className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-brand-primary transition-all"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-2 block">Cash Collect (R$)</label>
-                        <input 
-                          type="number" 
-                          value={cashCollect}
-                          onChange={e => setCashCollect(e.target.value)}
-                          placeholder="0.00"
-                          className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-brand-primary transition-all"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-2 block">Prazo (Meses)</label>
-                        <input 
-                          type="number" 
-                          value={termMonths}
-                          onChange={e => setTermMonths(e.target.value)}
-                          placeholder="Ex: 12"
-                          className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-brand-primary transition-all"
-                        />
-                      </div>
-                    </>
-                  )}
-
-                  {saleStatus === 'Venda' && (
-                    <>
-                      <div>
-                        <label className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-2 block">Razão Social</label>
-                        <input 
-                          type="text" 
-                          value={companyName}
-                          onChange={e => setCompanyName(e.target.value)}
-                          className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-brand-primary transition-all"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-2 block">CNPJ</label>
-                        <input 
-                          type="text" 
-                          value={cnpj}
-                          onChange={e => setCnpj(e.target.value)}
-                          className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-brand-primary transition-all"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-2 block">Endereço Completo</label>
-                        <input 
-                          type="text" 
-                          value={address}
-                          onChange={e => setAddress(e.target.value)}
-                          className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-brand-primary transition-all"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-2 block">Email de Contato</label>
-                        <input 
-                          type="email" 
-                          value={contactEmail}
-                          onChange={e => setContactEmail(e.target.value)}
-                          className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-brand-primary transition-all"
-                        />
-                      </div>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <div>
-                          <label className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-2 block">Telefone</label>
-                          <input 
-                            type="tel" 
-                            value={phone}
-                            onChange={e => setPhone(e.target.value)}
-                            className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-brand-primary transition-all"
-                          />
-                        </div>
-                        <div>
-                          <label className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-2 block">Nome do Responsável</label>
-                          <input 
-                            type="text" 
-                            value={responsibleName}
-                            onChange={e => setResponsibleName(e.target.value)}
-                            className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-brand-primary transition-all"
-                          />
-                        </div>
-                      </div>
-                    </>
-                  )}
-
-                  {(saleStatus === 'Marcou R2+' || saleStatus === 'Perdido') && (
-                    <div className="md:col-span-2 lg:col-span-3">
-                      <label className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-2 block">Resumo da Reunião</label>
-                      <textarea 
-                        value={meetingSummary}
-                        onChange={e => setMeetingSummary(e.target.value)}
-                        rows={3}
-                        className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-brand-primary transition-all resize-none"
-                      />
-                    </div>
-                  )}
-
-                  {saleStatus === 'Marcou R2+' && (
-                    <div>
-                      <label className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-2 block">Próxima Reunião</label>
-                      <input 
-                        type="datetime-local" 
-                        value={nextMeetingDate}
-                        onChange={e => setNextMeetingDate(e.target.value)}
-                        className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-brand-primary transition-all"
-                      />
-                    </div>
-                  )}
-
-                  {saleStatus === 'Perdido' && (
-                    <div className="md:col-span-2 lg:col-span-3">
-                      <label className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-2 block">Motivo de Perda</label>
-                      <textarea 
-                        value={lossReason}
-                        onChange={e => setLossReason(e.target.value)}
-                        rows={3}
-                        className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-brand-primary transition-all resize-none"
-                      />
-                    </div>
-                  )}
-                </motion.div>
-              )}
+            </motion.div>
+          ))}
+          {tasks.length === 0 && (
+            <div className="col-span-full py-20 text-center glass-card border-dashed border-2 border-white/5">
+              <AlertTriangle size={48} className="text-gray-800 mx-auto mb-4" />
+              <p className="text-gray-500 font-medium">Nenhuma atividade registrada ainda.</p>
+              <p className="text-[10px] text-gray-600 uppercase tracking-widest mt-2">O time comercial ainda não enviou relatórios hoje.</p>
             </div>
           )}
         </div>
-      )}
+      </div>
     </div>
   );
 };
@@ -2853,22 +2068,6 @@ const ComercialView = ({ teamMembers, activeSubTab, setActiveSubTab, userSession
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('Dashboard');
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-
-  // Role-based permission helper
-  const canSee = (tab: string): boolean => {
-    const role = (userSession?.role ?? '').toLowerCase();
-    const permissions: Record<string, string[]> = {
-      'admin':     ['Dashboard', 'Clientes', 'Kanban de Operação', 'Equipe', 'Relatórios', 'Aquisição', 'Playbooks', 'Configurações'],
-      'comercial': ['Aquisição', 'Playbooks'],
-      'suporte':   ['Clientes', 'Kanban de Operação', 'Relatórios', 'Playbooks'],
-      'entrega':   ['Clientes', 'Kanban de Operação', 'Relatórios', 'Playbooks'],
-    };
-    return (permissions[role] ?? permissions['admin']).includes(tab);
-  };
-  const [aquisicaoSubTab, setAquisicaoSubTab] = useState<'CRM' | 'Comercial'>('CRM');
-  const [comercialSubTab, setComercialSubTab] = useState<'History' | 'PreVendas' | 'Vendas'>('History');
-  const [openCRMLeadName, setOpenCRMLeadName] = useState('');
   const [clients, setClients] = useState<Client[]>([]);
   const [allTags, setAllTags] = useState<Record<string, Tag>>(INITIAL_TAGS);
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>(INITIAL_TEAM_MEMBERS);
@@ -2931,7 +2130,8 @@ export default function App() {
         if (!userSession) {
           const savedSession = localStorage.getItem('hubm2black_session');
           if (savedSession) {
-            setUserSession(JSON.parse(savedSession));
+            const parsed = JSON.parse(savedSession);
+            setUserSession(parsed);
           }
         }
       } catch (error) {
@@ -2945,18 +2145,8 @@ export default function App() {
   }, [userSession]);
 
   useEffect(() => {
-    if (userSession) {
-      localStorage.setItem('hubm2black_session', JSON.stringify(userSession));
-      const role = (userSession.role ?? '').toLowerCase();
-      if (role === 'comercial') {
-        setActiveTab('Aquisição');
-        setAquisicaoSubTab('CRM');
-      } else if (['suporte', 'entrega'].includes(role)) {
-        setActiveTab('Clientes');
-      }
-    } else {
-      localStorage.removeItem('hubm2black_session');
-    }
+    if (userSession) localStorage.setItem('hubm2black_session', JSON.stringify(userSession));
+    else localStorage.removeItem('hubm2black_session');
   }, [userSession]);
 
   // --- Auto-generate Notifications ---
@@ -3257,7 +2447,79 @@ export default function App() {
     </div>
   );
 
-  const renderDashboard = () => <DashboardView userSession={userSession} />;
+  const renderDashboard = () => (
+    <div className="space-y-8">
+      <div className="flex justify-between items-end">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
+          <p className="text-gray-400 mt-1">Visão geral da operação {agencyConfig.name}.</p>
+        </div>
+        <div className="flex gap-3">
+          <button 
+            onClick={exportPDF}
+            className="px-4 py-2 rounded-lg bg-white/5 border border-white/10 text-sm font-medium hover:bg-white/10 transition-colors flex items-center gap-2"
+          >
+            <Download size={16} /> Exportar PDF
+          </button>
+          <button 
+            onClick={() => setIsRegistrationModalOpen(true)}
+            className="px-4 py-2 rounded-lg bg-brand-primary text-bg-main font-bold text-sm shadow-glow hover:scale-105 transition-all"
+          >
+            Novo Cliente
+          </button>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <MetricCard label="Total de Clientes" value={clients.length} trend="+12%" icon={Users} />
+        <MetricCard label="Em Onboarding" value={clients.filter(c => c.status === 'Onboarding').length} trend="Estável" icon={Clock} />
+        <MetricCard label="Clientes Ativos" value={clients.filter(c => c.isActive).length} trend="+5%" icon={Users} />
+        <MetricCard label="Taxa de Churn" value="2.4%" trend="-0.8%" icon={BarChart3} />
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="lg:col-span-2 glass-card p-8">
+          <h3 className="text-sm font-bold uppercase tracking-widest text-brand-primary mb-8">Crescimento de Receita</h3>
+          <div className="h-72 w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={revenueChartData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
+                <XAxis dataKey="name" stroke="#555" fontSize={10} tickLine={false} axisLine={false} />
+                <YAxis stroke="#555" fontSize={10} tickLine={false} axisLine={false} tickFormatter={(v) => `R$${v/1000}k`} />
+                <Tooltip 
+                  contentStyle={{ backgroundColor: '#0A0A0A', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px' }}
+                  itemStyle={{ color: '#00FF88', fontSize: '12px' }}
+                  formatter={(v: any) => [`R$ ${v.toLocaleString()}`, 'Receita']}
+                />
+                <Line type="monotone" dataKey="receita" stroke="#00FF88" strokeWidth={3} dot={{ fill: '#00FF88', r: 4 }} activeDot={{ r: 6, strokeWidth: 0 }} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        <div className="glass-card p-8">
+          <h3 className="text-sm font-bold uppercase tracking-widest text-brand-primary mb-8">Distribuição por Plano</h3>
+          <div className="space-y-8">
+            {planDistributionData.map(item => (
+              <div key={item.label} className="space-y-3">
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-400 font-bold uppercase tracking-widest text-[10px]">{item.label}</span>
+                  <span className="font-black text-white">{item.count}</span>
+                </div>
+                <div className="h-2 w-full bg-white/5 rounded-full overflow-hidden">
+                  <motion.div 
+                    initial={{ width: 0 }}
+                    animate={{ width: `${clients.length > 0 ? (item.count / clients.length) * 100 : 0}%` }}
+                    className={`h-full ${item.color} shadow-glow`}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 
   const renderKanban = () => (
     <div className="h-full flex flex-col gap-6">
@@ -3432,13 +2694,7 @@ export default function App() {
   return (
     <div className="flex h-screen bg-bg-main overflow-hidden">
       {/* Sidebar */}
-      <motion.aside
-        initial={false}
-        animate={{ width: sidebarCollapsed ? 0 : 256, padding: sidebarCollapsed ? 0 : 24 }}
-        transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
-        className="bg-bg-sidebar border-r border-white/5 flex flex-col z-40 overflow-hidden flex-shrink-0"
-      >
-        <div className="min-w-[208px]">
+      <aside className="w-64 bg-bg-sidebar border-r border-white/5 flex flex-col p-6 z-40">
         <div className="flex items-center gap-3 mb-10 px-2">
           {agencyConfig.logoUrl ? (
             <div className="w-10 h-10 rounded-xl overflow-hidden shadow-glow border border-white/10">
@@ -3461,65 +2717,16 @@ export default function App() {
         </div>
 
         <nav className="flex-1 space-y-2">
-          {canSee('Dashboard') && <SidebarItem icon={LayoutDashboard} label="Dashboard" active={activeTab === 'Dashboard'} onClick={() => setActiveTab('Dashboard')} />}
-          {canSee('Clientes') && <SidebarItem icon={Users} label="Clientes" active={activeTab === 'Clientes'} onClick={() => setActiveTab('Clientes')} />}
-          {canSee('Kanban de Operação') && <SidebarItem icon={KanbanIcon} label="Kanban de Operação" active={activeTab === 'Kanban de Operação'} onClick={() => setActiveTab('Kanban de Operação')} />}
-          {canSee('Equipe') && <SidebarItem icon={Users} label="Equipe" active={activeTab === 'Equipe'} onClick={() => setActiveTab('Equipe')} />}
-          {canSee('Relatórios') && <SidebarItem icon={BarChart3} label="Relatórios" active={activeTab === 'Relatórios'} onClick={() => setActiveTab('Relatórios')} />}
-          {canSee('Playbooks') && <SidebarItem icon={BookOpen} label="Playbooks" active={activeTab === 'Playbooks'} onClick={() => setActiveTab('Playbooks')} />}
-          
-          <div className="space-y-1">
-            {canSee('Aquisição') && <SidebarItem icon={Briefcase} label="Aquisição" active={activeTab === 'Aquisição'} onClick={() => { setActiveTab('Aquisição'); setAquisicaoSubTab('CRM'); }} />}
-            {activeTab === 'Aquisição' && (
-              <motion.div 
-                initial={{ opacity: 0, y: -10 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="ml-9 space-y-1"
-              >
-                <div className="space-y-1">
-                  <button 
-                    onClick={() => setAquisicaoSubTab('CRM')}
-                    className={`w-full text-left px-4 py-2 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all ${aquisicaoSubTab === 'CRM' ? 'text-brand-primary bg-white/5' : 'text-gray-500 hover:text-white'}`}
-                  >
-                    CRM
-                  </button>
-                  <button 
-                    onClick={() => setAquisicaoSubTab('Comercial')}
-                    className={`w-full text-left px-4 py-2 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all ${aquisicaoSubTab === 'Comercial' ? 'text-brand-primary bg-white/5' : 'text-gray-500 hover:text-white'}`}
-                  >
-                    Comercial
-                  </button>
-                  
-                  {aquisicaoSubTab === 'Comercial' && ( // sub-items de Comercial
-                    <div className="ml-4 space-y-1 border-l border-white/5 pl-2">
-                      <button 
-                        onClick={() => setComercialSubTab('PreVendas')}
-                        className={`w-full text-left px-4 py-1.5 rounded-lg text-[9px] font-bold uppercase tracking-widest transition-all ${comercialSubTab === 'PreVendas' ? 'text-brand-primary bg-white/5' : 'text-gray-500 hover:text-white'}`}
-                      >
-                        Pré-vendas
-                      </button>
-                      <button 
-                        onClick={() => setComercialSubTab('Vendas')}
-                        className={`w-full text-left px-4 py-1.5 rounded-lg text-[9px] font-bold uppercase tracking-widest transition-all ${comercialSubTab === 'Vendas' ? 'text-brand-primary bg-white/5' : 'text-gray-500 hover:text-white'}`}
-                      >
-                        Vendas
-                      </button>
-                      <button 
-                        onClick={() => setComercialSubTab('History')}
-                        className={`w-full text-left px-4 py-1.5 rounded-lg text-[9px] font-bold uppercase tracking-widest transition-all ${comercialSubTab === 'History' ? 'text-brand-primary bg-white/5' : 'text-gray-500 hover:text-white'}`}
-                      >
-                        Histórico
-                      </button>
-                    </div>
-                  )}
-                </div>
-              </motion.div>
-            )}
-          </div>
+          <SidebarItem icon={LayoutDashboard} label="Dashboard" active={activeTab === 'Dashboard'} onClick={() => setActiveTab('Dashboard')} />
+          <SidebarItem icon={Users} label="Clientes" active={activeTab === 'Clientes'} onClick={() => setActiveTab('Clientes')} />
+          <SidebarItem icon={KanbanIcon} label="Kanban de Operação" active={activeTab === 'Kanban de Operação'} onClick={() => setActiveTab('Kanban de Operação')} />
+          <SidebarItem icon={Users} label="Equipe" active={activeTab === 'Equipe'} onClick={() => setActiveTab('Equipe')} />
+          <SidebarItem icon={BarChart3} label="Relatórios" active={activeTab === 'Relatórios'} onClick={() => setActiveTab('Relatórios')} />
+          <SidebarItem icon={Briefcase} label="Comercial" active={activeTab === 'Comercial'} onClick={() => setActiveTab('Comercial')} />
         </nav>
 
         <div className="mt-auto pt-6 border-t border-white/5 relative">
-          {canSee('Configurações') && <SidebarItem icon={Settings} label="Configurações" active={activeTab === 'Configurações'} onClick={() => setActiveTab('Configurações')} />}
+          <SidebarItem icon={Settings} label="Configurações" active={activeTab === 'Configurações'} onClick={() => setActiveTab('Configurações')} />
           <div className="mt-6 p-4 rounded-xl bg-white/5 border border-white/5 flex items-center gap-3 relative">
             <div 
               className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold"
@@ -3541,34 +2748,20 @@ export default function App() {
               isOpen={isUserMenuOpen} 
               onClose={() => setIsUserMenuOpen(false)} 
               user={userSession} 
-              onLogout={() => { setUserSession(null); setComercialSubTab('History'); setActiveTab('Dashboard'); }} 
+              onLogout={() => setUserSession(null)} 
             />
           </div>
         </div>
-        </div>
-      </motion.aside>
+      </aside>
 
       {/* Main Content */}
       <main className="flex-1 flex flex-col min-w-0 overflow-hidden relative">
         {/* Navbar */}
         <header className="h-16 border-b border-white/5 px-8 flex items-center justify-between bg-bg-main/50 backdrop-blur-md z-30">
           <div className="flex items-center gap-4">
-            <button
-              onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-              className="p-1.5 rounded-lg text-gray-500 hover:text-brand-primary hover:bg-white/5 transition-all"
-              title={sidebarCollapsed ? 'Mostrar menu' : 'Esconder menu'}
-            >
-              {sidebarCollapsed ? <PanelLeft size={18} /> : <PanelLeftClose size={18} />}
-            </button>
             <span className="text-xs font-bold text-gray-500 uppercase tracking-widest">{agencyConfig.name}</span>
             <ChevronRight size={14} className="text-gray-700" />
             <span className="text-xs font-bold text-white">{activeTab}</span>
-            {activeTab === 'Aquisição' && (
-              <>
-                <ChevronRight size={14} className="text-gray-700" />
-                <span className="text-xs font-bold text-white">{aquisicaoSubTab === 'CRM' ? 'CRM' : aquisicaoSubTab}</span>
-              </>
-            )}
           </div>
 
           <div className="flex items-center gap-6">
@@ -3636,21 +2829,7 @@ export default function App() {
                 />
               )}
               {activeTab === 'Relatórios' && <ReportsView clients={clients} config={agencyConfig} />}
-              {activeTab === 'Playbooks' && <PlaybooksView />}
-              {activeTab === 'Aquisição' && aquisicaoSubTab === 'CRM' && (
-                <div className="glass-card p-6">
-                  <CRMView userSession={userSession} teamMembers={teamMembers} openLeadByName={openCRMLeadName} onLeadOpened={() => setOpenCRMLeadName('')} />
-                </div>
-              )}
-              {activeTab === 'Aquisição' && aquisicaoSubTab === 'Comercial' && (
-                <ComercialView
-                  teamMembers={teamMembers}
-                  activeSubTab={comercialSubTab}
-                  setActiveSubTab={setComercialSubTab}
-                  userSession={userSession}
-                  onOpenInCRM={(name) => { setOpenCRMLeadName(name); setAquisicaoSubTab('CRM'); }}
-                />
-              )}
+              {activeTab === 'Comercial' && <ComercialView teamMembers={teamMembers} />}
             </motion.div>
           </AnimatePresence>
         </div>
