@@ -26,6 +26,12 @@ export type OnboardingItem = {
   completed: boolean;
 };
 
+export type MeetingActionItem = {
+  id: string;
+  text: string;
+  completed: boolean;
+};
+
 export type MonthlyMeeting = {
   id: string;
   number: number;
@@ -34,6 +40,9 @@ export type MonthlyMeeting = {
   completed: boolean;
   completionDate?: string;
   transcriptionUrl?: string;
+  transcriptionText?: string;
+  actionItems?: MeetingActionItem[];
+  meetingSummary?: string;
 };
 
 export type TeamMember = {

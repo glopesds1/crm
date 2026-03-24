@@ -36,7 +36,9 @@ import {
   Download,
   ImageOff,
   PanelLeftClose,
-  PanelLeft
+  PanelLeft,
+  Sparkles,
+  Loader2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -79,7 +81,8 @@ import {
   ClientComment, 
   Offer, 
   OnboardingItem, 
-  MonthlyMeeting, 
+  MonthlyMeeting,
+  MeetingActionItem,
   TeamMember,
   AgencyConfig,
   Notification,
@@ -722,101 +725,452 @@ const OnboardingSection = ({ checklist, onToggle }: { checklist: OnboardingItem[
   );
 };
 
-const MeetingsSection = ({ meetings, onToggle, onUpdateTranscription }: { meetings: MonthlyMeeting[], onToggle: (id: string) => void, onUpdateTranscription: (id: string, url: string) => void }) => {
+const fileToBase64 = (file: File): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result as string;
+      // Remove o prefixo "data:application/pdf;base64,"
+      resolve(result.split(',')[1]);
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+};
+
+const generateActionItemsWithAI = async (pdfBase64: string, mimeType: string): Promise<string[]> => {
+  const GEMINI_KEY = import.meta.env.VITE_GEMINI_API_KEY;
+  if (!GEMINI_KEY) throw new Error('Chave da API Gemini não configurada');
+
+  const prompt = `Você vai ler um PDF de transcrição de uma reunião mensal entre a agência M² Black e um cliente.
+
+Sua tarefa: identificar APENAS as demandas e tarefas que a EQUIPE DA AGÊNCIA precisa executar DEPOIS da reunião.
+
+O QUE INCLUIR (somente se mencionado explicitamente):
+- Entregas que a equipe precisa fazer para o cliente (ex: criar criativos, ajustar campanha, enviar relatório)
+- Alterações técnicas solicitadas (ex: mudar segmentação, atualizar site, trocar copy)
+- Materiais que a equipe precisa produzir ou enviar
+- Prazos e responsáveis quando mencionados
+
+O QUE NÃO INCLUIR:
+- Coisas que já foram resolvidas/feitas durante a própria reunião
+- Ações do CLIENTE (o que o cliente vai fazer)
+- Observações gerais, elogios ou feedback sem demanda
+- Acompanhamentos vagos sem ação concreta
+- NÃO invente tarefas que não foram pedidas
+
+FORMATO DE RESPOSTA — use este JSON exato:
+{
+  "actionItems": ["tarefa 1", "tarefa 2"],
+  "resumo": "Breve resumo do que foi discutido na reunião (2-3 frases)"
+}
+
+Se NÃO houver nenhuma demanda concreta para a equipe, retorne:
+{
+  "actionItems": [],
+  "resumo": "Resumo da reunião. Não há plano de ação — apenas acompanhar XYZ"
+}
+
+Sem markdown, sem crases, sem texto antes ou depois do JSON.`;
+
+  console.log('[Gemini] Enviando PDF:', { mimeType, base64Length: pdfBase64.length });
+
+  const body = {
+    contents: [{
+      parts: [
+        { inlineData: { mimeType: mimeType || 'application/pdf', data: pdfBase64 } },
+        { text: prompt }
+      ]
+    }],
+    generationConfig: { temperature: 0.1 }
+  };
+
+  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_KEY}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+
+  const data = await response.json();
+  console.log('[Gemini] Resposta:', JSON.stringify(data).substring(0, 500));
+
+  if (!response.ok) {
+    throw new Error(data?.error?.message || 'Erro ao chamar a API Gemini');
+  }
+
+  const text = data.candidates?.[0]?.content?.parts?.[0]?.text ?? '{}';
+  console.log('[Gemini] Texto bruto:', text);
+
+  // Tenta parsear como objeto { actionItems, resumo }
+  const objMatch = text.match(/\{[\s\S]*\}/);
+  if (objMatch) {
+    try {
+      const parsed = JSON.parse(objMatch[0]);
+      if (parsed.actionItems && Array.isArray(parsed.actionItems)) {
+        return { items: parsed.actionItems, resumo: parsed.resumo || '' };
+      }
+    } catch { /* fallback abaixo */ }
+  }
+
+  // Fallback: tenta parsear como array simples
+  const arrMatch = text.match(/\[[\s\S]*\]/);
+  if (arrMatch) {
+    return { items: JSON.parse(arrMatch[0]), resumo: '' };
+  }
+
+  throw new Error('IA não retornou um formato válido.');
+};
+
+const MeetingsSection = ({
+  meetings,
+  onToggle,
+  onUpdateTranscription,
+  onUpdateActionItems
+}: {
+  meetings: MonthlyMeeting[],
+  onToggle: (id: string) => void,
+  onUpdateTranscription: (id: string, url: string) => void,
+  onUpdateActionItems: (id: string, items: MeetingActionItem[], summary?: string) => void
+}) => {
   const [editingId, setEditingId] = React.useState<string | null>(null);
   const [tempUrl, setTempUrl] = React.useState('');
+  const [expandedMeeting, setExpandedMeeting] = React.useState<string | null>(null);
+  const [aiLoading, setAiLoading] = React.useState<string | null>(null);
+  const [newItemText, setNewItemText] = React.useState('');
+  const [addingItemTo, setAddingItemTo] = React.useState<string | null>(null);
+  const [uploadedFiles, setUploadedFiles] = React.useState<Record<string, { name: string; base64: string; mimeType: string }>>({});
+  const [dragOver, setDragOver] = React.useState<string | null>(null);
+
+  const handleFileUpload = async (meetingId: string, file: File) => {
+    const allowed = ['application/pdf', 'text/plain', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
+    if (!allowed.includes(file.type) && !file.name.endsWith('.pdf') && !file.name.endsWith('.txt') && !file.name.endsWith('.docx')) {
+      alert('Formato não suportado. Use PDF, TXT ou DOCX.');
+      return;
+    }
+    const base64 = await fileToBase64(file);
+    const mimeType = file.type || 'application/pdf';
+    setUploadedFiles(prev => ({ ...prev, [meetingId]: { name: file.name, base64, mimeType } }));
+  };
+
+  const handleGenerateAI = async (meeting: MonthlyMeeting) => {
+    const file = uploadedFiles[meeting.id];
+    if (!file) {
+      alert('Envie o arquivo da transcrição primeiro.');
+      return;
+    }
+    setAiLoading(meeting.id);
+    try {
+      const result = await generateActionItemsWithAI(file.base64, file.mimeType);
+      const actionItems: MeetingActionItem[] = result.items.map((text: string, i: number) => ({
+        id: `ai-${Date.now()}-${i}`,
+        text,
+        completed: false
+      }));
+      // Preserva items existentes e adiciona os novos
+      const existing = meeting.actionItems ?? [];
+      onUpdateActionItems(meeting.id, [...existing, ...actionItems], result.resumo);
+      setExpandedMeeting(meeting.id);
+    } catch (err) {
+      alert('Erro ao gerar ações: ' + (err instanceof Error ? err.message : 'Erro desconhecido'));
+    } finally {
+      setAiLoading(null);
+    }
+  };
+
+  const handleToggleItem = (meetingId: string, itemId: string, items: MeetingActionItem[]) => {
+    const updated = items.map(item =>
+      item.id === itemId ? { ...item, completed: !item.completed } : item
+    );
+    onUpdateActionItems(meetingId, updated);
+  };
+
+  const handleDeleteItem = (meetingId: string, itemId: string, items: MeetingActionItem[]) => {
+    onUpdateActionItems(meetingId, items.filter(item => item.id !== itemId));
+  };
+
+  const handleAddItem = (meetingId: string, items: MeetingActionItem[]) => {
+    if (!newItemText.trim()) return;
+    const newItem: MeetingActionItem = {
+      id: `manual-${Date.now()}`,
+      text: newItemText.trim(),
+      completed: false
+    };
+    onUpdateActionItems(meetingId, [...items, newItem]);
+    setNewItemText('');
+    setAddingItemTo(null);
+  };
 
   return (
     <section>
       <h3 className="text-sm font-bold uppercase tracking-widest text-brand-primary mb-4">Reuniões Mensais</h3>
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-        {meetings.map(meeting => (
-          <div
-            key={meeting.id}
-            className={`p-4 rounded-xl border flex flex-col gap-3 transition-all ${
-              meeting.completed
-                ? 'bg-brand-primary/5 border-brand-primary/20'
-                : 'bg-white/5 border-white/5 hover:border-white/20'
-            }`}
-          >
-            <div className="flex justify-between items-start cursor-pointer" onClick={() => onToggle(meeting.id)}>
-              <div>
-                <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1">Reunião {meeting.number.toString().padStart(2, '0')}</p>
-                <p className={`text-sm font-bold ${meeting.completed ? 'text-brand-primary' : 'text-white'}`}>{meeting.month} {meeting.year}</p>
+        {meetings.map(meeting => {
+          const actionItems = meeting.actionItems ?? [];
+          const completedCount = actionItems.filter(i => i.completed).length;
+          const isExpanded = expandedMeeting === meeting.id;
+
+          return (
+            <div
+              key={meeting.id}
+              className={`p-4 rounded-xl border flex flex-col gap-3 transition-all ${
+                meeting.completed
+                  ? 'bg-brand-primary/5 border-brand-primary/20'
+                  : 'bg-white/5 border-white/5 hover:border-white/20'
+              }`}
+            >
+              <div className="flex justify-between items-start cursor-pointer" onClick={() => onToggle(meeting.id)}>
+                <div>
+                  <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1">Reunião {meeting.number.toString().padStart(2, '0')}</p>
+                  <p className={`text-sm font-bold ${meeting.completed ? 'text-brand-primary' : 'text-white'}`}>{meeting.month} {meeting.year}</p>
+                </div>
+                <div className={`w-5 h-5 rounded-lg border flex items-center justify-center transition-all ${
+                  meeting.completed ? 'bg-brand-primary border-brand-primary text-bg-main' : 'border-white/20'
+                }`}>
+                  {meeting.completed && <Check size={14} />}
+                </div>
               </div>
-              <div className={`w-5 h-5 rounded-lg border flex items-center justify-center transition-all ${
-                meeting.completed ? 'bg-brand-primary border-brand-primary text-bg-main' : 'border-white/20'
-              }`}>
-                {meeting.completed && <Check size={14} />}
-              </div>
+
+              {meeting.completed && (
+                <div className="pt-2 border-t border-brand-primary/10 space-y-3" onClick={(e) => e.stopPropagation()}>
+                  {meeting.completionDate && (
+                    <p className="text-[10px] text-brand-primary/60 font-medium">Realizada em: {formatDate(meeting.completionDate)}</p>
+                  )}
+
+                  {/* Transcrição URL */}
+                  {editingId === meeting.id ? (
+                    <div className="flex gap-2">
+                      <input
+                        type="url"
+                        value={tempUrl}
+                        onChange={(e) => setTempUrl(e.target.value)}
+                        placeholder="Cole o link da transcrição..."
+                        className="flex-1 bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-[11px] text-white placeholder-gray-500 focus:outline-none focus:border-brand-primary/50"
+                        autoFocus
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') { onUpdateTranscription(meeting.id, tempUrl); setEditingId(null); setTempUrl(''); }
+                          if (e.key === 'Escape') { setEditingId(null); setTempUrl(''); }
+                        }}
+                      />
+                      <button
+                        onClick={() => { onUpdateTranscription(meeting.id, tempUrl); setEditingId(null); setTempUrl(''); }}
+                        className="p-1.5 rounded-lg bg-brand-primary/20 text-brand-primary hover:bg-brand-primary/30 transition-colors"
+                      >
+                        <Check size={12} />
+                      </button>
+                    </div>
+                  ) : meeting.transcriptionUrl ? (
+                    <div className="flex items-center gap-2">
+                      <a href={meeting.transcriptionUrl} target="_blank" rel="noopener noreferrer"
+                        className="flex items-center gap-1.5 text-[10px] text-brand-primary/80 hover:text-brand-primary transition-colors truncate">
+                        <FileText size={12} /><span className="truncate">Transcrição</span><ExternalLink size={10} />
+                      </a>
+                      <button onClick={() => { setEditingId(meeting.id); setTempUrl(meeting.transcriptionUrl || ''); }}
+                        className="p-1 rounded text-gray-500 hover:text-white transition-colors">
+                        <Edit2 size={10} />
+                      </button>
+                    </div>
+                  ) : (
+                    <button onClick={() => { setEditingId(meeting.id); setTempUrl(''); }}
+                      className="flex items-center gap-1.5 text-[10px] text-gray-500 hover:text-brand-primary transition-colors">
+                      <Plus size={12} /><span>Adicionar transcrição</span>
+                    </button>
+                  )}
+
+                  {/* Upload PDF da transcrição */}
+                  {meeting.completed && (
+                    <div className="space-y-2">
+                      {uploadedFiles[meeting.id] ? (
+                        <div className="flex items-center justify-between p-2 rounded-lg bg-white/5 border border-white/10">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <FileText size={14} className="text-brand-primary flex-shrink-0" />
+                            <span className="text-[11px] text-white truncate">{uploadedFiles[meeting.id].name}</span>
+                          </div>
+                          <button
+                            onClick={() => setUploadedFiles(prev => { const n = { ...prev }; delete n[meeting.id]; return n; })}
+                            className="p-1 text-gray-500 hover:text-red-400 transition-colors flex-shrink-0"
+                          >
+                            <X size={12} />
+                          </button>
+                        </div>
+                      ) : (
+                        <label
+                          onDragOver={(e) => { e.preventDefault(); setDragOver(meeting.id); }}
+                          onDragLeave={() => setDragOver(null)}
+                          onDrop={(e) => {
+                            e.preventDefault();
+                            setDragOver(null);
+                            const file = e.dataTransfer.files[0];
+                            if (file) handleFileUpload(meeting.id, file);
+                          }}
+                          className={`w-full flex flex-col items-center justify-center gap-1.5 py-3 px-3 rounded-lg border border-dashed cursor-pointer transition-all text-[11px] ${
+                            dragOver === meeting.id
+                              ? 'border-brand-primary bg-brand-primary/10 text-brand-primary'
+                              : 'border-white/15 bg-white/5 text-gray-400 hover:text-white hover:border-white/30'
+                          }`}
+                        >
+                          <Download size={16} />
+                          <span>Arraste o PDF ou clique para enviar</span>
+                          <span className="text-[9px] text-gray-600">PDF, TXT ou DOCX</span>
+                          <input
+                            type="file"
+                            accept=".pdf,.txt,.docx"
+                            className="hidden"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (file) handleFileUpload(meeting.id, file);
+                              e.target.value = '';
+                            }}
+                          />
+                        </label>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Botão Gerar Ações com IA */}
+                  {uploadedFiles[meeting.id] && (
+                    <button
+                      onClick={() => handleGenerateAI(meeting)}
+                      disabled={aiLoading === meeting.id}
+                      className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-lg bg-purple-500/10 border border-purple-500/20 text-purple-400 hover:bg-purple-500/20 hover:text-purple-300 transition-all text-[11px] font-semibold disabled:opacity-50"
+                    >
+                      {aiLoading === meeting.id ? (
+                        <><Loader2 size={14} className="animate-spin" /> Analisando transcrição...</>
+                      ) : (
+                        <><Sparkles size={14} /> Gerar ações com IA</>
+                      )}
+                    </button>
+                  )}
+
+                  {/* Resumo da reunião */}
+                  {meeting.meetingSummary && (
+                    <div className="p-2.5 rounded-lg bg-blue-500/5 border border-blue-500/10">
+                      <p className="text-[10px] font-bold uppercase tracking-widest text-blue-400/70 mb-1">Resumo da Reunião</p>
+                      <p className="text-[11px] text-gray-300 leading-relaxed">{meeting.meetingSummary}</p>
+                    </div>
+                  )}
+
+                  {/* Action Items Checklist */}
+                  {actionItems.length > 0 && (
+                    <div className="space-y-2">
+                      <div
+                        className="flex items-center justify-between cursor-pointer"
+                        onClick={() => setExpandedMeeting(isExpanded ? null : meeting.id)}
+                      >
+                        <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400">
+                          Ações ({completedCount}/{actionItems.length})
+                        </p>
+                        <div className="flex items-center gap-2">
+                          <div className="w-16 h-1.5 bg-white/10 rounded-full overflow-hidden">
+                            <div
+                              className="h-full bg-brand-primary rounded-full transition-all"
+                              style={{ width: `${actionItems.length > 0 ? (completedCount / actionItems.length) * 100 : 0}%` }}
+                            />
+                          </div>
+                          {isExpanded ? <ChevronUp size={12} className="text-gray-500" /> : <ChevronDown size={12} className="text-gray-500" />}
+                        </div>
+                      </div>
+
+                      {isExpanded && (
+                        <motion.div
+                          initial={{ opacity: 0, height: 0 }}
+                          animate={{ opacity: 1, height: 'auto' }}
+                          exit={{ opacity: 0, height: 0 }}
+                          className="space-y-1.5 max-h-48 overflow-y-auto"
+                        >
+                          {actionItems.map(item => (
+                            <div key={item.id} className="flex items-start gap-2 group">
+                              <button
+                                onClick={() => handleToggleItem(meeting.id, item.id, actionItems)}
+                                className={`mt-0.5 w-4 h-4 rounded border flex-shrink-0 flex items-center justify-center transition-all ${
+                                  item.completed
+                                    ? 'bg-brand-primary border-brand-primary text-bg-main'
+                                    : 'border-white/20 hover:border-brand-primary/50'
+                                }`}
+                              >
+                                {item.completed && <Check size={10} />}
+                              </button>
+                              <span className={`text-[11px] flex-1 leading-tight ${item.completed ? 'line-through text-gray-600' : 'text-gray-300'}`}>
+                                {item.text}
+                              </span>
+                              <button
+                                onClick={() => handleDeleteItem(meeting.id, item.id, actionItems)}
+                                className="opacity-0 group-hover:opacity-100 p-0.5 text-gray-600 hover:text-red-400 transition-all"
+                              >
+                                <X size={10} />
+                              </button>
+                            </div>
+                          ))}
+
+                          {/* Adicionar item manual */}
+                          {addingItemTo === meeting.id ? (
+                            <div className="flex gap-1.5 mt-1">
+                              <input
+                                type="text"
+                                value={newItemText}
+                                onChange={(e) => setNewItemText(e.target.value)}
+                                placeholder="Descreva a ação..."
+                                className="flex-1 bg-white/5 border border-white/10 rounded-lg px-2 py-1 text-[11px] text-white placeholder-gray-500 focus:outline-none focus:border-brand-primary/50"
+                                autoFocus
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') handleAddItem(meeting.id, actionItems);
+                                  if (e.key === 'Escape') { setAddingItemTo(null); setNewItemText(''); }
+                                }}
+                              />
+                              <button onClick={() => handleAddItem(meeting.id, actionItems)}
+                                className="p-1 rounded-lg bg-brand-primary/20 text-brand-primary hover:bg-brand-primary/30 transition-colors">
+                                <Check size={12} />
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => { setAddingItemTo(meeting.id); setNewItemText(''); }}
+                              className="flex items-center gap-1 text-[10px] text-gray-500 hover:text-brand-primary transition-colors mt-1"
+                            >
+                              <Plus size={10} /> Adicionar ação manualmente
+                            </button>
+                          )}
+                        </motion.div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Se não tem items ainda mas tem transcrição, mostra botão de adicionar manual */}
+                  {actionItems.length === 0 && meeting.transcriptionUrl && (
+                    <div>
+                      {addingItemTo === meeting.id ? (
+                        <div className="flex gap-1.5">
+                          <input
+                            type="text"
+                            value={newItemText}
+                            onChange={(e) => setNewItemText(e.target.value)}
+                            placeholder="Descreva a ação..."
+                            className="flex-1 bg-white/5 border border-white/10 rounded-lg px-2 py-1 text-[11px] text-white placeholder-gray-500 focus:outline-none focus:border-brand-primary/50"
+                            autoFocus
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') handleAddItem(meeting.id, actionItems);
+                              if (e.key === 'Escape') { setAddingItemTo(null); setNewItemText(''); }
+                            }}
+                          />
+                          <button onClick={() => handleAddItem(meeting.id, actionItems)}
+                            className="p-1 rounded-lg bg-brand-primary/20 text-brand-primary hover:bg-brand-primary/30 transition-colors">
+                            <Check size={12} />
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => { setAddingItemTo(meeting.id); setNewItemText(''); }}
+                          className="flex items-center gap-1 text-[10px] text-gray-500 hover:text-brand-primary transition-colors"
+                        >
+                          <Plus size={10} /> Adicionar ação manualmente
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
-
-            {meeting.completed && (
-              <div className="pt-2 border-t border-brand-primary/10 space-y-2">
-                {meeting.completionDate && (
-                  <p className="text-[10px] text-brand-primary/60 font-medium">Realizada em: {formatDate(meeting.completionDate)}</p>
-                )}
-
-                {editingId === meeting.id ? (
-                  <div className="flex gap-2" onClick={(e) => e.stopPropagation()}>
-                    <input
-                      type="url"
-                      value={tempUrl}
-                      onChange={(e) => setTempUrl(e.target.value)}
-                      placeholder="Cole o link da transcrição..."
-                      className="flex-1 bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-[11px] text-white placeholder-gray-500 focus:outline-none focus:border-brand-primary/50"
-                      autoFocus
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          onUpdateTranscription(meeting.id, tempUrl);
-                          setEditingId(null);
-                          setTempUrl('');
-                        }
-                        if (e.key === 'Escape') {
-                          setEditingId(null);
-                          setTempUrl('');
-                        }
-                      }}
-                    />
-                    <button
-                      onClick={() => { onUpdateTranscription(meeting.id, tempUrl); setEditingId(null); setTempUrl(''); }}
-                      className="p-1.5 rounded-lg bg-brand-primary/20 text-brand-primary hover:bg-brand-primary/30 transition-colors"
-                    >
-                      <Check size={12} />
-                    </button>
-                  </div>
-                ) : meeting.transcriptionUrl ? (
-                  <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-                    <a
-                      href={meeting.transcriptionUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex items-center gap-1.5 text-[10px] text-brand-primary/80 hover:text-brand-primary transition-colors truncate"
-                    >
-                      <FileText size={12} />
-                      <span className="truncate">Transcrição</span>
-                      <ExternalLink size={10} />
-                    </a>
-                    <button
-                      onClick={() => { setEditingId(meeting.id); setTempUrl(meeting.transcriptionUrl || ''); }}
-                      className="p-1 rounded text-gray-500 hover:text-white transition-colors"
-                    >
-                      <Edit2 size={10} />
-                    </button>
-                  </div>
-                ) : (
-                  <button
-                    onClick={(e) => { e.stopPropagation(); setEditingId(meeting.id); setTempUrl(''); }}
-                    className="flex items-center gap-1.5 text-[10px] text-gray-500 hover:text-brand-primary transition-colors"
-                  >
-                    <Plus size={12} />
-                    <span>Adicionar transcrição</span>
-                  </button>
-                )}
-              </div>
-            )}
-          </div>
-        ))}
+          );
+        })}
       </div>
     </section>
   );
@@ -1848,6 +2202,12 @@ const ClientModal = ({ client, allTags, teamMembers, onClose, onUpdateClient, on
               onUpdateTranscription={(id, url) => {
                 const newList = client.monthlyMeetings.map(meeting =>
                   meeting.id === id ? { ...meeting, transcriptionUrl: url } : meeting
+                );
+                onUpdateClient({ ...client, monthlyMeetings: newList });
+              }}
+              onUpdateActionItems={(id, items, summary) => {
+                const newList = client.monthlyMeetings.map(meeting =>
+                  meeting.id === id ? { ...meeting, actionItems: items, ...(summary !== undefined ? { meetingSummary: summary } : {}) } : meeting
                 );
                 onUpdateClient({ ...client, monthlyMeetings: newList });
               }}
