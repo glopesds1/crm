@@ -16,9 +16,8 @@
       "Bash(git commit:*)",
       "Bash(git push:*)",
       "Bash(python3 -c \"import sys,json; print\\(json.dumps\\(list\\(json.load\\(sys.stdin\\)[0].keys\\(\\)\\), indent=2\\)\\)\")",
-      "Bash(git checkout:*)",
-      "Bash(git rebase:*)",
-      "Bash(GIT_EDITOR=true git rebase --continue)"
+      "Bash(git pull:*)",
+      "Bash(git stash:*)"
     ]
   }
 }
