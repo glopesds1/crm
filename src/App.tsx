@@ -1841,7 +1841,8 @@ const TeamMemberModal = ({
     confirmPassword: '',
     status: 'Ativo' as 'Ativo' | 'Inativo',
     photoUrl: '',
-    phone: ''
+    phone: '',
+    webhookKentro: ''
   });
   const [showPassword, setShowPassword] = useState(false);
 
@@ -1865,7 +1866,8 @@ const TeamMemberModal = ({
         confirmPassword: '',
         status: member.status,
         photoUrl: member.photoUrl || '',
-        phone: member.phone || ''
+        phone: member.phone || '',
+        webhookKentro: member.webhookKentro || ''
       });
     } else {
       setFormData({
@@ -1876,7 +1878,8 @@ const TeamMemberModal = ({
         confirmPassword: '',
         status: 'Ativo',
         photoUrl: '',
-        phone: ''
+        phone: '',
+        webhookKentro: ''
       });
     }
   }, [member, isOpen]);
@@ -1894,7 +1897,8 @@ const TeamMemberModal = ({
       id: member?.id || `tm-${Date.now()}`,
       color: member?.color || COLOR_PALETTE[Math.floor(Math.random() * COLOR_PALETTE.length)],
       photoUrl: formData.photoUrl,
-      phone: formData.phone
+      phone: formData.phone,
+      webhookKentro: formData.webhookKentro
     });
     onClose();
   };
@@ -1980,9 +1984,20 @@ const TeamMemberModal = ({
           </div>
 
           <div>
+            <label className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-2 block">Webhook Kentro</label>
+            <input
+              type="url"
+              value={formData.webhookKentro}
+              onChange={e => setFormData({ ...formData, webhookKentro: e.target.value })}
+              className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-brand-primary transition-all"
+              placeholder="https://m2black.atenderbem.com/webhook/..."
+            />
+          </div>
+
+          <div>
             <label className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-2 block">Cargo / Função</label>
-            <input 
-              type="text" 
+            <input
+              type="text"
               required
               value={formData.role}
               onChange={e => setFormData({ ...formData, role: e.target.value })}
@@ -4151,6 +4166,23 @@ export default function App() {
               try {
                 const saved = await createDemand(demand);
                 setDemands(prev => [saved, ...prev]);
+                // Dispara webhook Kentro para o colaborador
+                const assignedMember = teamMembers.find(m => m.name === demand.assignedName);
+                if (assignedMember?.webhookKentro) {
+                  fetch(assignedMember.webhookKentro, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      telefone: assignedMember.phone || '',
+                      nome_colaborador: demand.assignedName,
+                      texto_demanda: demand.text,
+                      cliente: demand.clientName,
+                      criado_por: demand.commentAuthor,
+                      prioridade: demand.priority === 'alta' ? 'Alta' : demand.priority === 'baixa' ? 'Baixa' : 'Média',
+                      data: new Date().toLocaleString('pt-BR'),
+                    }),
+                  }).catch(err => console.error('Erro ao enviar webhook Kentro:', err));
+                }
               } catch (err) { console.error('Erro ao criar demanda:', err); }
             }}
           />

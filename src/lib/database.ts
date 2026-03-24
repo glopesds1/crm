@@ -82,6 +82,7 @@ function memberToDb(m: TeamMember): Record<string, unknown> {
     color: m.color,
     photo_url: m.photoUrl ?? '',
     phone: m.phone ?? '',
+    webhook_kentro: m.webhookKentro ?? '',
   };
   if (m.password) row.password = m.password;
   return row;
@@ -98,6 +99,7 @@ function dbToMember(row: Record<string, unknown>): TeamMember {
     color: (row.color as string) ?? '#00FF88',
     photoUrl: (row.photo_url as string) || '',
     phone: (row.phone as string) || '',
+    webhookKentro: (row.webhook_kentro as string) || '',
   };
 }
 

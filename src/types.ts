@@ -55,6 +55,7 @@ export type TeamMember = {
   color: string;
   photoUrl?: string;
   phone?: string;
+  webhookKentro?: string;
 };
 
 export type Client = {
