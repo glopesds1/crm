@@ -11,6 +11,21 @@ import {
 import type { TeamMember } from './types';
 import { DEFAULT_ONBOARDING_ITEMS } from './constants';
 
+// ── Helpers ───────────────────────────────────────────────────
+// datetime-local retorna "2026-03-24T18:00" sem timezone.
+// Ao criar new Date() o browser interpreta como local, mas ao enviar
+// a string crua pro Supabase (timestamptz) ele interpreta como UTC.
+// Esta função adiciona o offset local para preservar o horário correto.
+function localDatetimeToISO(dt: string): string {
+  if (!dt) return dt;
+  const d = new Date(dt);
+  const offset = -d.getTimezoneOffset();
+  const sign = offset >= 0 ? '+' : '-';
+  const hh = String(Math.floor(Math.abs(offset) / 60)).padStart(2, '0');
+  const mm = String(Math.abs(offset) % 60).padStart(2, '0');
+  return `${dt}:00${sign}${hh}:${mm}`;
+}
+
 // ── Types ─────────────────────────────────────────────────────
 interface CRMLead {
   id: string;
@@ -289,7 +304,7 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
           const { data: newTask } = await supabase.from('crm_tarefas').insert({
             lead_id: leadId,
             titulo: `Reunião - ${leadName}`,
-            data_agendada: dataAgendamento,
+            data_agendada: localDatetimeToISO(dataAgendamento),
             responsavel: userSession?.name ?? '',
             concluida: false,
             created_at: now,
@@ -303,7 +318,7 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
           const leadUpd: Partial<CRMLead> = {
             etapa: 'rm_marcada',
             etapa_desde: now,
-            proxima_reuniao: dataAgendamento,
+            proxima_reuniao: localDatetimeToISO(dataAgendamento),
             updated_at: now,
           };
           await supabase.from('crm_leads').update(leadUpd).eq('id', leadId);
@@ -409,7 +424,7 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
           const { data: r2Task } = await supabase.from('crm_tarefas').insert({
             lead_id: leadId,
             titulo: `R2+ - ${leadName}`,
-            data_agendada: proximaReuniao,
+            data_agendada: localDatetimeToISO(proximaReuniao),
             responsavel: userSession?.name ?? '',
             concluida: false,
             created_at: now,
@@ -435,7 +450,7 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
         sale_status: tipo === 'reuniao' ? resultado || null : null,
         contract_value: tipo === 'reuniao' && valorContrato ? parseFloat(valorContrato) : null,
         cash_collect: tipo === 'reuniao' && valorCc ? parseFloat(valorCc) : null,
-        next_meeting_date: tipo === 'reuniao' && proximaReuniao ? proximaReuniao : (tipo === 'ligacao' && agendou && dataAgendamento ? dataAgendamento : null),
+        next_meeting_date: tipo === 'reuniao' && proximaReuniao ? localDatetimeToISO(proximaReuniao) : (tipo === 'ligacao' && agendou && dataAgendamento ? localDatetimeToISO(dataAgendamento) : null),
         loss_reason: tipo === 'reuniao' && motivoPerda ? motivoPerda : (tipo === 'ligacao' && statusChamada === 'Não atendeu' && motivoNaoAtendeu ? motivoNaoAtendeu : null),
         company_name: tipo === 'reuniao' && razaoSocial ? razaoSocial : null,
         responsible_name: tipo === 'reuniao' && nomeResponsavel ? nomeResponsavel : null,
@@ -457,7 +472,7 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
       const { data: manualTask } = await supabase.from('crm_tarefas').insert({
         lead_id: leadId,
         titulo: tituloTarefa,
-        data_agendada: dataAgendada || null,
+        data_agendada: dataAgendada ? localDatetimeToISO(dataAgendada) : null,
         responsavel: userSession?.name ?? '',
         concluida: false,
         created_at: now,
@@ -854,7 +869,7 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
       const { data } = await supabase.from('crm_tarefas').insert({
         lead_id: lead.id,
         titulo: agTitulo.trim(),
-        data_agendada: agData,
+        data_agendada: localDatetimeToISO(agData),
         responsavel: agResponsavel || (userSession?.name ?? ''),
         concluida: false,
         created_at: now,
@@ -863,8 +878,8 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
       // Update proxima_reuniao if this task is sooner
       const agDate = new Date(agData);
       if (agDate > new Date() && (!lead.proxima_reuniao || agDate < new Date(lead.proxima_reuniao))) {
-        await supabase.from('crm_leads').update({ proxima_reuniao: agData }).eq('id', lead.id);
-        onSave({ proxima_reuniao: agData });
+        await supabase.from('crm_leads').update({ proxima_reuniao: localDatetimeToISO(agData) }).eq('id', lead.id);
+        onSave({ proxima_reuniao: localDatetimeToISO(agData) });
       }
       setShowAgendarTarefa(false);
       setAgTitulo(''); setAgData(''); setAgResponsavel('');
@@ -1005,7 +1020,7 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
         sale_status: rrResultado || null,
         contract_value: rrValorContrato ? parseFloat(rrValorContrato) : null,
         cash_collect: rrValorCc ? parseFloat(rrValorCc) : null,
-        next_meeting_date: rrProximaReuniao || null, loss_reason: rrMotivoPerda || null,
+        next_meeting_date: rrProximaReuniao ? localDatetimeToISO(rrProximaReuniao) : null, loss_reason: rrMotivoPerda || null,
         image_url: uploadedUrl || '', completion_time: format(new Date(), 'dd/MM/yyyy HH:mm'),
         created_at: now, answered: null, touchpoint: null, scheduled: false,
         company_name: null, responsible_name: null,
@@ -1022,7 +1037,7 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
       try {
         const { data: rrTask } = await supabase.from('crm_tarefas').insert({
           lead_id: lead.id, titulo: `R2+ - ${lead.nome}`,
-          data_agendada: rrProximaReuniao, responsavel: userSession?.name ?? '',
+          data_agendada: localDatetimeToISO(rrProximaReuniao), responsavel: userSession?.name ?? '',
           concluida: false, created_at: now,
         }).select().single();
         if (rrTask) onTarefaCreated?.(rrTask);
@@ -1674,8 +1689,8 @@ function playAlarmSound() {
 }
 
 // ── Task Alarm Popup ──────────────────────────────────────────
-function TaskAlarmPopup({ tarefa, lead, onDismiss, onOpenLead }: {
-  tarefa: CRMTarefa; lead?: CRMLead; onDismiss: () => void; onOpenLead?: () => void;
+function TaskAlarmPopup({ tarefa, lead, onDismiss, onOpenLead, onComplete }: {
+  tarefa: CRMTarefa; lead?: CRMLead; onDismiss: () => void; onOpenLead?: () => void; onComplete: () => void;
 }) {
   const fmtDate = (d: string) => { try { return format(new Date(d), 'dd/MM/yyyy HH:mm'); } catch { return d; } };
 
@@ -1746,15 +1761,20 @@ function TaskAlarmPopup({ tarefa, lead, onDismiss, onOpenLead }: {
         <div className="flex gap-2 pt-2">
           {onOpenLead && lead && (
             <button onClick={() => { onOpenLead(); onDismiss(); }}
-              className="flex-1 py-2.5 rounded-xl bg-brand-primary/10 border border-brand-primary/30 text-xs font-bold text-brand-primary hover:bg-brand-primary/20 transition-colors flex items-center justify-center gap-2"
+              className="flex-1 py-2.5 rounded-xl bg-brand-primary/10 border border-brand-primary/30 text-xs font-bold text-brand-primary hover:bg-brand-primary/20 transition-colors flex items-center justify-center gap-2 cursor-pointer"
             >
               <ChevronRight size={14} /> Abrir Lead
             </button>
           )}
-          <button onClick={onDismiss}
-            className="flex-1 py-2.5 rounded-xl bg-red-500/10 border border-red-500/30 text-xs font-bold text-red-400 hover:text-white hover:bg-red-500/20 transition-colors cursor-pointer"
+          <button onClick={onComplete}
+            className="flex-1 py-2.5 rounded-xl bg-green-500/10 border border-green-500/30 text-xs font-bold text-green-400 hover:text-white hover:bg-green-500/20 transition-colors flex items-center justify-center gap-2 cursor-pointer"
           >
-            Dispensar
+            <CheckCircle2 size={14} /> Concluir
+          </button>
+          <button onClick={onDismiss}
+            className="py-2.5 px-4 rounded-xl bg-white/5 border border-white/10 text-xs font-bold text-gray-400 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
+          >
+            Depois
           </button>
         </div>
       </div>
@@ -1814,6 +1834,12 @@ export default function CRMView({ userSession, teamMembers, openLeadByName, onLe
 
   const dismissAlarm = (tarefaId: string) => {
     dismissedRef.current.add(tarefaId);
+    setAlarmTarefas(prev => prev.filter(t => t.id !== tarefaId));
+  };
+
+  const completeAlarm = async (tarefaId: string) => {
+    await supabase.from('crm_tarefas').update({ concluida: true }).eq('id', tarefaId);
+    setTarefas(prev => prev.map(t => t.id === tarefaId ? { ...t, concluida: true } : t));
     setAlarmTarefas(prev => prev.filter(t => t.id !== tarefaId));
   };
 
@@ -2080,6 +2106,7 @@ export default function CRMView({ userSession, teamMembers, openLeadByName, onLe
                 lead={lead}
                 onDismiss={() => dismissAlarm(tarefa.id)}
                 onOpenLead={lead ? () => setSelectedLead(lead) : undefined}
+                onComplete={() => completeAlarm(tarefa.id)}
               />
             </div>
           );
