@@ -38,7 +38,9 @@ import {
   PanelLeftClose,
   PanelLeft,
   Sparkles,
-  Loader2
+  Loader2,
+  ClipboardList,
+  AtSign
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -83,6 +85,7 @@ import {
   OnboardingItem, 
   MonthlyMeeting,
   MeetingActionItem,
+  Demand,
   TeamMember,
   AgencyConfig,
   Notification,
@@ -95,7 +98,8 @@ import {
   getTeamMembers, createTeamMember, updateTeamMember, deleteTeamMember,
   getAgencyConfig, updateAgencyConfig,
   getTags, saveTag, deleteTag,
-  getComercialTasks, deleteComercialTask
+  getComercialTasks, createComercialTask, deleteComercialTask,
+  getDemands, createDemand, updateDemand
 } from './lib/database';
 import { supabase } from './lib/supabase';
 
@@ -136,18 +140,19 @@ const generateMeetings = (entryDate: string, duration: number): MonthlyMeeting[]
 
 // --- Components ---
 
-const SidebarItem = ({ icon: Icon, label, active, onClick }: { icon: any, label: string, active?: boolean, onClick: () => void }) => (
-  <button 
+const SidebarItem = ({ icon: Icon, label, active, onClick, badge }: { icon: any, label: string, active?: boolean, onClick: () => void, badge?: number }) => (
+  <button
     onClick={onClick}
     className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all duration-200 group ${
-      active 
-        ? 'bg-brand-primary/10 text-brand-primary' 
+      active
+        ? 'bg-brand-primary/10 text-brand-primary'
         : 'text-gray-400 hover:bg-white/5 hover:text-white'
     }`}
   >
     <Icon size={20} className={active ? 'text-brand-primary' : 'group-hover:text-white'} />
     <span className="font-medium text-sm">{label}</span>
-    {active && <motion.div layoutId="active-pill" className="ml-auto w-1.5 h-1.5 rounded-full bg-brand-primary" />}
+    {badge ? <span className="ml-auto text-[10px] font-bold bg-red-500/20 text-red-400 px-1.5 py-0.5 rounded-full">{badge}</span> : null}
+    {active && !badge && <motion.div layoutId="active-pill" className="ml-auto w-1.5 h-1.5 rounded-full bg-brand-primary" />}
   </button>
 );
 
@@ -2029,26 +2034,79 @@ const TeamMemberModal = ({
   );
 };
 
-const ClientModal = ({ client, allTags, teamMembers, onClose, onUpdateClient, onSaveTag, onDeleteTag }: { 
-  client: Client, 
+const ClientModal = ({ client, allTags, teamMembers, onClose, onUpdateClient, onSaveTag, onDeleteTag, onCreateDemand, userSession }: {
+  client: Client,
   allTags: Record<string, Tag>,
   teamMembers: TeamMember[],
   onClose: () => void,
   onUpdateClient: (updated: Client) => void,
   onSaveTag: (tag: Tag) => void,
-  onDeleteTag: (id: string) => void
+  onDeleteTag: (id: string) => void,
+  onCreateDemand: (demand: Demand) => void,
+  userSession: UserSession
 }) => {
   const [newComment, setNewComment] = useState('');
+  const [showMentionDropdown, setShowMentionDropdown] = useState(false);
+  const [mentionFilter, setMentionFilter] = useState('');
+  const [mentionIndex, setMentionIndex] = useState(0);
+
+  const filteredMembers = teamMembers.filter(m =>
+    m.name.toLowerCase().includes(mentionFilter.toLowerCase())
+  );
+
+  const handleCommentChange = (value: string) => {
+    setNewComment(value);
+    const lastAt = value.lastIndexOf('@');
+    if (lastAt !== -1 && lastAt === value.length - 1 || (lastAt !== -1 && !value.substring(lastAt).includes(' '))) {
+      const query = value.substring(lastAt + 1);
+      setMentionFilter(query);
+      setShowMentionDropdown(true);
+      setMentionIndex(0);
+    } else {
+      setShowMentionDropdown(false);
+    }
+  };
+
+  const insertMention = (member: TeamMember) => {
+    const lastAt = newComment.lastIndexOf('@');
+    const before = newComment.substring(0, lastAt);
+    setNewComment(`${before}@${member.name} `);
+    setShowMentionDropdown(false);
+  };
 
   const handleAddComment = () => {
     if (!newComment.trim()) return;
     const comment: ClientComment = {
       id: Date.now().toString(),
-      author: 'Thalisson',
+      author: userSession.name,
       text: newComment,
       date: new Date().toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })
     };
     onUpdateClient({ ...client, comments: [comment, ...client.comments] });
+
+    // Detectar @ menções e criar demandas
+    const mentionRegex = /@([A-Za-zÀ-ÿ]+(?:\s[A-Za-zÀ-ÿ]+)*)/g;
+    let match;
+    while ((match = mentionRegex.exec(newComment)) !== null) {
+      const mentionedName = match[1].trim();
+      const member = teamMembers.find(m => m.name.toLowerCase().startsWith(mentionedName.toLowerCase()));
+      if (member) {
+        const demand: Demand = {
+          id: `dem-${Date.now()}-${member.id}`,
+          clientId: client.id,
+          clientName: client.name,
+          assignedTo: member.id,
+          assignedName: member.name,
+          text: newComment,
+          priority: 'media',
+          status: 'pendente',
+          commentAuthor: userSession.name,
+          createdAt: new Date().toISOString()
+        };
+        onCreateDemand(demand);
+      }
+    }
+
     setNewComment('');
   };
 
@@ -2319,17 +2377,48 @@ const ClientModal = ({ client, allTags, teamMembers, onClose, onUpdateClient, on
               </div>
 
               <div className="mt-6 pt-6 border-t border-white/5">
-                <div className="flex gap-2">
-                  <input 
-                    type="text" 
-                    placeholder="Adicionar comentário..."
+                <div className="flex gap-2 relative">
+                  <input
+                    type="text"
+                    placeholder="Adicionar comentário... Use @ para mencionar"
                     value={newComment}
-                    onChange={e => setNewComment(e.target.value)}
-                    onKeyDown={e => e.key === 'Enter' && handleAddComment()}
+                    onChange={e => handleCommentChange(e.target.value)}
+                    onKeyDown={e => {
+                      if (showMentionDropdown && filteredMembers.length > 0) {
+                        if (e.key === 'ArrowDown') { e.preventDefault(); setMentionIndex(i => Math.min(i + 1, filteredMembers.length - 1)); }
+                        else if (e.key === 'ArrowUp') { e.preventDefault(); setMentionIndex(i => Math.max(i - 1, 0)); }
+                        else if (e.key === 'Enter') { e.preventDefault(); insertMention(filteredMembers[mentionIndex]); }
+                        else if (e.key === 'Escape') setShowMentionDropdown(false);
+                      } else if (e.key === 'Enter') handleAddComment();
+                    }}
                     className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-xs focus:outline-none focus:border-brand-primary transition-all"
                   />
-                  <button 
-                    onClick={handleAddComment} 
+                  {showMentionDropdown && filteredMembers.length > 0 && (
+                    <div className="absolute bottom-full left-0 mb-2 w-64 bg-bg-sidebar border border-white/10 rounded-xl shadow-2xl overflow-hidden z-50">
+                      <div className="p-2 border-b border-white/5">
+                        <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest flex items-center gap-1"><AtSign size={10} /> Mencionar colaborador</p>
+                      </div>
+                      <div className="max-h-40 overflow-y-auto">
+                        {filteredMembers.map((m, i) => (
+                          <button
+                            key={m.id}
+                            onClick={() => insertMention(m)}
+                            className={`w-full flex items-center gap-2 px-3 py-2 text-left transition-colors ${i === mentionIndex ? 'bg-brand-primary/10 text-brand-primary' : 'text-gray-300 hover:bg-white/5'}`}
+                          >
+                            <div className="w-6 h-6 rounded-full flex items-center justify-center text-[9px] font-bold" style={{ backgroundColor: `${m.color}33`, color: m.color }}>
+                              {m.name.split(' ').map(n => n[0]).join('')}
+                            </div>
+                            <div>
+                              <p className="text-xs font-medium">{m.name}</p>
+                              <p className="text-[9px] text-gray-500">{m.role}</p>
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  <button
+                    onClick={handleAddComment}
                     className="p-3 rounded-xl bg-brand-primary text-bg-main hover:scale-105 active:scale-95 transition-all shadow-glow"
                   >
                     <Plus size={20} />
@@ -3011,10 +3100,10 @@ export default function App() {
   const canSee = (tab: string): boolean => {
     const role = (userSession?.role ?? '').toLowerCase();
     const permissions: Record<string, string[]> = {
-      'admin':     ['Dashboard', 'Clientes', 'Kanban de Operação', 'Equipe', 'Relatórios', 'Aquisição', 'Playbooks', 'Configurações'],
-      'comercial': ['Aquisição', 'Playbooks'],
-      'suporte':   ['Clientes', 'Kanban de Operação', 'Relatórios', 'Playbooks'],
-      'entrega':   ['Clientes', 'Kanban de Operação', 'Relatórios', 'Playbooks'],
+      'admin':     ['Dashboard', 'Clientes', 'Kanban de Operação', 'Equipe', 'Demandas', 'Relatórios', 'Aquisição', 'Playbooks', 'Configurações'],
+      'comercial': ['Demandas', 'Aquisição', 'Playbooks'],
+      'suporte':   ['Clientes', 'Kanban de Operação', 'Demandas', 'Relatórios', 'Playbooks'],
+      'entrega':   ['Clientes', 'Kanban de Operação', 'Demandas', 'Relatórios', 'Playbooks'],
     };
     return (permissions[role] ?? permissions['admin']).includes(tab);
   };
@@ -3026,6 +3115,7 @@ export default function App() {
   const [agencyConfig, setAgencyConfig] = useState<AgencyConfig>(INITIAL_AGENCY_CONFIG);
   const [userSession, setUserSession] = useState<UserSession | null>(null);
   const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [demands, setDemands] = useState<Demand[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   
   const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
@@ -3046,12 +3136,14 @@ export default function App() {
       if (!userSession && isLoading) setIsLoading(true);
       
       try {
-        const [dbClients, dbTags, dbTeam, dbConfig] = await Promise.all([
+        const [dbClients, dbTags, dbTeam, dbConfig, dbDemands] = await Promise.all([
           getClients(),
           getTags(),
           getTeamMembers(),
-          getAgencyConfig()
+          getAgencyConfig(),
+          getDemands()
         ]);
+        setDemands(dbDemands);
 
         if (dbClients.length > 0) {
           setClients(dbClients);
@@ -3340,6 +3432,115 @@ export default function App() {
     return <LoginScreen onLogin={setUserSession} teamMembers={teamMembers} agencyConfig={agencyConfig} />;
   }
 
+  const [demandFilter, setDemandFilter] = useState<'todos' | 'pendente' | 'concluido'>('pendente');
+  const [demandPriorityFilter, setDemandPriorityFilter] = useState<'todas' | 'alta' | 'media' | 'baixa'>('todas');
+
+  const renderDemandas = () => {
+    const role = (userSession?.role ?? '').toLowerCase();
+    const isAdmin = role === 'admin';
+    const filtered = demands.filter(d => {
+      if (!isAdmin && d.assignedTo !== userSession?.name && d.assignedName !== userSession?.name) return false;
+      if (demandFilter !== 'todos' && d.status !== demandFilter) return false;
+      if (demandPriorityFilter !== 'todas' && d.priority !== demandPriorityFilter) return false;
+      return true;
+    });
+
+    const priorityColors = { alta: 'text-red-400 bg-red-500/10 border-red-500/20', media: 'text-yellow-400 bg-yellow-500/10 border-yellow-500/20', baixa: 'text-blue-400 bg-blue-500/10 border-blue-500/20' };
+    const priorityLabels = { alta: 'Alta', media: 'Média', baixa: 'Baixa' };
+
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">Demandas</h1>
+          <p className="text-gray-400 mt-1">Tarefas geradas a partir de menções nos comentários dos clientes.</p>
+        </div>
+
+        {/* Filtros */}
+        <div className="flex flex-wrap gap-3">
+          <div className="flex gap-1 bg-white/5 p-1 rounded-lg">
+            {(['pendente', 'concluido', 'todos'] as const).map(f => (
+              <button key={f} onClick={() => setDemandFilter(f)}
+                className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${demandFilter === f ? 'bg-brand-primary/20 text-brand-primary' : 'text-gray-400 hover:text-white'}`}
+              >{f === 'pendente' ? 'Pendentes' : f === 'concluido' ? 'Concluídos' : 'Todos'}</button>
+            ))}
+          </div>
+          <div className="flex gap-1 bg-white/5 p-1 rounded-lg">
+            {(['todas', 'alta', 'media', 'baixa'] as const).map(p => (
+              <button key={p} onClick={() => setDemandPriorityFilter(p)}
+                className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${demandPriorityFilter === p ? 'bg-brand-primary/20 text-brand-primary' : 'text-gray-400 hover:text-white'}`}
+              >{p === 'todas' ? 'Todas' : priorityLabels[p]}</button>
+            ))}
+          </div>
+        </div>
+
+        {/* Lista */}
+        {filtered.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-20 text-gray-500">
+            <ClipboardList size={48} className="mb-4 opacity-30" />
+            <p className="font-medium">Nenhuma demanda {demandFilter === 'pendente' ? 'pendente' : demandFilter === 'concluido' ? 'concluída' : ''}</p>
+            <p className="text-sm mt-1">Mencione @colaborador nos comentários para criar demandas</p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {filtered.map(demand => (
+              <motion.div
+                key={demand.id}
+                layout
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className={`p-5 rounded-xl border transition-all ${demand.status === 'concluido' ? 'bg-white/[0.02] border-white/5 opacity-60' : 'glass-card'}`}
+              >
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-2 flex-wrap">
+                      <span className="text-xs font-bold text-brand-primary">{demand.clientName}</span>
+                      <span className={`text-[9px] font-bold uppercase px-2 py-0.5 rounded-full border ${priorityColors[demand.priority]}`}>
+                        {priorityLabels[demand.priority]}
+                      </span>
+                    </div>
+                    <p className={`text-sm ${demand.status === 'concluido' ? 'line-through text-gray-600' : 'text-white'}`}>{demand.text}</p>
+                    <div className="flex items-center gap-4 mt-3 text-[10px] text-gray-500">
+                      <span>Para: <strong className="text-gray-300">{demand.assignedName}</strong></span>
+                      <span>Por: {demand.commentAuthor}</span>
+                      <span>{new Date(demand.createdAt).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    {/* Prioridade */}
+                    <select
+                      value={demand.priority}
+                      onChange={async (e) => {
+                        const updated = { ...demand, priority: e.target.value as Demand['priority'] };
+                        const saved = await updateDemand(updated);
+                        setDemands(prev => prev.map(d => d.id === saved.id ? saved : d));
+                      }}
+                      className="bg-white/5 border border-white/10 rounded-lg px-2 py-1 text-[10px] text-gray-300 focus:outline-none"
+                    >
+                      <option value="alta">Alta</option>
+                      <option value="media">Média</option>
+                      <option value="baixa">Baixa</option>
+                    </select>
+                    {/* Botão concluir */}
+                    <button
+                      onClick={async () => {
+                        const updated = { ...demand, status: demand.status === 'pendente' ? 'concluido' as const : 'pendente' as const };
+                        const saved = await updateDemand(updated);
+                        setDemands(prev => prev.map(d => d.id === saved.id ? saved : d));
+                      }}
+                      className={`p-2 rounded-lg transition-all ${demand.status === 'concluido' ? 'bg-brand-primary/20 text-brand-primary' : 'bg-white/5 text-gray-400 hover:text-brand-primary hover:bg-brand-primary/10'}`}
+                    >
+                      <Check size={16} />
+                    </button>
+                  </div>
+                </div>
+              </motion.div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   const renderEquipe = () => (
     <div className="space-y-8">
       <div className="flex justify-between items-center">
@@ -3622,6 +3823,7 @@ export default function App() {
           {canSee('Clientes') && <SidebarItem icon={Users} label="Clientes" active={activeTab === 'Clientes'} onClick={() => setActiveTab('Clientes')} />}
           {canSee('Kanban de Operação') && <SidebarItem icon={KanbanIcon} label="Kanban de Operação" active={activeTab === 'Kanban de Operação'} onClick={() => setActiveTab('Kanban de Operação')} />}
           {canSee('Equipe') && <SidebarItem icon={Users} label="Equipe" active={activeTab === 'Equipe'} onClick={() => setActiveTab('Equipe')} />}
+          {canSee('Demandas') && <SidebarItem icon={ClipboardList} label="Demandas" active={activeTab === 'Demandas'} onClick={() => setActiveTab('Demandas')} badge={demands.filter(d => d.status === 'pendente').length || undefined} />}
           {canSee('Relatórios') && <SidebarItem icon={BarChart3} label="Relatórios" active={activeTab === 'Relatórios'} onClick={() => setActiveTab('Relatórios')} />}
           {canSee('Playbooks') && <SidebarItem icon={BookOpen} label="Playbooks" active={activeTab === 'Playbooks'} onClick={() => setActiveTab('Playbooks')} />}
           
@@ -3764,6 +3966,7 @@ export default function App() {
               {activeTab === 'Clientes' && renderClientes()}
               {activeTab === 'Kanban de Operação' && renderKanban()}
               {activeTab === 'Equipe' && renderEquipe()}
+              {activeTab === 'Demandas' && renderDemandas()}
               {activeTab === 'Configurações' && (
                 <SettingsView 
                   config={agencyConfig} 
@@ -3813,14 +4016,21 @@ export default function App() {
 
       <AnimatePresence>
         {selectedClient && (
-          <ClientModal 
-            client={selectedClient} 
+          <ClientModal
+            client={selectedClient}
             allTags={allTags}
             teamMembers={teamMembers}
-            onClose={() => setSelectedClientId(null)} 
+            onClose={() => setSelectedClientId(null)}
             onUpdateClient={handleUpdateClient}
             onSaveTag={handleSaveTag}
             onDeleteTag={handleDeleteTag}
+            userSession={userSession!}
+            onCreateDemand={async (demand) => {
+              try {
+                const saved = await createDemand(demand);
+                setDemands(prev => [saved, ...prev]);
+              } catch (err) { console.error('Erro ao criar demanda:', err); }
+            }}
           />
         )}
       </AnimatePresence>

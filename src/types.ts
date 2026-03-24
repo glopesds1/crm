@@ -154,3 +154,16 @@ export type ComercialTask = {
   lossReason?: string;
   createdAt: string;
 };
+
+export type Demand = {
+  id: string;
+  clientId: string;
+  clientName: string;
+  assignedTo: string;
+  assignedName: string;
+  text: string;
+  priority: 'alta' | 'media' | 'baixa';
+  status: 'pendente' | 'concluido';
+  commentAuthor: string;
+  createdAt: string;
+};
