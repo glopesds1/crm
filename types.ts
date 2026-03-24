@@ -26,12 +26,6 @@ export type OnboardingItem = {
   completed: boolean;
 };
 
-export type MeetingActionItem = {
-  id: string;
-  text: string;
-  completed: boolean;
-};
-
 export type MonthlyMeeting = {
   id: string;
   number: number;
@@ -39,10 +33,6 @@ export type MonthlyMeeting = {
   year: number;
   completed: boolean;
   completionDate?: string;
-  transcriptionUrl?: string;
-  transcriptionText?: string;
-  actionItems?: MeetingActionItem[];
-  meetingSummary?: string;
 };
 
 export type TeamMember = {
@@ -53,7 +43,6 @@ export type TeamMember = {
   password?: string;
   status: 'Ativo' | 'Inativo';
   color: string;
-  photoUrl?: string;
 };
 
 export type Client = {
@@ -78,19 +67,6 @@ export type Client = {
   contractDuration: number;
   exitDate: string;
   isActive: boolean;
-  // Dados cadastrais (venda)
-  razaoSocial?: string;
-  tipoPessoa?: string;
-  cpfCnpj?: string;
-  endereco?: string;
-  emailContato?: string;
-  telefoneContato?: string;
-  nomeResponsavelFinanceiro?: string;
-  valorContrato?: number;
-  valorCc?: number;
-  valorMrr?: number;
-  formaPagamento?: string;
-  dataPrimeiroVencimento?: string;
 };
 
 export type Column = {
@@ -129,28 +105,8 @@ export type UserSession = {
 
 export type ComercialTask = {
   id: string;
-  type: 'PreVendas' | 'Vendas';
-  category: 'Ligação' | 'Reunião';
   collaborator: string;
   imageUrl: string;
   completionTime: string;
-  answered: 'Atendeu' | 'Não atendeu' | null;
-  meetingStatus?: 'Compareceu' | 'Não compareceu' | null;
-  scheduled: boolean;
-  touchpoint?: number;
-  // Vendas specific fields
-  saleStatus?: 'Venda' | 'Marcou R2+' | 'Perdido' | null;
-  contractValue?: number;
-  cashCollect?: number;
-  termMonths?: number;
-  companyName?: string;
-  cnpj?: string;
-  address?: string;
-  contactEmail?: string;
-  phone?: string;
-  responsibleName?: string;
-  meetingSummary?: string;
-  nextMeetingDate?: string;
-  lossReason?: string;
   createdAt: string;
 };

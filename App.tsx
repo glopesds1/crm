@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { 
-  LayoutDashboard, BookOpen, 
+  LayoutDashboard, 
   Users, 
   Kanban as KanbanIcon, 
   BarChart3, 
@@ -33,12 +33,7 @@ import {
   DollarSign,
   PieChart,
   FileText,
-  Download,
-  ImageOff,
-  PanelLeftClose,
-  PanelLeft,
-  Sparkles,
-  Loader2
+  Download
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -57,10 +52,7 @@ import {
 } from 'recharts';
 import { jsPDF } from 'jspdf';
 import 'jspdf-autotable';
-import { format, parseISO, isWithinInterval, subDays, startOfDay, startOfWeek, startOfMonth, endOfMonth, endOfDay, eachMonthOfInterval, subMonths } from 'date-fns';
-import DashboardView from './DashboardView';
-import CRMView from './CRMView';
-import PlaybooksView from './PlaybooksView';
+import { format, parseISO, isWithinInterval, subDays, startOfMonth, endOfMonth, eachMonthOfInterval, subMonths } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
 import { 
@@ -81,8 +73,7 @@ import {
   ClientComment, 
   Offer, 
   OnboardingItem, 
-  MonthlyMeeting,
-  MeetingActionItem,
+  MonthlyMeeting, 
   TeamMember,
   AgencyConfig,
   Notification,
@@ -94,10 +85,8 @@ import {
   getClients, createClient, updateClient, deleteClient,
   getTeamMembers, createTeamMember, updateTeamMember, deleteTeamMember,
   getAgencyConfig, updateAgencyConfig,
-  getTags, saveTag, deleteTag,
-  getComercialTasks, deleteComercialTask
+  getTags, saveTag, deleteTag
 } from './lib/database';
-import { supabase } from './lib/supabase';
 
 // --- Helper Functions ---
 
@@ -726,452 +715,40 @@ const OnboardingSection = ({ checklist, onToggle }: { checklist: OnboardingItem[
   );
 };
 
-const fileToBase64 = (file: File): Promise<string> => {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const result = reader.result as string;
-      // Remove o prefixo "data:application/pdf;base64,"
-      resolve(result.split(',')[1]);
-    };
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
-};
-
-const generateActionItemsWithAI = async (pdfBase64: string, mimeType: string): Promise<string[]> => {
-  const GEMINI_KEY = import.meta.env.VITE_GEMINI_API_KEY;
-  if (!GEMINI_KEY) throw new Error('Chave da API Gemini não configurada');
-
-  const prompt = `Você vai ler um PDF de transcrição de uma reunião mensal entre a agência M² Black e um cliente.
-
-Sua tarefa: identificar APENAS as demandas e tarefas que a EQUIPE DA AGÊNCIA precisa executar DEPOIS da reunião.
-
-O QUE INCLUIR (somente se mencionado explicitamente):
-- Entregas que a equipe precisa fazer para o cliente (ex: criar criativos, ajustar campanha, enviar relatório)
-- Alterações técnicas solicitadas (ex: mudar segmentação, atualizar site, trocar copy)
-- Materiais que a equipe precisa produzir ou enviar
-- Prazos e responsáveis quando mencionados
-
-O QUE NÃO INCLUIR:
-- Coisas que já foram resolvidas/feitas durante a própria reunião
-- Ações do CLIENTE (o que o cliente vai fazer)
-- Observações gerais, elogios ou feedback sem demanda
-- Acompanhamentos vagos sem ação concreta
-- NÃO invente tarefas que não foram pedidas
-
-FORMATO DE RESPOSTA — use este JSON exato:
-{
-  "actionItems": ["tarefa 1", "tarefa 2"],
-  "resumo": "Breve resumo do que foi discutido na reunião (2-3 frases)"
-}
-
-Se NÃO houver nenhuma demanda concreta para a equipe, retorne:
-{
-  "actionItems": [],
-  "resumo": "Resumo da reunião. Não há plano de ação — apenas acompanhar XYZ"
-}
-
-Sem markdown, sem crases, sem texto antes ou depois do JSON.`;
-
-  console.log('[Gemini] Enviando PDF:', { mimeType, base64Length: pdfBase64.length });
-
-  const body = {
-    contents: [{
-      parts: [
-        { inlineData: { mimeType: mimeType || 'application/pdf', data: pdfBase64 } },
-        { text: prompt }
-      ]
-    }],
-    generationConfig: { temperature: 0.1 }
-  };
-
-  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_KEY}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body)
-  });
-
-  const data = await response.json();
-  console.log('[Gemini] Resposta:', JSON.stringify(data).substring(0, 500));
-
-  if (!response.ok) {
-    throw new Error(data?.error?.message || 'Erro ao chamar a API Gemini');
-  }
-
-  const text = data.candidates?.[0]?.content?.parts?.[0]?.text ?? '{}';
-  console.log('[Gemini] Texto bruto:', text);
-
-  // Tenta parsear como objeto { actionItems, resumo }
-  const objMatch = text.match(/\{[\s\S]*\}/);
-  if (objMatch) {
-    try {
-      const parsed = JSON.parse(objMatch[0]);
-      if (parsed.actionItems && Array.isArray(parsed.actionItems)) {
-        return { items: parsed.actionItems, resumo: parsed.resumo || '' };
-      }
-    } catch { /* fallback abaixo */ }
-  }
-
-  // Fallback: tenta parsear como array simples
-  const arrMatch = text.match(/\[[\s\S]*\]/);
-  if (arrMatch) {
-    return { items: JSON.parse(arrMatch[0]), resumo: '' };
-  }
-
-  throw new Error('IA não retornou um formato válido.');
-};
-
-const MeetingsSection = ({
-  meetings,
-  onToggle,
-  onUpdateTranscription,
-  onUpdateActionItems
-}: {
-  meetings: MonthlyMeeting[],
-  onToggle: (id: string) => void,
-  onUpdateTranscription: (id: string, url: string) => void,
-  onUpdateActionItems: (id: string, items: MeetingActionItem[], summary?: string) => void
-}) => {
-  const [editingId, setEditingId] = React.useState<string | null>(null);
-  const [tempUrl, setTempUrl] = React.useState('');
-  const [expandedMeeting, setExpandedMeeting] = React.useState<string | null>(null);
-  const [aiLoading, setAiLoading] = React.useState<string | null>(null);
-  const [newItemText, setNewItemText] = React.useState('');
-  const [addingItemTo, setAddingItemTo] = React.useState<string | null>(null);
-  const [uploadedFiles, setUploadedFiles] = React.useState<Record<string, { name: string; base64: string; mimeType: string }>>({});
-  const [dragOver, setDragOver] = React.useState<string | null>(null);
-
-  const handleFileUpload = async (meetingId: string, file: File) => {
-    const allowed = ['application/pdf', 'text/plain', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
-    if (!allowed.includes(file.type) && !file.name.endsWith('.pdf') && !file.name.endsWith('.txt') && !file.name.endsWith('.docx')) {
-      alert('Formato não suportado. Use PDF, TXT ou DOCX.');
-      return;
-    }
-    const base64 = await fileToBase64(file);
-    const mimeType = file.type || 'application/pdf';
-    setUploadedFiles(prev => ({ ...prev, [meetingId]: { name: file.name, base64, mimeType } }));
-  };
-
-  const handleGenerateAI = async (meeting: MonthlyMeeting) => {
-    const file = uploadedFiles[meeting.id];
-    if (!file) {
-      alert('Envie o arquivo da transcrição primeiro.');
-      return;
-    }
-    setAiLoading(meeting.id);
-    try {
-      const result = await generateActionItemsWithAI(file.base64, file.mimeType);
-      const actionItems: MeetingActionItem[] = result.items.map((text: string, i: number) => ({
-        id: `ai-${Date.now()}-${i}`,
-        text,
-        completed: false
-      }));
-      // Preserva items existentes e adiciona os novos
-      const existing = meeting.actionItems ?? [];
-      onUpdateActionItems(meeting.id, [...existing, ...actionItems], result.resumo);
-      setExpandedMeeting(meeting.id);
-    } catch (err) {
-      alert('Erro ao gerar ações: ' + (err instanceof Error ? err.message : 'Erro desconhecido'));
-    } finally {
-      setAiLoading(null);
-    }
-  };
-
-  const handleToggleItem = (meetingId: string, itemId: string, items: MeetingActionItem[]) => {
-    const updated = items.map(item =>
-      item.id === itemId ? { ...item, completed: !item.completed } : item
-    );
-    onUpdateActionItems(meetingId, updated);
-  };
-
-  const handleDeleteItem = (meetingId: string, itemId: string, items: MeetingActionItem[]) => {
-    onUpdateActionItems(meetingId, items.filter(item => item.id !== itemId));
-  };
-
-  const handleAddItem = (meetingId: string, items: MeetingActionItem[]) => {
-    if (!newItemText.trim()) return;
-    const newItem: MeetingActionItem = {
-      id: `manual-${Date.now()}`,
-      text: newItemText.trim(),
-      completed: false
-    };
-    onUpdateActionItems(meetingId, [...items, newItem]);
-    setNewItemText('');
-    setAddingItemTo(null);
-  };
-
+const MeetingsSection = ({ meetings, onToggle }: { meetings: MonthlyMeeting[], onToggle: (id: string) => void }) => {
   return (
     <section>
       <h3 className="text-sm font-bold uppercase tracking-widest text-brand-primary mb-4">Reuniões Mensais</h3>
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-        {meetings.map(meeting => {
-          const actionItems = meeting.actionItems ?? [];
-          const completedCount = actionItems.filter(i => i.completed).length;
-          const isExpanded = expandedMeeting === meeting.id;
-
-          return (
-            <div
-              key={meeting.id}
-              className={`p-4 rounded-xl border flex flex-col gap-3 transition-all ${
-                meeting.completed
-                  ? 'bg-brand-primary/5 border-brand-primary/20'
-                  : 'bg-white/5 border-white/5 hover:border-white/20'
-              }`}
-            >
-              <div className="flex justify-between items-start cursor-pointer" onClick={() => onToggle(meeting.id)}>
-                <div>
-                  <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1">Reunião {meeting.number.toString().padStart(2, '0')}</p>
-                  <p className={`text-sm font-bold ${meeting.completed ? 'text-brand-primary' : 'text-white'}`}>{meeting.month} {meeting.year}</p>
-                </div>
-                <div className={`w-5 h-5 rounded-lg border flex items-center justify-center transition-all ${
-                  meeting.completed ? 'bg-brand-primary border-brand-primary text-bg-main' : 'border-white/20'
-                }`}>
-                  {meeting.completed && <Check size={14} />}
-                </div>
+        {meetings.map(meeting => (
+          <div 
+            key={meeting.id}
+            onClick={() => onToggle(meeting.id)}
+            className={`p-4 rounded-xl border flex flex-col gap-3 cursor-pointer transition-all ${
+              meeting.completed 
+                ? 'bg-brand-primary/5 border-brand-primary/20' 
+                : 'bg-white/5 border-white/5 hover:border-white/20'
+            }`}
+          >
+            <div className="flex justify-between items-start">
+              <div>
+                <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1">Reunião {meeting.number.toString().padStart(2, '0')}</p>
+                <p className={`text-sm font-bold ${meeting.completed ? 'text-brand-primary' : 'text-white'}`}>{meeting.month} {meeting.year}</p>
               </div>
-
-              {meeting.completed && (
-                <div className="pt-2 border-t border-brand-primary/10 space-y-3" onClick={(e) => e.stopPropagation()}>
-                  {meeting.completionDate && (
-                    <p className="text-[10px] text-brand-primary/60 font-medium">Realizada em: {formatDate(meeting.completionDate)}</p>
-                  )}
-
-                  {/* Transcrição URL */}
-                  {editingId === meeting.id ? (
-                    <div className="flex gap-2">
-                      <input
-                        type="url"
-                        value={tempUrl}
-                        onChange={(e) => setTempUrl(e.target.value)}
-                        placeholder="Cole o link da transcrição..."
-                        className="flex-1 bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-[11px] text-white placeholder-gray-500 focus:outline-none focus:border-brand-primary/50"
-                        autoFocus
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') { onUpdateTranscription(meeting.id, tempUrl); setEditingId(null); setTempUrl(''); }
-                          if (e.key === 'Escape') { setEditingId(null); setTempUrl(''); }
-                        }}
-                      />
-                      <button
-                        onClick={() => { onUpdateTranscription(meeting.id, tempUrl); setEditingId(null); setTempUrl(''); }}
-                        className="p-1.5 rounded-lg bg-brand-primary/20 text-brand-primary hover:bg-brand-primary/30 transition-colors"
-                      >
-                        <Check size={12} />
-                      </button>
-                    </div>
-                  ) : meeting.transcriptionUrl ? (
-                    <div className="flex items-center gap-2">
-                      <a href={meeting.transcriptionUrl} target="_blank" rel="noopener noreferrer"
-                        className="flex items-center gap-1.5 text-[10px] text-brand-primary/80 hover:text-brand-primary transition-colors truncate">
-                        <FileText size={12} /><span className="truncate">Transcrição</span><ExternalLink size={10} />
-                      </a>
-                      <button onClick={() => { setEditingId(meeting.id); setTempUrl(meeting.transcriptionUrl || ''); }}
-                        className="p-1 rounded text-gray-500 hover:text-white transition-colors">
-                        <Edit2 size={10} />
-                      </button>
-                    </div>
-                  ) : (
-                    <button onClick={() => { setEditingId(meeting.id); setTempUrl(''); }}
-                      className="flex items-center gap-1.5 text-[10px] text-gray-500 hover:text-brand-primary transition-colors">
-                      <Plus size={12} /><span>Adicionar transcrição</span>
-                    </button>
-                  )}
-
-                  {/* Upload PDF da transcrição */}
-                  {meeting.completed && (
-                    <div className="space-y-2">
-                      {uploadedFiles[meeting.id] ? (
-                        <div className="flex items-center justify-between p-2 rounded-lg bg-white/5 border border-white/10">
-                          <div className="flex items-center gap-2 min-w-0">
-                            <FileText size={14} className="text-brand-primary flex-shrink-0" />
-                            <span className="text-[11px] text-white truncate">{uploadedFiles[meeting.id].name}</span>
-                          </div>
-                          <button
-                            onClick={() => setUploadedFiles(prev => { const n = { ...prev }; delete n[meeting.id]; return n; })}
-                            className="p-1 text-gray-500 hover:text-red-400 transition-colors flex-shrink-0"
-                          >
-                            <X size={12} />
-                          </button>
-                        </div>
-                      ) : (
-                        <label
-                          onDragOver={(e) => { e.preventDefault(); setDragOver(meeting.id); }}
-                          onDragLeave={() => setDragOver(null)}
-                          onDrop={(e) => {
-                            e.preventDefault();
-                            setDragOver(null);
-                            const file = e.dataTransfer.files[0];
-                            if (file) handleFileUpload(meeting.id, file);
-                          }}
-                          className={`w-full flex flex-col items-center justify-center gap-1.5 py-3 px-3 rounded-lg border border-dashed cursor-pointer transition-all text-[11px] ${
-                            dragOver === meeting.id
-                              ? 'border-brand-primary bg-brand-primary/10 text-brand-primary'
-                              : 'border-white/15 bg-white/5 text-gray-400 hover:text-white hover:border-white/30'
-                          }`}
-                        >
-                          <Download size={16} />
-                          <span>Arraste o PDF ou clique para enviar</span>
-                          <span className="text-[9px] text-gray-600">PDF, TXT ou DOCX</span>
-                          <input
-                            type="file"
-                            accept=".pdf,.txt,.docx"
-                            className="hidden"
-                            onChange={(e) => {
-                              const file = e.target.files?.[0];
-                              if (file) handleFileUpload(meeting.id, file);
-                              e.target.value = '';
-                            }}
-                          />
-                        </label>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Botão Gerar Ações com IA */}
-                  {uploadedFiles[meeting.id] && (
-                    <button
-                      onClick={() => handleGenerateAI(meeting)}
-                      disabled={aiLoading === meeting.id}
-                      className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-lg bg-purple-500/10 border border-purple-500/20 text-purple-400 hover:bg-purple-500/20 hover:text-purple-300 transition-all text-[11px] font-semibold disabled:opacity-50"
-                    >
-                      {aiLoading === meeting.id ? (
-                        <><Loader2 size={14} className="animate-spin" /> Analisando transcrição...</>
-                      ) : (
-                        <><Sparkles size={14} /> Gerar ações com IA</>
-                      )}
-                    </button>
-                  )}
-
-                  {/* Resumo da reunião */}
-                  {meeting.meetingSummary && (
-                    <div className="p-2.5 rounded-lg bg-blue-500/5 border border-blue-500/10">
-                      <p className="text-[10px] font-bold uppercase tracking-widest text-blue-400/70 mb-1">Resumo da Reunião</p>
-                      <p className="text-[11px] text-gray-300 leading-relaxed">{meeting.meetingSummary}</p>
-                    </div>
-                  )}
-
-                  {/* Action Items Checklist */}
-                  {actionItems.length > 0 && (
-                    <div className="space-y-2">
-                      <div
-                        className="flex items-center justify-between cursor-pointer"
-                        onClick={() => setExpandedMeeting(isExpanded ? null : meeting.id)}
-                      >
-                        <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400">
-                          Ações ({completedCount}/{actionItems.length})
-                        </p>
-                        <div className="flex items-center gap-2">
-                          <div className="w-16 h-1.5 bg-white/10 rounded-full overflow-hidden">
-                            <div
-                              className="h-full bg-brand-primary rounded-full transition-all"
-                              style={{ width: `${actionItems.length > 0 ? (completedCount / actionItems.length) * 100 : 0}%` }}
-                            />
-                          </div>
-                          {isExpanded ? <ChevronUp size={12} className="text-gray-500" /> : <ChevronDown size={12} className="text-gray-500" />}
-                        </div>
-                      </div>
-
-                      {isExpanded && (
-                        <motion.div
-                          initial={{ opacity: 0, height: 0 }}
-                          animate={{ opacity: 1, height: 'auto' }}
-                          exit={{ opacity: 0, height: 0 }}
-                          className="space-y-1.5 max-h-48 overflow-y-auto"
-                        >
-                          {actionItems.map(item => (
-                            <div key={item.id} className="flex items-start gap-2 group">
-                              <button
-                                onClick={() => handleToggleItem(meeting.id, item.id, actionItems)}
-                                className={`mt-0.5 w-4 h-4 rounded border flex-shrink-0 flex items-center justify-center transition-all ${
-                                  item.completed
-                                    ? 'bg-brand-primary border-brand-primary text-bg-main'
-                                    : 'border-white/20 hover:border-brand-primary/50'
-                                }`}
-                              >
-                                {item.completed && <Check size={10} />}
-                              </button>
-                              <span className={`text-[11px] flex-1 leading-tight ${item.completed ? 'line-through text-gray-600' : 'text-gray-300'}`}>
-                                {item.text}
-                              </span>
-                              <button
-                                onClick={() => handleDeleteItem(meeting.id, item.id, actionItems)}
-                                className="opacity-0 group-hover:opacity-100 p-0.5 text-gray-600 hover:text-red-400 transition-all"
-                              >
-                                <X size={10} />
-                              </button>
-                            </div>
-                          ))}
-
-                          {/* Adicionar item manual */}
-                          {addingItemTo === meeting.id ? (
-                            <div className="flex gap-1.5 mt-1">
-                              <input
-                                type="text"
-                                value={newItemText}
-                                onChange={(e) => setNewItemText(e.target.value)}
-                                placeholder="Descreva a ação..."
-                                className="flex-1 bg-white/5 border border-white/10 rounded-lg px-2 py-1 text-[11px] text-white placeholder-gray-500 focus:outline-none focus:border-brand-primary/50"
-                                autoFocus
-                                onKeyDown={(e) => {
-                                  if (e.key === 'Enter') handleAddItem(meeting.id, actionItems);
-                                  if (e.key === 'Escape') { setAddingItemTo(null); setNewItemText(''); }
-                                }}
-                              />
-                              <button onClick={() => handleAddItem(meeting.id, actionItems)}
-                                className="p-1 rounded-lg bg-brand-primary/20 text-brand-primary hover:bg-brand-primary/30 transition-colors">
-                                <Check size={12} />
-                              </button>
-                            </div>
-                          ) : (
-                            <button
-                              onClick={() => { setAddingItemTo(meeting.id); setNewItemText(''); }}
-                              className="flex items-center gap-1 text-[10px] text-gray-500 hover:text-brand-primary transition-colors mt-1"
-                            >
-                              <Plus size={10} /> Adicionar ação manualmente
-                            </button>
-                          )}
-                        </motion.div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Se não tem items ainda mas tem transcrição, mostra botão de adicionar manual */}
-                  {actionItems.length === 0 && meeting.transcriptionUrl && (
-                    <div>
-                      {addingItemTo === meeting.id ? (
-                        <div className="flex gap-1.5">
-                          <input
-                            type="text"
-                            value={newItemText}
-                            onChange={(e) => setNewItemText(e.target.value)}
-                            placeholder="Descreva a ação..."
-                            className="flex-1 bg-white/5 border border-white/10 rounded-lg px-2 py-1 text-[11px] text-white placeholder-gray-500 focus:outline-none focus:border-brand-primary/50"
-                            autoFocus
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter') handleAddItem(meeting.id, actionItems);
-                              if (e.key === 'Escape') { setAddingItemTo(null); setNewItemText(''); }
-                            }}
-                          />
-                          <button onClick={() => handleAddItem(meeting.id, actionItems)}
-                            className="p-1 rounded-lg bg-brand-primary/20 text-brand-primary hover:bg-brand-primary/30 transition-colors">
-                            <Check size={12} />
-                          </button>
-                        </div>
-                      ) : (
-                        <button
-                          onClick={() => { setAddingItemTo(meeting.id); setNewItemText(''); }}
-                          className="flex items-center gap-1 text-[10px] text-gray-500 hover:text-brand-primary transition-colors"
-                        >
-                          <Plus size={10} /> Adicionar ação manualmente
-                        </button>
-                      )}
-                    </div>
-                  )}
-                </div>
-              )}
+              <div className={`w-5 h-5 rounded-lg border flex items-center justify-center transition-all ${
+                meeting.completed ? 'bg-brand-primary border-brand-primary text-bg-main' : 'border-white/20'
+              }`}>
+                {meeting.completed && <Check size={14} />}
+              </div>
             </div>
-          );
-        })}
+            
+            {meeting.completed && meeting.completionDate && (
+              <div className="pt-2 border-t border-brand-primary/10">
+                <p className="text-[10px] text-brand-primary/60 font-medium">Realizada em: {formatDate(meeting.completionDate)}</p>
+              </div>
+            )}
+          </div>
+        ))}
       </div>
     </section>
   );
@@ -1834,20 +1411,9 @@ const TeamMemberModal = ({
     role: '',
     password: '',
     confirmPassword: '',
-    status: 'Ativo' as 'Ativo' | 'Inativo',
-    photoUrl: ''
+    status: 'Ativo' as 'Ativo' | 'Inativo'
   });
   const [showPassword, setShowPassword] = useState(false);
-
-  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    if (!file.type.startsWith('image/')) { alert('Selecione uma imagem.'); return; }
-    if (file.size > 2 * 1024 * 1024) { alert('Imagem muito grande. Máximo 2MB.'); return; }
-    const reader = new FileReader();
-    reader.onload = () => setFormData(prev => ({ ...prev, photoUrl: reader.result as string }));
-    reader.readAsDataURL(file);
-  };
 
   React.useEffect(() => {
     if (member) {
@@ -1857,8 +1423,7 @@ const TeamMemberModal = ({
         role: member.role,
         password: '',
         confirmPassword: '',
-        status: member.status,
-        photoUrl: member.photoUrl || ''
+        status: member.status
       });
     } else {
       setFormData({
@@ -1867,8 +1432,7 @@ const TeamMemberModal = ({
         role: '',
         password: '',
         confirmPassword: '',
-        status: 'Ativo',
-        photoUrl: ''
+        status: 'Ativo'
       });
     }
   }, [member, isOpen]);
@@ -1884,8 +1448,7 @@ const TeamMemberModal = ({
     onSave({
       ...formData,
       id: member?.id || `tm-${Date.now()}`,
-      color: member?.color || COLOR_PALETTE[Math.floor(Math.random() * COLOR_PALETTE.length)],
-      photoUrl: formData.photoUrl
+      color: member?.color || COLOR_PALETTE[Math.floor(Math.random() * COLOR_PALETTE.length)]
     });
     onClose();
   };
@@ -1913,28 +1476,6 @@ const TeamMemberModal = ({
         </div>
 
         <form onSubmit={handleSubmit} className="p-8 space-y-5">
-          {/* Foto do colaborador */}
-          <div className="flex flex-col items-center gap-3">
-            <label className="relative cursor-pointer group">
-              {formData.photoUrl ? (
-                <div className="w-24 h-24 rounded-2xl overflow-hidden border-2 border-white/10 group-hover:border-brand-primary/50 transition-all">
-                  <img src={formData.photoUrl} alt="Foto" className="w-full h-full object-cover" />
-                </div>
-              ) : (
-                <div className="w-24 h-24 rounded-2xl bg-white/5 border-2 border-dashed border-white/15 flex flex-col items-center justify-center gap-1 group-hover:border-brand-primary/50 transition-all">
-                  <User size={24} className="text-gray-500 group-hover:text-brand-primary transition-colors" />
-                  <span className="text-[9px] text-gray-500 group-hover:text-brand-primary transition-colors">Adicionar foto</span>
-                </div>
-              )}
-              <input type="file" accept="image/*" className="hidden" onChange={handlePhotoUpload} />
-            </label>
-            {formData.photoUrl && (
-              <button type="button" onClick={() => setFormData(prev => ({ ...prev, photoUrl: '' }))} className="text-[10px] text-gray-500 hover:text-red-400 transition-colors">
-                Remover foto
-              </button>
-            )}
-          </div>
-
           <div>
             <label className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-2 block">Nome Completo</label>
             <input 
@@ -2223,28 +1764,15 @@ const ClientModal = ({ client, allTags, teamMembers, onClose, onUpdateClient, on
               }}
             />
 
-            <MeetingsSection
+            <MeetingsSection 
               meetings={client.monthlyMeetings}
               onToggle={(id) => {
-                const newList = client.monthlyMeetings.map(meeting =>
-                  meeting.id === id ? {
-                    ...meeting,
+                const newList = client.monthlyMeetings.map(meeting => 
+                  meeting.id === id ? { 
+                    ...meeting, 
                     completed: !meeting.completed,
-                    completionDate: !meeting.completed ? new Date().toLocaleDateString('pt-BR') : undefined,
-                    transcriptionUrl: !meeting.completed ? meeting.transcriptionUrl : undefined
+                    completionDate: !meeting.completed ? new Date().toLocaleDateString('pt-BR') : undefined
                   } : meeting
-                );
-                onUpdateClient({ ...client, monthlyMeetings: newList });
-              }}
-              onUpdateTranscription={(id, url) => {
-                const newList = client.monthlyMeetings.map(meeting =>
-                  meeting.id === id ? { ...meeting, transcriptionUrl: url } : meeting
-                );
-                onUpdateClient({ ...client, monthlyMeetings: newList });
-              }}
-              onUpdateActionItems={(id, items, summary) => {
-                const newList = client.monthlyMeetings.map(meeting =>
-                  meeting.id === id ? { ...meeting, actionItems: items, ...(summary !== undefined ? { meetingSummary: summary } : {}) } : meeting
                 );
                 onUpdateClient({ ...client, monthlyMeetings: newList });
               }}
@@ -2352,651 +1880,186 @@ const LoadingScreen = () => (
 );
 
 
-const ComercialView = ({ teamMembers, userSession, onOpenInCRM }: {
-  teamMembers: TeamMember[],
-  userSession: UserSession | null,
-  onOpenInCRM?: (companyName: string) => void
-}) => {
-  const [selectedCollaborator, setSelectedCollaborator] = useState('');
+const ComercialView = ({ teamMembers }: { teamMembers: TeamMember[] }) => {
+  const [selectedCollaborator, setSelectedCollaborator] = useState('Vitória Mendes');
   const [tasks, setTasks] = useState<ComercialTask[]>([]);
-  const [viewingTask, setViewingTask] = useState<ComercialTask | null>(null);
-  const [periodo, setPeriodo] = useState<'hoje' | 'semana' | 'mes' | 'custom'>('mes');
-  const [customInicio, setCustomInicio] = useState(format(startOfMonth(new Date()), 'yyyy-MM-dd'));
-  const [customFim, setCustomFim] = useState(format(new Date(), 'yyyy-MM-dd'));
+  const [newImage, setNewImage] = useState<string | null>(null);
+  const [newTime, setNewTime] = useState(format(new Date(), 'HH:mm'));
 
-  // Load tasks from Supabase on mount
+  // Load tasks from localStorage on mount
   useEffect(() => {
-    getComercialTasks().then(setTasks).catch(console.error);
-    if ((userSession?.role ?? '').toLowerCase() !== 'admin') {
-      setSelectedCollaborator(userSession?.name ?? '');
+    const savedTasks = localStorage.getItem('comercial_tasks');
+    if (savedTasks) {
+      setTasks(JSON.parse(savedTasks));
     }
   }, []);
 
-  const dateRange = useMemo(() => {
-    const now = new Date();
-    if (periodo === 'hoje') return { start: startOfDay(now), end: endOfDay(now) };
-    if (periodo === 'semana') return { start: startOfWeek(now, { weekStartsOn: 1 }), end: endOfDay(now) };
-    if (periodo === 'mes') return { start: startOfMonth(now), end: endOfDay(now) };
-    return { start: startOfDay(parseISO(customInicio)), end: endOfDay(parseISO(customFim)) };
-  }, [periodo, customInicio, customFim]);
+  // Save tasks to localStorage whenever they change
+  useEffect(() => {
+    localStorage.setItem('comercial_tasks', JSON.stringify(tasks));
+  }, [tasks]);
 
-  const filteredTasks = useMemo(() => {
-    const isAdmin = (userSession?.role ?? '').toLowerCase() === 'admin';
-    let filtered = tasks;
-    if (!isAdmin) {
-      filtered = filtered.filter(t => t.collaborator === (userSession?.name ?? ''));
-    } else if (selectedCollaborator !== '' && selectedCollaborator !== 'all') {
-      filtered = filtered.filter(t => t.collaborator === selectedCollaborator);
-    }
-    // Filter by date range
-    filtered = filtered.filter(t => {
-      try {
-        const d = parseISO(t.createdAt);
-        return d >= dateRange.start && d <= dateRange.end;
-      } catch { return true; }
-    });
-    return filtered;
-  }, [tasks, selectedCollaborator, userSession, dateRange]);
-
-  const handleDeleteTask = async (id: string) => {
-    if (!confirm('Tem certeza que deseja excluir este registro?')) return;
-    try {
-      await deleteComercialTask(id);
-      setTasks(tasks.filter(t => t.id !== id));
-    } catch (err) {
-      console.error('Erro ao deletar tarefa:', err);
-      alert('Erro ao deletar. Verifique a conexão com o banco.');
+  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setNewImage(reader.result as string);
+      };
+      reader.readAsDataURL(file);
     }
   };
 
-  // Summary stats from tasks
-  const summary = useMemo(() => {
-    const src = filteredTasks;
-    const ligacoes = src.filter(t => t.category === 'Ligação');
-    const reunioes = src.filter(t => t.category === 'Reunião');
-    const atendeu = ligacoes.filter(t => t.answered === 'Atendeu').length;
-    const naoAtendeu = ligacoes.filter(t => t.answered === 'Não atendeu').length;
-    const marcacoes = ligacoes.filter(t => t.scheduled).length;
-    const compareceu = reunioes.filter(t => t.meetingStatus === 'Compareceu').length;
-    const naoCompareceu = reunioes.filter(t => t.meetingStatus === 'Não compareceu').length;
-    const vendas = reunioes.filter(t => t.saleStatus === 'Venda').length;
-    const perdidos = reunioes.filter(t => t.saleStatus === 'Perdido').length;
-    const r2 = reunioes.filter(t => t.saleStatus === 'Marcou R2+').length;
-    const totalContrato = reunioes.reduce((acc, t) => acc + (t.contractValue ?? 0), 0);
-    const totalCc = reunioes.reduce((acc, t) => acc + (t.cashCollect ?? 0), 0);
-    return { ligacoes: ligacoes.length, reunioes: reunioes.length, atendeu, naoAtendeu, marcacoes, compareceu, naoCompareceu, vendas, perdidos, r2, totalContrato, totalCc };
-  }, [filteredTasks]);
+  const handleAddTask = () => {
+    if (!newImage) {
+      alert('Por favor, adicione uma imagem.');
+      return;
+    }
+    const newTask: ComercialTask = {
+      id: `task-${Date.now()}`,
+      collaborator: selectedCollaborator,
+      imageUrl: newImage,
+      completionTime: newTime,
+      createdAt: new Date().toISOString(),
+    };
+    setTasks([newTask, ...tasks]);
+    setNewImage(null);
+    setNewTime(format(new Date(), 'HH:mm'));
+  };
 
-  // Metas editáveis para o funil comercial
-  const [funilMetas, setFunilMetas] = useState<Record<string, number>>({});
-  const [editFunilMeta, setEditFunilMeta] = useState<string | null>(null);
-  const [editFunilVal, setEditFunilVal] = useState('');
-  const isAdminComercial = (userSession?.role ?? '').toLowerCase() === 'admin';
-
-  useEffect(() => {
-    supabase.from('comercial_metas_funil').select('*').eq('id', 1).single()
-      .then(({ data: d }) => { if (d) { const { id: _id, updated_at: _u, ...rest } = d as Record<string, unknown>; setFunilMetas(Object.fromEntries(Object.entries(rest).map(([k, v]) => [k, Number(v) || 0]))); } });
-  }, []);
-
-  const saveFunilMeta = async (key: string, val: string) => {
-    const n = parseFloat(val) || 0;
-    const updated = { ...funilMetas, [key]: n };
-    setFunilMetas(updated);
-    await supabase.from('comercial_metas_funil').upsert({ id: 1, ...updated, updated_at: new Date().toISOString() });
-    setEditFunilMeta(null);
+  const handleDeleteTask = (id: string) => {
+    if (!confirm('Tem certeza que deseja excluir este registro?')) return;
+    setTasks(tasks.filter(t => t.id !== id));
   };
 
   return (
     <div className="space-y-8">
       <div className="flex justify-between items-center">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Relatório</h1>
-          <p className="text-gray-400 mt-1">Visão geral e histórico de atividades do time comercial.</p>
+          <h1 className="text-3xl font-bold tracking-tight">Comercial</h1>
+          <p className="text-gray-400 mt-1">Relatório e checklist de atividades do time comercial.</p>
         </div>
       </div>
 
-        <div className="space-y-8">
-          {/* Filtros */}
-          <div className="glass-card p-6 flex flex-wrap items-center gap-6">
-            <div className="flex items-center gap-3">
-              <label className="text-[10px] font-bold uppercase tracking-widest text-brand-primary whitespace-nowrap">Colaborador</label>
-              <div className="relative min-w-[200px]">
-                {(userSession?.role ?? '').toLowerCase() === 'admin' ? (
-                  <>
-                    <select
-                      value={selectedCollaborator}
-                      onChange={e => setSelectedCollaborator(e.target.value)}
-                      className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-sm focus:outline-none focus:border-brand-primary transition-all appearance-none cursor-pointer"
-                    >
-                      <option value="" className="bg-bg-main">TODOS</option>
-                      {teamMembers.map(m => (
-                        <option key={m.id} value={m.name} className="bg-bg-main">{m.name}</option>
-                      ))}
-                    </select>
-                    <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" size={14} />
-                  </>
-                ) : (
-                  <div className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-sm text-white font-medium">
-                    {userSession?.name ?? ''}
-                  </div>
-                )}
-              </div>
-            </div>
-
-            <div className="h-8 w-px bg-white/10 hidden sm:block" />
-
-            <div className="flex items-center gap-3">
-              <label className="text-[10px] font-bold uppercase tracking-widest text-brand-primary whitespace-nowrap">Período</label>
-              <div className="flex gap-1.5">
-                {([['hoje', 'Hoje'], ['semana', 'Semana'], ['mes', 'Mês'], ['custom', 'Personalizado']] as const).map(([key, label]) => (
-                  <button
-                    key={key}
-                    onClick={() => setPeriodo(key)}
-                    className={`px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all border ${
-                      periodo === key
-                        ? 'bg-brand-primary/15 border-brand-primary/40 text-brand-primary'
-                        : 'bg-white/5 border-white/10 text-gray-500 hover:text-white hover:border-white/20'
-                    }`}
-                  >
-                    {key === 'custom' ? <Calendar size={13} /> : label}
-                  </button>
+      <div className="glass-card p-6 space-y-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div>
+            <label className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-2 block">Colaborador</label>
+            <div className="relative">
+              <select 
+                value={selectedCollaborator}
+                onChange={e => setSelectedCollaborator(e.target.value)}
+                className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-brand-primary transition-all appearance-none cursor-pointer"
+              >
+                <option value="Vitória Mendes" className="bg-bg-main">Vitória Mendes</option>
+                {teamMembers.filter(m => m.name !== 'Vitória Mendes').map(m => (
+                  <option key={m.id} value={m.name} className="bg-bg-main">{m.name}</option>
                 ))}
-              </div>
-              {periodo === 'custom' && (
-                <div className="flex items-center gap-2">
-                  <input type="date" value={customInicio} onChange={e => setCustomInicio(e.target.value)}
-                    className="bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-gray-300 focus:outline-none focus:border-brand-primary" />
-                  <span className="text-gray-600 text-xs">até</span>
-                  <input type="date" value={customFim} onChange={e => setCustomFim(e.target.value)}
-                    className="bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-gray-300 focus:outline-none focus:border-brand-primary" />
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Funis lado a lado */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Funil Pré-vendas */}
-            <div className="glass-card p-6">
-              <h3 className="text-sm font-bold uppercase tracking-widest text-blue-400 mb-5">Pré-vendas</h3>
-              <div className="space-y-0">
-                {(() => {
-                  const stages = [
-                    { key: 'pv_ligacoes', label: 'Ligações', value: summary.ligacoes, w: 100 },
-                    { key: 'pv_atendeu', label: 'Atendeu', value: summary.atendeu, w: 80 },
-                    { key: 'pv_marcacoes', label: 'Marcações', value: summary.marcacoes, w: 60 },
-                  ];
-                  return stages.map((e, i) => {
-                    const next = i < stages.length - 1 ? stages[i + 1] : null;
-                    const taxa = next && e.value > 0 ? (next.value / e.value) * 100 : null;
-                    const metaKey = next?.key ?? e.key;
-                    return (
-                      <div key={e.key} className="space-y-0">
-                        <div className="flex items-center" style={{ paddingLeft: `${(100 - e.w) / 2}%`, paddingRight: `${(100 - e.w) / 2}%` }}>
-                          <div className="flex-1 bg-white/10 rounded-xl px-3 py-2.5 flex items-center justify-between">
-                            <span className="text-xs font-bold text-gray-300">{e.label}</span>
-                            <span className="text-xl font-black text-white">{e.value}</span>
-                          </div>
-                        </div>
-                        {taxa !== null && (
-                          <div className="flex items-center justify-center gap-3 py-1.5">
-                            <div className="flex-1 h-px bg-white/5" />
-                            <div className="flex items-center gap-2">
-                              <span className="text-sm font-bold text-gray-300">{taxa.toFixed(1)}%</span>
-                              <span className="text-gray-600">|</span>
-                              {editFunilMeta === metaKey ? (
-                                <div className="flex items-center gap-1">
-                                  <input autoFocus type="number" min="0" max="100" step="0.1"
-                                    value={editFunilVal} onChange={ev => setEditFunilVal(ev.target.value)}
-                                    onBlur={() => saveFunilMeta(metaKey, editFunilVal)}
-                                    onKeyDown={ev => ev.key === 'Enter' && saveFunilMeta(metaKey, editFunilVal)}
-                                    className="w-14 bg-white/10 border border-brand-primary rounded px-1 py-0.5 text-xs text-white text-center focus:outline-none"
-                                  />
-                                  <span className="text-xs text-gray-400">%</span>
-                                </div>
-                              ) : (
-                                <span
-                                  onClick={() => isAdminComercial ? (setEditFunilMeta(metaKey), setEditFunilVal(String(funilMetas[metaKey] || ''))) : null}
-                                  className={`text-[10px] font-bold text-gray-500 ${isAdminComercial ? 'cursor-pointer hover:text-brand-primary transition-colors' : ''}`}
-                                  title={isAdminComercial ? 'Clique para editar a meta' : ''}
-                                >
-                                  Meta: {funilMetas[metaKey] ? `${funilMetas[metaKey]}%` : '—'}
-                                </span>
-                              )}
-                            </div>
-                            <div className="flex-1 h-px bg-white/5" />
-                          </div>
-                        )}
-                      </div>
-                    );
-                  });
-                })()}
-              </div>
-              {/* Extra: Não atendeu */}
-              <div className="mt-4 pt-3 border-t border-white/5 flex items-center justify-between px-2">
-                <span className="text-[10px] font-bold uppercase tracking-widest text-gray-500">Não atendeu</span>
-                <span className="text-lg font-bold text-red-400">{summary.naoAtendeu}</span>
-              </div>
-              {isAdminComercial && <p className="text-[9px] text-gray-600 mt-3 text-center">Clique em "Meta" para editar a taxa alvo</p>}
-            </div>
-
-            {/* Funil Vendas */}
-            <div className="glass-card p-6">
-              <h3 className="text-sm font-bold uppercase tracking-widest text-purple-400 mb-5">Vendas</h3>
-              <div className="space-y-0">
-                {(() => {
-                  const stages = [
-                    { key: 'vd_reunioes', label: 'Reuniões', value: summary.reunioes, w: 100 },
-                    { key: 'vd_compareceu', label: 'Compareceu', value: summary.compareceu, w: 75 },
-                    { key: 'vd_vendas', label: 'Vendas', value: summary.vendas, w: 50 },
-                  ];
-                  return stages.map((e, i) => {
-                    const next = i < stages.length - 1 ? stages[i + 1] : null;
-                    const taxa = next && e.value > 0 ? (next.value / e.value) * 100 : null;
-                    const metaKey = next?.key ?? e.key;
-                    return (
-                      <div key={e.key} className="space-y-0">
-                        <div className="flex items-center" style={{ paddingLeft: `${(100 - e.w) / 2}%`, paddingRight: `${(100 - e.w) / 2}%` }}>
-                          <div className="flex-1 bg-white/10 rounded-xl px-3 py-2.5 flex items-center justify-between">
-                            <span className="text-xs font-bold text-gray-300">{e.label}</span>
-                            <span className="text-xl font-black text-white">{e.value}</span>
-                          </div>
-                        </div>
-                        {taxa !== null && (
-                          <div className="flex items-center justify-center gap-3 py-1.5">
-                            <div className="flex-1 h-px bg-white/5" />
-                            <div className="flex items-center gap-2">
-                              <span className="text-sm font-bold text-gray-300">{taxa.toFixed(1)}%</span>
-                              <span className="text-gray-600">|</span>
-                              {editFunilMeta === metaKey ? (
-                                <div className="flex items-center gap-1">
-                                  <input autoFocus type="number" min="0" max="100" step="0.1"
-                                    value={editFunilVal} onChange={ev => setEditFunilVal(ev.target.value)}
-                                    onBlur={() => saveFunilMeta(metaKey, editFunilVal)}
-                                    onKeyDown={ev => ev.key === 'Enter' && saveFunilMeta(metaKey, editFunilVal)}
-                                    className="w-14 bg-white/10 border border-brand-primary rounded px-1 py-0.5 text-xs text-white text-center focus:outline-none"
-                                  />
-                                  <span className="text-xs text-gray-400">%</span>
-                                </div>
-                              ) : (
-                                <span
-                                  onClick={() => isAdminComercial ? (setEditFunilMeta(metaKey), setEditFunilVal(String(funilMetas[metaKey] || ''))) : null}
-                                  className={`text-[10px] font-bold text-gray-500 ${isAdminComercial ? 'cursor-pointer hover:text-brand-primary transition-colors' : ''}`}
-                                  title={isAdminComercial ? 'Clique para editar a meta' : ''}
-                                >
-                                  Meta: {funilMetas[metaKey] ? `${funilMetas[metaKey]}%` : '—'}
-                                </span>
-                              )}
-                            </div>
-                            <div className="flex-1 h-px bg-white/5" />
-                          </div>
-                        )}
-                      </div>
-                    );
-                  });
-                })()}
-              </div>
-              {/* Extras: No-show, R2+, Perdidos */}
-              <div className="mt-4 pt-3 border-t border-white/5 space-y-2 px-2">
-                {[
-                  { label: 'No-show', value: summary.naoCompareceu, color: 'text-red-400' },
-                  { label: 'Marcou R2+', value: summary.r2, color: 'text-blue-400' },
-                  { label: 'Perdidos', value: summary.perdidos, color: 'text-red-400' },
-                ].map(s => (
-                  <div key={s.label} className="flex items-center justify-between">
-                    <span className="text-[10px] font-bold uppercase tracking-widest text-gray-500">{s.label}</span>
-                    <span className={`text-lg font-bold ${s.color}`}>{s.value}</span>
-                  </div>
-                ))}
-              </div>
-              {isAdminComercial && <p className="text-[9px] text-gray-600 mt-3 text-center">Clique em "Meta" para editar a taxa alvo</p>}
-            </div>
-          </div>
-
-          <div className="space-y-4">
-            <h3 className="text-sm font-bold uppercase tracking-widest text-brand-primary">Histórico de Atividades</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {filteredTasks.map(task => (
-                <motion.div 
-                  key={task.id}
-                  layout
-                  initial={{ opacity: 0, scale: 0.9 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  className="glass-card overflow-hidden group border border-white/5 hover:border-brand-primary/20"
-                >
-                  <div className="aspect-video w-full relative overflow-hidden bg-bg-sidebar">
-                    {task.imageUrl ? (
-                      <img src={task.imageUrl} alt="Print" className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center bg-white/5">
-                        <ImageOff size={32} className="text-gray-700" />
-                      </div>
-                    )}
-                    <div className="absolute inset-0 bg-gradient-to-t from-bg-main/90 via-bg-main/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end justify-between p-4">
-                      <button 
-                        onClick={(e) => { e.stopPropagation(); handleDeleteTask(task.id); }}
-                        className="p-2 rounded-lg bg-red-500/20 text-red-400 hover:bg-red-500 hover:text-white transition-all backdrop-blur-sm"
-                      >
-                        <Trash2 size={16} />
-                      </button>
-                        <div className="flex flex-col items-end gap-2">
-                          <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-brand-primary/20 border border-brand-primary/30 backdrop-blur-md">
-                            <Clock size={12} className="text-brand-primary" />
-                            <span className="text-[10px] font-bold text-brand-primary">{task.completionTime}</span>
-                          </div>
-                          <div className="px-3 py-1 rounded-full bg-white/10 border border-white/20 backdrop-blur-md text-[8px] font-bold uppercase tracking-widest text-white">
-                            {task.category}
-                          </div>
-                          <div className={`px-3 py-1 rounded-full border backdrop-blur-md text-[8px] font-bold uppercase tracking-widest ${
-                            task.type === 'PreVendas' ? 'bg-blue-500/20 border-blue-500/30 text-blue-400' : 'bg-purple-500/20 border-purple-500/30 text-purple-400'
-                          }`}>
-                            {task.type === 'PreVendas' ? 'PRÉ-VENDAS' : 'VENDAS'}
-                          </div>
-                          {task.answered && (
-                            <div className={`px-3 py-1 rounded-full border backdrop-blur-md text-[8px] font-bold uppercase tracking-widest ${
-                              task.answered === 'Atendeu' ? 'bg-brand-primary/20 border-brand-primary/30 text-brand-primary' : 'bg-red-500/20 border-red-500/30 text-red-400'
-                            }`}>
-                              {task.answered}
-                            </div>
-                          )}
-                          {task.touchpoint && (
-                            <div className="px-3 py-1 rounded-full bg-white/10 border border-white/20 backdrop-blur-md text-[8px] font-bold uppercase tracking-widest text-white">
-                              Touchpoint: {task.touchpoint}
-                            </div>
-                          )}
-                          {task.meetingStatus && (
-                            <div className={`px-3 py-1 rounded-full border backdrop-blur-md text-[8px] font-bold uppercase tracking-widest ${
-                              task.meetingStatus === 'Compareceu' ? 'bg-brand-primary/20 border-brand-primary/30 text-brand-primary' : 'bg-red-500/20 border-red-500/30 text-red-400'
-                            }`}>
-                              {task.meetingStatus}
-                            </div>
-                          )}
-                          {task.scheduled && (
-                            <div className="px-3 py-1 rounded-full bg-blue-500/20 border border-blue-500/30 backdrop-blur-md text-[8px] font-bold uppercase tracking-widest text-blue-400 flex items-center gap-1">
-                              <Calendar size={10} /> Marcado
-                            </div>
-                          )}
-                          {task.saleStatus && (
-                            <div className={`px-3 py-1 rounded-full border backdrop-blur-md text-[8px] font-bold uppercase tracking-widest ${
-                              task.saleStatus === 'Venda' ? 'bg-brand-primary/20 border-brand-primary/30 text-brand-primary' :
-                              task.saleStatus === 'Marcou R2+' ? 'bg-blue-500/20 border-blue-500/30 text-blue-400' :
-                              'bg-red-500/20 border-red-500/30 text-red-400'
-                            }`}>
-                              {task.saleStatus}
-                            </div>
-                          )}
-                        </div>
-                    </div>
-                  </div>
-                  <div className="p-4 space-y-3 bg-bg-card/50">
-                    <div className="flex justify-between items-center">
-                      <div className="text-xs font-bold text-white flex items-center gap-2">
-                        <div className="w-1.5 h-1.5 rounded-full bg-brand-primary" />
-                        {task.collaborator}
-                      </div>
-                      <div className="text-[10px] font-bold text-gray-600 uppercase tracking-tighter">
-                        ID: {task.id.split('-')[1]}
-                      </div>
-                    </div>
-                    
-                    <div className="pt-3 border-t border-white/5 space-y-2">
-                        {/* Ligação info */}
-                        {task.category === 'Ligação' && (
-                          <>
-                            {task.answered && (
-                              <div className="flex justify-between text-[10px]">
-                                <span className="text-gray-500 uppercase font-bold">Status:</span>
-                                <span className={task.answered === 'Atendeu' ? 'text-brand-primary font-bold' : 'text-red-400 font-bold'}>{task.answered}</span>
-                              </div>
-                            )}
-                            {task.touchpoint !== undefined && (
-                              <div className="flex justify-between text-[10px]">
-                                <span className="text-gray-500 uppercase font-bold">Touchpoint:</span>
-                                <span className="text-white font-bold">{task.touchpoint}</span>
-                              </div>
-                            )}
-                            <div className="flex justify-between text-[10px]">
-                              <span className="text-gray-500 uppercase font-bold">Marcou reunião:</span>
-                              <span className={task.scheduled ? 'text-brand-primary font-bold' : 'text-red-400 font-bold'}>
-                                {task.scheduled ? 'Sim' : 'Não'}
-                              </span>
-                            </div>
-                          </>
-                        )}
-                        {/* Reunião info */}
-                        {task.category !== 'Ligação' && (
-                          <>
-                            {task.meetingStatus && (
-                              <div className="flex justify-between text-[10px]">
-                                <span className="text-gray-500 uppercase font-bold">Status:</span>
-                                <span className={task.meetingStatus === 'Compareceu' ? 'text-brand-primary font-bold' : 'text-red-400 font-bold'}>{task.meetingStatus}</span>
-                              </div>
-                            )}
-                            {task.saleStatus && (
-                              <div className="flex justify-between text-[10px]">
-                                <span className="text-gray-500 uppercase font-bold">Resultado:</span>
-                                <span className={
-                                  task.saleStatus === 'Venda' ? 'text-brand-primary font-bold' :
-                                  task.saleStatus === 'Marcou R2+' ? 'text-blue-400 font-bold' :
-                                  'text-red-400 font-bold'
-                                }>{task.saleStatus}</span>
-                              </div>
-                            )}
-                            {task.responsibleName && (
-                              <div className="flex justify-between text-[10px]">
-                                <span className="text-gray-500 uppercase font-bold">Responsável:</span>
-                                <span className="text-white font-medium">{task.responsibleName}</span>
-                              </div>
-                            )}
-                            {task.contractValue != null && (
-                              <div className="flex justify-between text-[10px]">
-                                <span className="text-gray-500 uppercase font-bold">Contrato:</span>
-                                <span className="text-brand-primary font-bold">R$ {(task.contractValue ?? 0).toLocaleString()}</span>
-                              </div>
-                            )}
-                            {task.cashCollect != null && (
-                              <div className="flex justify-between text-[10px]">
-                                <span className="text-gray-500 uppercase font-bold">Cash:</span>
-                                <span className="text-brand-primary font-bold">R$ {(task.cashCollect ?? 0).toLocaleString()}</span>
-                              </div>
-                            )}
-                            {task.nextMeetingDate && (
-                              <div className="flex justify-between text-[10px]">
-                                <span className="text-gray-500 uppercase font-bold">Próxima R2:</span>
-                                <span className="text-blue-400 font-bold">{format(parseISO(task.nextMeetingDate), 'dd/MM HH:mm')}</span>
-                              </div>
-                            )}
-                            {task.lossReason && (
-                              <div className="text-[10px]">
-                                <span className="text-red-400 uppercase font-bold block mb-1">Motivo Perda:</span>
-                                <p className="text-gray-400 italic line-clamp-2">{task.lossReason}</p>
-                              </div>
-                            )}
-                          </>
-                        )}
-                      </div>
-
-                    <div className="flex justify-between items-center mt-1">
-                      <p className="text-[10px] text-gray-500 uppercase tracking-widest font-bold">{formatDate(task.createdAt)}</p>
-                      {task.companyName && onOpenInCRM && (
-                        <button
-                          onClick={(e) => { e.stopPropagation(); onOpenInCRM(task.companyName!); }}
-                          className="flex items-center gap-1 text-[9px] text-gray-500 hover:text-brand-primary transition-colors"
-                          title="Ver no CRM"
-                        >
-                          <ExternalLink size={10} /> CRM
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                </motion.div>
-              ))}
-              {filteredTasks.length === 0 && (
-                <div className="col-span-full py-20 text-center glass-card border-dashed border-2 border-white/5">
-                  <AlertTriangle size={48} className="text-gray-800 mx-auto mb-4" />
-                  <p className="text-gray-500 font-medium">Nenhuma atividade registrada ainda.</p>
-                </div>
-              )}
+              </select>
+              <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" size={16} />
             </div>
           </div>
         </div>
 
-      {/* Task detail modal */}
-      <AnimatePresence>
-        {viewingTask && (
-          <motion.div
-            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm"
-            onClick={() => setViewingTask(null)}
-          >
-            <motion.div
-              initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.9 }}
-              className="bg-bg-card border border-white/10 rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto shadow-2xl"
-              onClick={e => e.stopPropagation()}
-            >
-              {/* Image */}
-              <div className="relative w-full bg-black/40">
-                {viewingTask.imageUrl ? (
-                  <img src={viewingTask.imageUrl} alt="Print da atividade" className="w-full max-h-[50vh] object-contain" />
-                ) : (
-                  <div className="w-full h-48 flex items-center justify-center bg-white/5">
-                    <ImageOff size={48} className="text-gray-700" />
-                  </div>
-                )}
-                <button
-                  onClick={() => setViewingTask(null)}
-                  className="absolute top-3 right-3 p-2 rounded-full bg-black/60 text-white hover:bg-black/80 transition-colors backdrop-blur-sm"
+        <div className="pt-6 border-t border-white/5">
+          <h3 className="text-sm font-bold uppercase tracking-widest text-brand-primary mb-4">Nova Atividade</h3>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-end">
+            <div className="md:col-span-1">
+              <label className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-2 block">Print da Ação</label>
+              <div className="relative">
+                <input 
+                  type="file" 
+                  accept="image/*"
+                  onChange={handleImageChange}
+                  className="hidden"
+                  id="task-image-upload"
+                />
+                <label 
+                  htmlFor="task-image-upload"
+                  className="flex flex-col items-center justify-center w-full h-40 border-2 border-dashed border-white/10 rounded-xl cursor-pointer hover:border-brand-primary/50 transition-all bg-white/5 overflow-hidden group"
                 >
-                  <X size={18} />
-                </button>
+                  {newImage ? (
+                    <img src={newImage} alt="Preview" className="w-full h-full object-cover" />
+                  ) : (
+                    <>
+                      <Plus size={24} className="text-gray-500 mb-2 group-hover:text-brand-primary transition-colors" />
+                      <span className="text-[10px] font-bold text-gray-500 uppercase group-hover:text-brand-primary transition-colors">Upload Print</span>
+                    </>
+                  )}
+                </label>
               </div>
+            </div>
+            <div>
+              <label className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-2 block">Hora Concluída</label>
+              <div className="relative">
+                <Clock className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500" size={18} />
+                <input 
+                  type="time" 
+                  value={newTime}
+                  onChange={e => setNewTime(e.target.value)}
+                  className="w-full bg-white/5 border border-white/10 rounded-xl pl-12 pr-4 py-3 text-sm focus:outline-none focus:border-brand-primary transition-all"
+                />
+              </div>
+            </div>
+            <button 
+              onClick={handleAddTask}
+              className="w-full py-3.5 bg-brand-primary text-bg-main font-bold rounded-xl shadow-glow hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center gap-2"
+            >
+              <Check size={18} /> REGISTRAR AÇÃO
+            </button>
+          </div>
+        </div>
+      </div>
 
-              {/* Details */}
-              <div className="p-6 space-y-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <div className="w-2 h-2 rounded-full bg-brand-primary" />
-                    <span className="text-sm font-bold text-white">{viewingTask.collaborator}</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest ${
-                      viewingTask.type === 'PreVendas' ? 'bg-blue-500/20 border border-blue-500/30 text-blue-400' : 'bg-purple-500/20 border border-purple-500/30 text-purple-400'
-                    }`}>
-                      {viewingTask.type === 'PreVendas' ? 'Pré-Vendas' : 'Vendas'}
-                    </span>
-                    <span className="px-3 py-1 rounded-full bg-white/10 border border-white/20 text-[10px] font-bold uppercase tracking-widest text-white">
-                      {viewingTask.category}
-                    </span>
+      <div className="space-y-4">
+        <h3 className="text-sm font-bold uppercase tracking-widest text-brand-primary">Atividades Recentes</h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {tasks.map(task => (
+            <motion.div 
+              key={task.id}
+              layout
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              className="glass-card overflow-hidden group border border-white/5 hover:border-brand-primary/20"
+            >
+              <div className="aspect-video w-full relative overflow-hidden bg-bg-sidebar">
+                <img src={task.imageUrl} alt="Print" className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
+                <div className="absolute inset-0 bg-gradient-to-t from-bg-main/90 via-bg-main/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end justify-between p-4">
+                  <button 
+                    onClick={() => handleDeleteTask(task.id)}
+                    className="p-2 rounded-lg bg-red-500/20 text-red-400 hover:bg-red-500 hover:text-white transition-all backdrop-blur-sm"
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                  <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-brand-primary/20 border border-brand-primary/30 backdrop-blur-md">
+                    <Clock size={12} className="text-brand-primary" />
+                    <span className="text-[10px] font-bold text-brand-primary">{task.completionTime}</span>
                   </div>
                 </div>
-
-                <div className="border-t border-white/5 pt-4 grid grid-cols-2 gap-3">
-                  <div className="flex justify-between text-xs col-span-2">
-                    <span className="text-gray-500 uppercase font-bold">Horário:</span>
-                    <span className="text-brand-primary font-bold">{viewingTask.completionTime}</span>
-                  </div>
-                  <div className="flex justify-between text-xs col-span-2">
-                    <span className="text-gray-500 uppercase font-bold">Data:</span>
-                    <span className="text-white font-bold">{formatDate(viewingTask.createdAt)}</span>
-                  </div>
-
-                  {viewingTask.category === 'Ligação' && (
-                    <>
-                      {viewingTask.answered && (
-                        <div className="flex justify-between text-xs col-span-2">
-                          <span className="text-gray-500 uppercase font-bold">Status:</span>
-                          <span className={viewingTask.answered === 'Atendeu' ? 'text-brand-primary font-bold' : 'text-red-400 font-bold'}>{viewingTask.answered}</span>
-                        </div>
-                      )}
-                      {viewingTask.touchpoint != null && (
-                        <div className="flex justify-between text-xs col-span-2">
-                          <span className="text-gray-500 uppercase font-bold">Touchpoint:</span>
-                          <span className="text-white font-bold">{viewingTask.touchpoint}</span>
-                        </div>
-                      )}
-                      <div className="flex justify-between text-xs col-span-2">
-                        <span className="text-gray-500 uppercase font-bold">Marcou reunião:</span>
-                        <span className={viewingTask.scheduled ? 'text-brand-primary font-bold' : 'text-red-400 font-bold'}>
-                          {viewingTask.scheduled ? 'Sim' : 'Não'}
-                        </span>
-                      </div>
-                    </>
-                  )}
-
-                  {viewingTask.category !== 'Ligação' && (
-                    <>
-                      {viewingTask.meetingStatus && (
-                        <div className="flex justify-between text-xs col-span-2">
-                          <span className="text-gray-500 uppercase font-bold">Status:</span>
-                          <span className={viewingTask.meetingStatus === 'Compareceu' ? 'text-brand-primary font-bold' : 'text-red-400 font-bold'}>{viewingTask.meetingStatus}</span>
-                        </div>
-                      )}
-                      {viewingTask.saleStatus && (
-                        <div className="flex justify-between text-xs col-span-2">
-                          <span className="text-gray-500 uppercase font-bold">Resultado:</span>
-                          <span className={
-                            viewingTask.saleStatus === 'Venda' ? 'text-brand-primary font-bold' :
-                            viewingTask.saleStatus === 'Marcou R2+' ? 'text-blue-400 font-bold' :
-                            'text-red-400 font-bold'
-                          }>{viewingTask.saleStatus}</span>
-                        </div>
-                      )}
-                      {viewingTask.responsibleName && (
-                        <div className="flex justify-between text-xs col-span-2">
-                          <span className="text-gray-500 uppercase font-bold">Responsável:</span>
-                          <span className="text-white font-medium">{viewingTask.responsibleName}</span>
-                        </div>
-                      )}
-                      {viewingTask.contractValue != null && (
-                        <div className="flex justify-between text-xs col-span-2">
-                          <span className="text-gray-500 uppercase font-bold">Contrato:</span>
-                          <span className="text-brand-primary font-bold">R$ {(viewingTask.contractValue ?? 0).toLocaleString()}</span>
-                        </div>
-                      )}
-                      {viewingTask.cashCollect != null && (
-                        <div className="flex justify-between text-xs col-span-2">
-                          <span className="text-gray-500 uppercase font-bold">Cash Collect:</span>
-                          <span className="text-brand-primary font-bold">R$ {(viewingTask.cashCollect ?? 0).toLocaleString()}</span>
-                        </div>
-                      )}
-                      {viewingTask.nextMeetingDate && (
-                        <div className="flex justify-between text-xs col-span-2">
-                          <span className="text-gray-500 uppercase font-bold">Próxima Reunião:</span>
-                          <span className="text-blue-400 font-bold">{format(parseISO(viewingTask.nextMeetingDate), 'dd/MM/yyyy HH:mm')}</span>
-                        </div>
-                      )}
-                      {viewingTask.companyName && (
-                        <div className="flex justify-between text-xs col-span-2">
-                          <span className="text-gray-500 uppercase font-bold">Empresa:</span>
-                          <span className="text-white font-medium">{viewingTask.companyName}</span>
-                        </div>
-                      )}
-                      {viewingTask.lossReason && (
-                        <div className="text-xs col-span-2">
-                          <span className="text-red-400 uppercase font-bold block mb-1">Motivo Perda:</span>
-                          <p className="text-gray-400 italic">{viewingTask.lossReason}</p>
-                        </div>
-                      )}
-                    </>
-                  )}
+              </div>
+              <div className="p-4 flex justify-between items-center bg-bg-card/50">
+                <div>
+                  <p className="text-xs font-bold text-white flex items-center gap-2">
+                    <div className="w-1.5 h-1.5 rounded-full bg-brand-primary" />
+                    {task.collaborator}
+                  </p>
+                  <p className="text-[10px] text-gray-500 uppercase tracking-widest font-bold mt-1 ml-3.5">{formatDate(task.createdAt)}</p>
                 </div>
-
-                <div className="flex justify-between items-center pt-2 border-t border-white/5">
-                  <span className="text-[10px] text-gray-600 uppercase tracking-widest font-bold">ID: {viewingTask.id.split('-')[1]}</span>
-                  {viewingTask.companyName && onOpenInCRM && (
-                    <button
-                      onClick={() => { onOpenInCRM(viewingTask.companyName!); setViewingTask(null); }}
-                      className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-brand-primary transition-colors"
-                    >
-                      <ExternalLink size={12} /> Ver no CRM
-                    </button>
-                  )}
+                <div className="text-[10px] font-bold text-gray-600 uppercase tracking-tighter">
+                  ID: {task.id.split('-')[1]}
                 </div>
               </div>
             </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+          ))}
+          {tasks.length === 0 && (
+            <div className="col-span-full py-20 text-center glass-card border-dashed border-2 border-white/5">
+              <AlertTriangle size={48} className="text-gray-800 mx-auto mb-4" />
+              <p className="text-gray-500 font-medium">Nenhuma atividade registrada ainda.</p>
+              <p className="text-[10px] text-gray-600 uppercase tracking-widest mt-2">O time comercial ainda não enviou relatórios hoje.</p>
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 };
@@ -3005,21 +2068,6 @@ const ComercialView = ({ teamMembers, userSession, onOpenInCRM }: {
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('Dashboard');
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-
-  // Role-based permission helper
-  const canSee = (tab: string): boolean => {
-    const role = (userSession?.role ?? '').toLowerCase();
-    const permissions: Record<string, string[]> = {
-      'admin':     ['Dashboard', 'Clientes', 'Kanban de Operação', 'Equipe', 'Relatórios', 'Aquisição', 'Playbooks', 'Configurações'],
-      'comercial': ['Aquisição', 'Playbooks'],
-      'suporte':   ['Clientes', 'Kanban de Operação', 'Relatórios', 'Playbooks'],
-      'entrega':   ['Clientes', 'Kanban de Operação', 'Relatórios', 'Playbooks'],
-    };
-    return (permissions[role] ?? permissions['admin']).includes(tab);
-  };
-  const [aquisicaoSubTab, setAquisicaoSubTab] = useState<'CRM' | 'Relatorio'>('CRM');
-  const [openCRMLeadName, setOpenCRMLeadName] = useState('');
   const [clients, setClients] = useState<Client[]>([]);
   const [allTags, setAllTags] = useState<Record<string, Tag>>(INITIAL_TAGS);
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>(INITIAL_TEAM_MEMBERS);
@@ -3082,7 +2130,8 @@ export default function App() {
         if (!userSession) {
           const savedSession = localStorage.getItem('hubm2black_session');
           if (savedSession) {
-            setUserSession(JSON.parse(savedSession));
+            const parsed = JSON.parse(savedSession);
+            setUserSession(parsed);
           }
         }
       } catch (error) {
@@ -3096,18 +2145,8 @@ export default function App() {
   }, [userSession]);
 
   useEffect(() => {
-    if (userSession) {
-      localStorage.setItem('hubm2black_session', JSON.stringify(userSession));
-      const role = (userSession.role ?? '').toLowerCase();
-      if (role === 'comercial') {
-        setActiveTab('Aquisição');
-        setAquisicaoSubTab('CRM');
-      } else if (['suporte', 'entrega'].includes(role)) {
-        setActiveTab('Clientes');
-      }
-    } else {
-      localStorage.removeItem('hubm2black_session');
-    }
+    if (userSession) localStorage.setItem('hubm2black_session', JSON.stringify(userSession));
+    else localStorage.removeItem('hubm2black_session');
   }, [userSession]);
 
   // --- Auto-generate Notifications ---
@@ -3385,18 +2424,12 @@ export default function App() {
               </button>
             </div>
 
-            {member.photoUrl ? (
-              <div className="w-20 h-20 rounded-2xl overflow-hidden mb-4 shadow-glow" style={{ border: `1px solid ${member.color}44` }}>
-                <img src={member.photoUrl} alt={member.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-              </div>
-            ) : (
-              <div
-                className="w-20 h-20 rounded-2xl flex items-center justify-center text-2xl font-black mb-4 shadow-glow"
-                style={{ backgroundColor: `${member.color}22`, color: member.color, border: `1px solid ${member.color}44` }}
-              >
-                {member.name.split(' ').map(n => n[0]).join('')}
-              </div>
-            )}
+            <div 
+              className="w-20 h-20 rounded-2xl flex items-center justify-center text-2xl font-black mb-4 shadow-glow"
+              style={{ backgroundColor: `${member.color}22`, color: member.color, border: `1px solid ${member.color}44` }}
+            >
+              {member.name.split(' ').map(n => n[0]).join('')}
+            </div>
 
             <h3 className="text-lg font-bold text-white">{member.name}</h3>
             <p className="text-brand-primary text-xs font-bold uppercase tracking-widest mt-1">{member.role}</p>
@@ -3414,7 +2447,79 @@ export default function App() {
     </div>
   );
 
-  const renderDashboard = () => <DashboardView userSession={userSession} />;
+  const renderDashboard = () => (
+    <div className="space-y-8">
+      <div className="flex justify-between items-end">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
+          <p className="text-gray-400 mt-1">Visão geral da operação {agencyConfig.name}.</p>
+        </div>
+        <div className="flex gap-3">
+          <button 
+            onClick={exportPDF}
+            className="px-4 py-2 rounded-lg bg-white/5 border border-white/10 text-sm font-medium hover:bg-white/10 transition-colors flex items-center gap-2"
+          >
+            <Download size={16} /> Exportar PDF
+          </button>
+          <button 
+            onClick={() => setIsRegistrationModalOpen(true)}
+            className="px-4 py-2 rounded-lg bg-brand-primary text-bg-main font-bold text-sm shadow-glow hover:scale-105 transition-all"
+          >
+            Novo Cliente
+          </button>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <MetricCard label="Total de Clientes" value={clients.length} trend="+12%" icon={Users} />
+        <MetricCard label="Em Onboarding" value={clients.filter(c => c.status === 'Onboarding').length} trend="Estável" icon={Clock} />
+        <MetricCard label="Clientes Ativos" value={clients.filter(c => c.isActive).length} trend="+5%" icon={Users} />
+        <MetricCard label="Taxa de Churn" value="2.4%" trend="-0.8%" icon={BarChart3} />
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="lg:col-span-2 glass-card p-8">
+          <h3 className="text-sm font-bold uppercase tracking-widest text-brand-primary mb-8">Crescimento de Receita</h3>
+          <div className="h-72 w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={revenueChartData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
+                <XAxis dataKey="name" stroke="#555" fontSize={10} tickLine={false} axisLine={false} />
+                <YAxis stroke="#555" fontSize={10} tickLine={false} axisLine={false} tickFormatter={(v) => `R$${v/1000}k`} />
+                <Tooltip 
+                  contentStyle={{ backgroundColor: '#0A0A0A', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px' }}
+                  itemStyle={{ color: '#00FF88', fontSize: '12px' }}
+                  formatter={(v: any) => [`R$ ${v.toLocaleString()}`, 'Receita']}
+                />
+                <Line type="monotone" dataKey="receita" stroke="#00FF88" strokeWidth={3} dot={{ fill: '#00FF88', r: 4 }} activeDot={{ r: 6, strokeWidth: 0 }} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        <div className="glass-card p-8">
+          <h3 className="text-sm font-bold uppercase tracking-widest text-brand-primary mb-8">Distribuição por Plano</h3>
+          <div className="space-y-8">
+            {planDistributionData.map(item => (
+              <div key={item.label} className="space-y-3">
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-400 font-bold uppercase tracking-widest text-[10px]">{item.label}</span>
+                  <span className="font-black text-white">{item.count}</span>
+                </div>
+                <div className="h-2 w-full bg-white/5 rounded-full overflow-hidden">
+                  <motion.div 
+                    initial={{ width: 0 }}
+                    animate={{ width: `${clients.length > 0 ? (item.count / clients.length) * 100 : 0}%` }}
+                    className={`h-full ${item.color} shadow-glow`}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 
   const renderKanban = () => (
     <div className="h-full flex flex-col gap-6">
@@ -3589,13 +2694,7 @@ export default function App() {
   return (
     <div className="flex h-screen bg-bg-main overflow-hidden">
       {/* Sidebar */}
-      <motion.aside
-        initial={false}
-        animate={{ width: sidebarCollapsed ? 0 : 256, padding: sidebarCollapsed ? 0 : 24 }}
-        transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
-        className="bg-bg-sidebar border-r border-white/5 flex flex-col z-40 overflow-hidden flex-shrink-0"
-      >
-        <div className="min-w-[208px]">
+      <aside className="w-64 bg-bg-sidebar border-r border-white/5 flex flex-col p-6 z-40">
         <div className="flex items-center gap-3 mb-10 px-2">
           {agencyConfig.logoUrl ? (
             <div className="w-10 h-10 rounded-xl overflow-hidden shadow-glow border border-white/10">
@@ -3618,43 +2717,16 @@ export default function App() {
         </div>
 
         <nav className="flex-1 space-y-2">
-          {canSee('Dashboard') && <SidebarItem icon={LayoutDashboard} label="Dashboard" active={activeTab === 'Dashboard'} onClick={() => setActiveTab('Dashboard')} />}
-          {canSee('Clientes') && <SidebarItem icon={Users} label="Clientes" active={activeTab === 'Clientes'} onClick={() => setActiveTab('Clientes')} />}
-          {canSee('Kanban de Operação') && <SidebarItem icon={KanbanIcon} label="Kanban de Operação" active={activeTab === 'Kanban de Operação'} onClick={() => setActiveTab('Kanban de Operação')} />}
-          {canSee('Equipe') && <SidebarItem icon={Users} label="Equipe" active={activeTab === 'Equipe'} onClick={() => setActiveTab('Equipe')} />}
-          {canSee('Relatórios') && <SidebarItem icon={BarChart3} label="Relatórios" active={activeTab === 'Relatórios'} onClick={() => setActiveTab('Relatórios')} />}
-          {canSee('Playbooks') && <SidebarItem icon={BookOpen} label="Playbooks" active={activeTab === 'Playbooks'} onClick={() => setActiveTab('Playbooks')} />}
-          
-          <div className="space-y-1">
-            {canSee('Aquisição') && <SidebarItem icon={Briefcase} label="Aquisição" active={activeTab === 'Aquisição'} onClick={() => { setActiveTab('Aquisição'); setAquisicaoSubTab('CRM'); }} />}
-            {activeTab === 'Aquisição' && (
-              <motion.div 
-                initial={{ opacity: 0, y: -10 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="ml-9 space-y-1"
-              >
-                <div className="space-y-1">
-                  <button 
-                    onClick={() => setAquisicaoSubTab('CRM')}
-                    className={`w-full text-left px-4 py-2 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all ${aquisicaoSubTab === 'CRM' ? 'text-brand-primary bg-white/5' : 'text-gray-500 hover:text-white'}`}
-                  >
-                    CRM
-                  </button>
-                  <button
-                    onClick={() => setAquisicaoSubTab('Relatorio')}
-                    className={`w-full text-left px-4 py-2 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all ${aquisicaoSubTab === 'Relatorio' ? 'text-brand-primary bg-white/5' : 'text-gray-500 hover:text-white'}`}
-                  >
-                    Relatório
-                  </button>
-
-                </div>
-              </motion.div>
-            )}
-          </div>
+          <SidebarItem icon={LayoutDashboard} label="Dashboard" active={activeTab === 'Dashboard'} onClick={() => setActiveTab('Dashboard')} />
+          <SidebarItem icon={Users} label="Clientes" active={activeTab === 'Clientes'} onClick={() => setActiveTab('Clientes')} />
+          <SidebarItem icon={KanbanIcon} label="Kanban de Operação" active={activeTab === 'Kanban de Operação'} onClick={() => setActiveTab('Kanban de Operação')} />
+          <SidebarItem icon={Users} label="Equipe" active={activeTab === 'Equipe'} onClick={() => setActiveTab('Equipe')} />
+          <SidebarItem icon={BarChart3} label="Relatórios" active={activeTab === 'Relatórios'} onClick={() => setActiveTab('Relatórios')} />
+          <SidebarItem icon={Briefcase} label="Comercial" active={activeTab === 'Comercial'} onClick={() => setActiveTab('Comercial')} />
         </nav>
 
         <div className="mt-auto pt-6 border-t border-white/5 relative">
-          {canSee('Configurações') && <SidebarItem icon={Settings} label="Configurações" active={activeTab === 'Configurações'} onClick={() => setActiveTab('Configurações')} />}
+          <SidebarItem icon={Settings} label="Configurações" active={activeTab === 'Configurações'} onClick={() => setActiveTab('Configurações')} />
           <div className="mt-6 p-4 rounded-xl bg-white/5 border border-white/5 flex items-center gap-3 relative">
             <div 
               className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold"
@@ -3662,59 +2734,34 @@ export default function App() {
             >
               {userSession.name.split(' ').map(n => n[0]).join('')}
             </div>
-            {!sidebarCollapsed && (
-              <>
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs font-bold truncate">{userSession.name}</p>
-                  <p className="text-[10px] text-gray-500 truncate">{userSession.role}</p>
-                </div>
-                <button
-                  onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
-                  className="text-gray-600 hover:text-white transition-colors"
-                >
-                  <MoreVertical size={14} />
-                </button>
-              </>
-            )}
-            {sidebarCollapsed && (
-              <button
-                onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
-                className="absolute inset-0 rounded-xl"
-                title={userSession.name}
-              />
-            )}
-            <UserMenu
-              isOpen={isUserMenuOpen}
-              onClose={() => setIsUserMenuOpen(false)}
-              user={userSession}
-              onLogout={() => { setUserSession(null); setActiveTab('Dashboard'); }}
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-bold truncate">{userSession.name}</p>
+              <p className="text-[10px] text-gray-500 truncate">{userSession.role}</p>
+            </div>
+            <button 
+              onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
+              className="text-gray-600 hover:text-white transition-colors"
+            >
+              <MoreVertical size={14} />
+            </button>
+            <UserMenu 
+              isOpen={isUserMenuOpen} 
+              onClose={() => setIsUserMenuOpen(false)} 
+              user={userSession} 
+              onLogout={() => setUserSession(null)} 
             />
           </div>
         </div>
-        </div>
-      </motion.aside>
+      </aside>
 
       {/* Main Content */}
       <main className="flex-1 flex flex-col min-w-0 overflow-hidden relative">
         {/* Navbar */}
         <header className="h-16 border-b border-white/5 px-8 flex items-center justify-between bg-bg-main/50 backdrop-blur-md z-30">
           <div className="flex items-center gap-4">
-            <button
-              onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-              className="p-1.5 rounded-lg text-gray-500 hover:text-brand-primary hover:bg-white/5 transition-all"
-              title={sidebarCollapsed ? 'Mostrar menu' : 'Esconder menu'}
-            >
-              {sidebarCollapsed ? <PanelLeft size={18} /> : <PanelLeftClose size={18} />}
-            </button>
             <span className="text-xs font-bold text-gray-500 uppercase tracking-widest">{agencyConfig.name}</span>
             <ChevronRight size={14} className="text-gray-700" />
             <span className="text-xs font-bold text-white">{activeTab}</span>
-            {activeTab === 'Aquisição' && (
-              <>
-                <ChevronRight size={14} className="text-gray-700" />
-                <span className="text-xs font-bold text-white">{aquisicaoSubTab === 'CRM' ? 'CRM' : 'Relatório'}</span>
-              </>
-            )}
           </div>
 
           <div className="flex items-center gap-6">
@@ -3782,19 +2829,7 @@ export default function App() {
                 />
               )}
               {activeTab === 'Relatórios' && <ReportsView clients={clients} config={agencyConfig} />}
-              {activeTab === 'Playbooks' && <PlaybooksView />}
-              {activeTab === 'Aquisição' && aquisicaoSubTab === 'CRM' && (
-                <div className="glass-card p-6">
-                  <CRMView userSession={userSession} teamMembers={teamMembers} openLeadByName={openCRMLeadName} onLeadOpened={() => setOpenCRMLeadName('')} />
-                </div>
-              )}
-              {activeTab === 'Aquisição' && aquisicaoSubTab === 'Relatorio' && (
-                <ComercialView
-                  teamMembers={teamMembers}
-                  userSession={userSession}
-                  onOpenInCRM={(name) => { setOpenCRMLeadName(name); setAquisicaoSubTab('CRM'); }}
-                />
-              )}
+              {activeTab === 'Comercial' && <ComercialView teamMembers={teamMembers} />}
             </motion.div>
           </AnimatePresence>
         </div>

@@ -1,5 +1,5 @@
 import { supabase } from './supabase';
-import type { Client, TeamMember, AgencyConfig, Tag, ComercialTask } from '../types';
+import type { Client, TeamMember, AgencyConfig, Tag } from '../types';
 
 // --- Mappers Client camelCase <-> snake_case ---
 function clientToDb(c: Client): Record<string, unknown> {
@@ -21,18 +21,7 @@ function clientToDb(c: Client): Record<string, unknown> {
     offers: c.offers ?? [],
     onboarding_checklist: c.onboardingChecklist ?? [],
     monthly_meetings: c.monthlyMeetings ?? [],
-    razao_social: c.razaoSocial ?? '',
-    tipo_pessoa: c.tipoPessoa ?? '',
-    cpf_cnpj: c.cpfCnpj ?? '',
-    endereco: c.endereco ?? '',
-    email_contato: c.emailContato ?? '',
-    telefone_contato: c.telefoneContato ?? '',
-    nome_responsavel_financeiro: c.nomeResponsavelFinanceiro ?? '',
-    valor_contrato: c.valorContrato ?? 0,
-    valor_cc: c.valorCc ?? 0,
-    valor_mrr: c.valorMrr ?? 0,
-    forma_pagamento: c.formaPagamento ?? '',
-    data_primeiro_vencimento: c.dataPrimeiroVencimento ?? '',
+    is_active: c.isActive,
   };
 }
 
@@ -55,19 +44,7 @@ function dbToClient(row: Record<string, unknown>): Client {
     offers: (row.offers as Client['offers']) ?? [],
     onboardingChecklist: (row.onboarding_checklist as Client['onboardingChecklist']) ?? [],
     monthlyMeetings: (row.monthly_meetings as Client['monthlyMeetings']) ?? [],
-    isActive: true,
-    razaoSocial: (row.razao_social as string) ?? '',
-    tipoPessoa: (row.tipo_pessoa as string) ?? '',
-    cpfCnpj: (row.cpf_cnpj as string) ?? '',
-    endereco: (row.endereco as string) ?? '',
-    emailContato: (row.email_contato as string) ?? '',
-    telefoneContato: (row.telefone_contato as string) ?? '',
-    nomeResponsavelFinanceiro: (row.nome_responsavel_financeiro as string) ?? '',
-    valorContrato: (row.valor_contrato as number) ?? 0,
-    valorCc: (row.valor_cc as number) ?? 0,
-    valorMrr: (row.valor_mrr as number) ?? 0,
-    formaPagamento: (row.forma_pagamento as string) ?? '',
-    dataPrimeiroVencimento: (row.data_primeiro_vencimento as string) ?? '',
+    isActive: (row.is_active as boolean) ?? true,
   };
 }
 
@@ -80,7 +57,6 @@ function memberToDb(m: TeamMember): Record<string, unknown> {
     role: m.role,
     status: m.status,
     color: m.color,
-    photo_url: m.photoUrl ?? '',
   };
   if (m.password) row.password = m.password;
   return row;
@@ -95,7 +71,6 @@ function dbToMember(row: Record<string, unknown>): TeamMember {
     password: row.password as string,
     status: row.status as TeamMember['status'],
     color: (row.color as string) ?? '#00FF88',
-    photoUrl: (row.photo_url as string) || '',
   };
 }
 
@@ -120,10 +95,9 @@ export async function createClient(client: Client): Promise<Client> {
 }
 
 export async function updateClient(client: Client): Promise<Client> {
-  const { id, ...dbData } = clientToDb(client);
   const { data, error } = await supabase
     .from('clients')
-    .update(dbData)
+    .update(clientToDb(client))
     .eq('id', client.id)
     .select()
     .single();
@@ -263,58 +237,4 @@ export async function updateAgencyConfig(config: AgencyConfig): Promise<void> {
     const { error } = await supabase.from('agency_config').insert(dbRow);
     if (error) throw error;
   }
-}
-
-// --- COMERCIAL TASKS ---
-function taskToDb(t: ComercialTask): Record<string, unknown> {
-  return {
-    id: t.id, type: t.type, category: t.category, collaborator: t.collaborator,
-    image_url: t.imageUrl, completion_time: t.completionTime,
-    answered: t.answered ?? null, meeting_status: t.meetingStatus ?? null,
-    scheduled: t.scheduled, sale_status: t.saleStatus ?? null,
-    contract_value: t.contractValue ?? null, cash_collect: t.cashCollect ?? null,
-    term_months: t.termMonths ?? null, company_name: t.companyName ?? null,
-    cnpj: t.cnpj ?? null, address: t.address ?? null,
-    contact_email: t.contactEmail ?? null, phone: t.phone ?? null,
-    meeting_summary: t.meetingSummary ?? null, next_meeting_date: t.nextMeetingDate ?? null,
-    loss_reason: t.lossReason ?? null, touchpoint: t.touchpoint ?? null,
-    responsible_name: t.responsibleName ?? null, created_at: t.createdAt,
-  };
-}
-function dbToTask(row: Record<string, unknown>): ComercialTask {
-  return {
-    id: row.id as string, type: row.type as ComercialTask['type'],
-    category: row.category as ComercialTask['category'], collaborator: row.collaborator as string,
-    imageUrl: row.image_url as string, completionTime: row.completion_time as string,
-    answered: (row.answered as ComercialTask['answered']) ?? null,
-    meetingStatus: (row.meeting_status as ComercialTask['meetingStatus']) ?? null,
-    scheduled: (row.scheduled as boolean) ?? false,
-    saleStatus: (row.sale_status as ComercialTask['saleStatus']) ?? null,
-    contractValue: row.contract_value as number | undefined,
-    cashCollect: row.cash_collect as number | undefined,
-    termMonths: row.term_months as number | undefined,
-    companyName: row.company_name as string | undefined,
-    cnpj: row.cnpj as string | undefined, address: row.address as string | undefined,
-    contactEmail: row.contact_email as string | undefined, phone: row.phone as string | undefined,
-    meetingSummary: row.meeting_summary as string | undefined,
-    nextMeetingDate: row.next_meeting_date as string | undefined,
-    lossReason: row.loss_reason as string | undefined,
-    touchpoint: row.touchpoint as number | undefined,
-    responsibleName: row.responsible_name as string | undefined,
-    createdAt: row.created_at as string,
-  };
-}
-export async function getComercialTasks(): Promise<ComercialTask[]> {
-  const { data, error } = await supabase.from('comercial_tasks').select('*').order('created_at', { ascending: false }).limit(200);
-  if (error) throw error;
-  return (data ?? []).map((row) => dbToTask(row as Record<string, unknown>));
-}
-export async function createComercialTask(task: ComercialTask): Promise<ComercialTask> {
-  const { data, error } = await supabase.from('comercial_tasks').insert(taskToDb(task)).select().single();
-  if (error) throw error;
-  return dbToTask(data as Record<string, unknown>);
-}
-export async function deleteComercialTask(id: string): Promise<void> {
-  const { error } = await supabase.from('comercial_tasks').delete().eq('id', id);
-  if (error) throw error;
 }

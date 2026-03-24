@@ -1,0 +1,50 @@
+@import "tailwindcss";
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap');
+
+@theme {
+  --font-sans: "Inter", "Manrope", ui-sans-serif, system-ui, sans-serif;
+  
+  --color-brand-primary: #00FF88;
+  --color-brand-secondary: #00FFB2;
+  --color-bg-main: #07121F;
+  --color-bg-card: #0F1C2E;
+  --color-bg-sidebar: #050B14;
+  --color-border-subtle: rgba(255, 255, 255, 0.05);
+  
+  --shadow-glow: 0 0 15px rgba(0, 255, 136, 0.15);
+}
+
+@layer base {
+  body {
+    @apply bg-bg-main text-white font-sans antialiased;
+  }
+}
+
+.glass-card {
+  @apply bg-bg-card border border-border-subtle rounded-xl shadow-lg transition-all duration-300;
+}
+
+.glass-card:hover {
+  @apply border-brand-primary/20 shadow-glow;
+}
+
+.kanban-column {
+  @apply flex flex-col gap-4 min-w-[300px] h-full;
+}
+
+.custom-scrollbar::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  @apply bg-transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  @apply bg-white/10 rounded-full;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  @apply bg-white/20;
+}
