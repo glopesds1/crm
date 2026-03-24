@@ -159,8 +159,9 @@ function LeadCard({ lead, proximaTarefa, onClick }: { key?: React.Key; lead: CRM
 }
 
 // ── Nova Atividade Form ────────────────────────────────────────
-function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSaved, onCancel, onLeadUpdated, onClientCreated }: {
+function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSaved, onCancel, onLeadUpdated, onClientCreated, onTarefaCreated }: {
   lead?: CRMLead; leadId: string; leadName: string; userSession: any; onSaved: (a: CRMAtividade) => void; onCancel: () => void; onLeadUpdated?: (upd: Partial<CRMLead>) => void; onClientCreated?: () => void;
+  onTarefaCreated?: (tarefa: CRMTarefa) => void;
 }) {
   const [tipo, setTipo] = useState<'ligacao' | 'reuniao'>('ligacao');
   const [statusChamada, setStatusChamada] = useState<'Atendeu' | 'Não atendeu' | null>(null);
@@ -285,14 +286,15 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
       // Auto-create task + move to rm_marcada when agendou
       if (agendou && dataAgendamento) {
         try {
-          await supabase.from('crm_tarefas').insert({
+          const { data: newTask } = await supabase.from('crm_tarefas').insert({
             lead_id: leadId,
             titulo: `Reunião - ${leadName}`,
             data_agendada: dataAgendamento,
             responsavel: userSession?.name ?? '',
             concluida: false,
             created_at: now,
-          });
+          }).select().single();
+          if (newTask) onTarefaCreated?.(newTask);
         } catch (err) {
           console.error('Failed to create scheduled meeting task:', err);
         }
@@ -404,14 +406,15 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
       // Auto-create task for R2+ / Reagendou
       if ((resultado === 'Marcou R2+' || resultado === 'Reagendou') && proximaReuniao) {
         try {
-          await supabase.from('crm_tarefas').insert({
+          const { data: r2Task } = await supabase.from('crm_tarefas').insert({
             lead_id: leadId,
             titulo: `R2+ - ${leadName}`,
             data_agendada: proximaReuniao,
             responsavel: userSession?.name ?? '',
             concluida: false,
             created_at: now,
-          });
+          }).select().single();
+          if (r2Task) onTarefaCreated?.(r2Task);
         } catch (err) {
           console.error('Failed to create R2+ task:', err);
         }
@@ -451,14 +454,15 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
 
     // Create task if scheduled (manual)
     if (tituloTarefa.trim()) {
-      await supabase.from('crm_tarefas').insert({
+      const { data: manualTask } = await supabase.from('crm_tarefas').insert({
         lead_id: leadId,
         titulo: tituloTarefa,
         data_agendada: dataAgendada || null,
         responsavel: userSession?.name ?? '',
         concluida: false,
         created_at: now,
-      });
+      }).select().single();
+      if (manualTask) onTarefaCreated?.(manualTask);
     }
     setSaving(false);
     onSaved(data);
@@ -741,11 +745,12 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
 }
 
 // ── Lead Modal ────────────────────────────────────────────────
-function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, onClientCreated }: {
+function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, onClientCreated, onTarefaCreated }: {
   lead: CRMLead; onClose: () => void;
   onSave: (updated: Partial<CRMLead>) => Promise<void>;
   onDelete: (leadId: string) => void;
   userSession: any; teamMembers: TeamMember[]; onClientCreated?: () => void;
+  onTarefaCreated?: (tarefa: CRMTarefa) => void;
 }) {
   const isAdmin = (userSession?.role ?? '').toLowerCase() === 'admin';
   const [etapa, setEtapa] = useState(lead.etapa);
@@ -854,7 +859,7 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
         concluida: false,
         created_at: now,
       }).select().single();
-      if (data) setTarefas(prev => [...prev, data]);
+      if (data) { setTarefas(prev => [...prev, data]); onTarefaCreated?.(data); }
       // Update proxima_reuniao if this task is sooner
       const agDate = new Date(agData);
       if (agDate > new Date() && (!lead.proxima_reuniao || agDate < new Date(lead.proxima_reuniao))) {
@@ -1015,11 +1020,12 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
     // 4. Auto-create task for R2+ / Reagendou
     if ((rrResultado === 'Marcou R2+' || rrResultado === 'Reagendou') && rrProximaReuniao) {
       try {
-        await supabase.from('crm_tarefas').insert({
+        const { data: rrTask } = await supabase.from('crm_tarefas').insert({
           lead_id: lead.id, titulo: `R2+ - ${lead.nome}`,
           data_agendada: rrProximaReuniao, responsavel: userSession?.name ?? '',
           concluida: false, created_at: now,
-        });
+        }).select().single();
+        if (rrTask) onTarefaCreated?.(rrTask);
       } catch (err) { console.error('R2+ task failed:', err); }
     }
 
@@ -1446,7 +1452,7 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
             {/* Nova Atividade + Agendar Tarefa inline */}
             <div className="border-t border-white/5 pt-3">
               {showAtivForm ? (
-                <NovaAtividadeForm lead={lead} leadId={lead.id} leadName={lead.nome} userSession={userSession} onSaved={handleAtivSaved} onCancel={() => setShowAtivForm(false)} onLeadUpdated={handleLeadUpdated} onClientCreated={onClientCreated} />
+                <NovaAtividadeForm lead={lead} leadId={lead.id} leadName={lead.nome} userSession={userSession} onSaved={handleAtivSaved} onCancel={() => setShowAtivForm(false)} onLeadUpdated={handleLeadUpdated} onClientCreated={onClientCreated} onTarefaCreated={onTarefaCreated} />
               ) : showAgendarTarefa ? (
                 <div className="space-y-3 bg-white/[0.02] border border-white/10 rounded-xl p-4">
                   <p className="text-[9px] font-bold uppercase tracking-widest text-brand-primary">Agendar Tarefa</p>
@@ -1525,7 +1531,7 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
               >
                 <Plus size={13} /> Registrar atividade
               </button>
-              {showAtivForm && <NovaAtividadeForm lead={lead} leadId={lead.id} leadName={lead.nome} userSession={userSession} onSaved={handleAtivSaved} onCancel={() => setShowAtivForm(false)} onLeadUpdated={handleLeadUpdated} onClientCreated={onClientCreated} />}
+              {showAtivForm && <NovaAtividadeForm lead={lead} leadId={lead.id} leadName={lead.nome} userSession={userSession} onSaved={handleAtivSaved} onCancel={() => setShowAtivForm(false)} onLeadUpdated={handleLeadUpdated} onClientCreated={onClientCreated} onTarefaCreated={onTarefaCreated} />}
               {atividades.length === 0 && !showAtivForm && (
                 <div className="py-12 text-center text-xs text-gray-600">Nenhuma atividade registrada ainda.</div>
               )}
@@ -2055,6 +2061,7 @@ export default function CRMView({ userSession, teamMembers, openLeadByName, onLe
       {selectedLead && (
         <LeadModal lead={selectedLead} onClose={() => setSelectedLead(null)}
           onSave={handleSaveLead} onDelete={handleDeleteLead} userSession={userSession} teamMembers={teamMembers} onClientCreated={onClientCreated}
+          onTarefaCreated={(tarefa) => setTarefas(prev => [...prev, tarefa])}
         />
       )}
       {showNewLead && (
