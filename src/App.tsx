@@ -1894,7 +1894,8 @@ const ComercialView = ({ teamMembers, activeSubTab, setActiveSubTab, userSession
 }) => {
   const [selectedCollaborator, setSelectedCollaborator] = useState('');
   const [tasks, setTasks] = useState<ComercialTask[]>([]);
-  
+  const [viewingTask, setViewingTask] = useState<ComercialTask | null>(null);
+
   // Ligação state
   const [newImageLigacao, setNewImageLigacao] = useState<string | null>(null);
   const [newDateLigacao, setNewDateLigacao] = useState(format(new Date(), 'yyyy-MM-dd'));
@@ -2140,12 +2141,13 @@ const ComercialView = ({ teamMembers, activeSubTab, setActiveSubTab, userSession
             <h3 className="text-sm font-bold uppercase tracking-widest text-brand-primary">Histórico de Atividades</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {filteredTasks.map(task => (
-                <motion.div 
+                <motion.div
                   key={task.id}
                   layout
                   initial={{ opacity: 0, scale: 0.9 }}
                   animate={{ opacity: 1, scale: 1 }}
-                  className="glass-card overflow-hidden group border border-white/5 hover:border-brand-primary/20"
+                  onClick={() => setViewingTask(task)}
+                  className="glass-card overflow-hidden group border border-white/5 hover:border-brand-primary/20 cursor-pointer"
                 >
                   <div className="aspect-video w-full relative overflow-hidden bg-bg-sidebar">
                     {task.imageUrl ? (
@@ -2775,6 +2777,163 @@ const ComercialView = ({ teamMembers, activeSubTab, setActiveSubTab, userSession
           )}
         </div>
       )}
+
+      {/* Task detail modal */}
+      <AnimatePresence>
+        {viewingTask && (
+          <motion.div
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm"
+            onClick={() => setViewingTask(null)}
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.9 }}
+              className="bg-bg-card border border-white/10 rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto shadow-2xl"
+              onClick={e => e.stopPropagation()}
+            >
+              {/* Image */}
+              <div className="relative w-full bg-black/40">
+                {viewingTask.imageUrl ? (
+                  <img src={viewingTask.imageUrl} alt="Print da atividade" className="w-full max-h-[50vh] object-contain" />
+                ) : (
+                  <div className="w-full h-48 flex items-center justify-center bg-white/5">
+                    <ImageOff size={48} className="text-gray-700" />
+                  </div>
+                )}
+                <button
+                  onClick={() => setViewingTask(null)}
+                  className="absolute top-3 right-3 p-2 rounded-full bg-black/60 text-white hover:bg-black/80 transition-colors backdrop-blur-sm"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              {/* Details */}
+              <div className="p-6 space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="w-2 h-2 rounded-full bg-brand-primary" />
+                    <span className="text-sm font-bold text-white">{viewingTask.collaborator}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest ${
+                      viewingTask.type === 'PreVendas' ? 'bg-blue-500/20 border border-blue-500/30 text-blue-400' : 'bg-purple-500/20 border border-purple-500/30 text-purple-400'
+                    }`}>
+                      {viewingTask.type === 'PreVendas' ? 'Pré-Vendas' : 'Vendas'}
+                    </span>
+                    <span className="px-3 py-1 rounded-full bg-white/10 border border-white/20 text-[10px] font-bold uppercase tracking-widest text-white">
+                      {viewingTask.category}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="border-t border-white/5 pt-4 grid grid-cols-2 gap-3">
+                  <div className="flex justify-between text-xs col-span-2">
+                    <span className="text-gray-500 uppercase font-bold">Horário:</span>
+                    <span className="text-brand-primary font-bold">{viewingTask.completionTime}</span>
+                  </div>
+                  <div className="flex justify-between text-xs col-span-2">
+                    <span className="text-gray-500 uppercase font-bold">Data:</span>
+                    <span className="text-white font-bold">{formatDate(viewingTask.createdAt)}</span>
+                  </div>
+
+                  {viewingTask.category === 'Ligação' && (
+                    <>
+                      {viewingTask.answered && (
+                        <div className="flex justify-between text-xs col-span-2">
+                          <span className="text-gray-500 uppercase font-bold">Status:</span>
+                          <span className={viewingTask.answered === 'Atendeu' ? 'text-brand-primary font-bold' : 'text-red-400 font-bold'}>{viewingTask.answered}</span>
+                        </div>
+                      )}
+                      {viewingTask.touchpoint != null && (
+                        <div className="flex justify-between text-xs col-span-2">
+                          <span className="text-gray-500 uppercase font-bold">Touchpoint:</span>
+                          <span className="text-white font-bold">{viewingTask.touchpoint}</span>
+                        </div>
+                      )}
+                      <div className="flex justify-between text-xs col-span-2">
+                        <span className="text-gray-500 uppercase font-bold">Marcou reunião:</span>
+                        <span className={viewingTask.scheduled ? 'text-brand-primary font-bold' : 'text-red-400 font-bold'}>
+                          {viewingTask.scheduled ? 'Sim' : 'Não'}
+                        </span>
+                      </div>
+                    </>
+                  )}
+
+                  {viewingTask.category !== 'Ligação' && (
+                    <>
+                      {viewingTask.meetingStatus && (
+                        <div className="flex justify-between text-xs col-span-2">
+                          <span className="text-gray-500 uppercase font-bold">Status:</span>
+                          <span className={viewingTask.meetingStatus === 'Compareceu' ? 'text-brand-primary font-bold' : 'text-red-400 font-bold'}>{viewingTask.meetingStatus}</span>
+                        </div>
+                      )}
+                      {viewingTask.saleStatus && (
+                        <div className="flex justify-between text-xs col-span-2">
+                          <span className="text-gray-500 uppercase font-bold">Resultado:</span>
+                          <span className={
+                            viewingTask.saleStatus === 'Venda' ? 'text-brand-primary font-bold' :
+                            viewingTask.saleStatus === 'Marcou R2+' ? 'text-blue-400 font-bold' :
+                            'text-red-400 font-bold'
+                          }>{viewingTask.saleStatus}</span>
+                        </div>
+                      )}
+                      {viewingTask.responsibleName && (
+                        <div className="flex justify-between text-xs col-span-2">
+                          <span className="text-gray-500 uppercase font-bold">Responsável:</span>
+                          <span className="text-white font-medium">{viewingTask.responsibleName}</span>
+                        </div>
+                      )}
+                      {viewingTask.contractValue != null && (
+                        <div className="flex justify-between text-xs col-span-2">
+                          <span className="text-gray-500 uppercase font-bold">Contrato:</span>
+                          <span className="text-brand-primary font-bold">R$ {(viewingTask.contractValue ?? 0).toLocaleString()}</span>
+                        </div>
+                      )}
+                      {viewingTask.cashCollect != null && (
+                        <div className="flex justify-between text-xs col-span-2">
+                          <span className="text-gray-500 uppercase font-bold">Cash Collect:</span>
+                          <span className="text-brand-primary font-bold">R$ {(viewingTask.cashCollect ?? 0).toLocaleString()}</span>
+                        </div>
+                      )}
+                      {viewingTask.nextMeetingDate && (
+                        <div className="flex justify-between text-xs col-span-2">
+                          <span className="text-gray-500 uppercase font-bold">Próxima Reunião:</span>
+                          <span className="text-blue-400 font-bold">{format(parseISO(viewingTask.nextMeetingDate), 'dd/MM/yyyy HH:mm')}</span>
+                        </div>
+                      )}
+                      {viewingTask.companyName && (
+                        <div className="flex justify-between text-xs col-span-2">
+                          <span className="text-gray-500 uppercase font-bold">Empresa:</span>
+                          <span className="text-white font-medium">{viewingTask.companyName}</span>
+                        </div>
+                      )}
+                      {viewingTask.lossReason && (
+                        <div className="text-xs col-span-2">
+                          <span className="text-red-400 uppercase font-bold block mb-1">Motivo Perda:</span>
+                          <p className="text-gray-400 italic">{viewingTask.lossReason}</p>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+
+                <div className="flex justify-between items-center pt-2 border-t border-white/5">
+                  <span className="text-[10px] text-gray-600 uppercase tracking-widest font-bold">ID: {viewingTask.id.split('-')[1]}</span>
+                  {viewingTask.companyName && onOpenInCRM && (
+                    <button
+                      onClick={() => { onOpenInCRM(viewingTask.companyName!); setViewingTask(null); }}
+                      className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-brand-primary transition-colors"
+                    >
+                      <ExternalLink size={12} /> Ver no CRM
+                    </button>
+                  )}
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };
