@@ -324,13 +324,17 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
           try {
             const parsedContrato = valorContrato ? parseFloat(valorContrato) : 0;
             const parsedMrr = prazoMeses && valorContrato ? parseFloat(valorContrato) / parseInt(prazoMeses) : 0;
-            await supabase.from('clients').insert({
+            const dur = parsedMrr ? Math.round(parsedContrato / parsedMrr) : 12;
+            const entryDate = new Date().toISOString().split('T')[0];
+            const clienteData = {
+              id: Date.now().toString(),
               name: leadName,
               responsible: leadObj?.responsavel ?? '',
               plan: leadObj?.programa_apresentado === 'Pro' ? 'Pro' : leadObj?.programa_apresentado === 'Lite' ? 'Lite' : 'Basic',
               status: 'Onboarding',
-              entry_date: new Date().toISOString().split('T')[0],
-              contract_duration: parsedMrr ? Math.round(parsedContrato / parsedMrr) : 12,
+              entry_date: entryDate,
+              exit_date: '',
+              contract_duration: dur,
               docs: { access: '', transcription: '' },
               tags: [],
               platforms: [],
@@ -340,7 +344,9 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
               comments: [],
               offers: [],
               situation: '',
-            });
+            };
+            console.log('[clients] Inserting:', JSON.stringify(clienteData, null, 2));
+            await supabase.from('clients').insert(clienteData);
           } catch (err) { console.error('Failed to create client:', err); }
 
           // Notify Juliana via n8n (fire-and-forget)
@@ -415,7 +421,7 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
       console.log('[comercial_tasks] Inserting:', JSON.stringify(taskData, null, 2));
       const { error: taskError } = await supabase.from('comercial_tasks').insert(taskData);
       if (taskError) {
-        console.log('[comercial_tasks] Error:', taskError);
+        console.log('[comercial_tasks] Error detail:', JSON.stringify(taskError));
       }
     } catch (err) {
       console.error('Failed to mirror to comercial_tasks:', err);
@@ -906,13 +912,17 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers }
       try {
         const parsedContrato = rrValorContrato ? parseFloat(rrValorContrato) : 0;
         const parsedMrr = computedMrr ?? 0;
-        await supabase.from('clients').insert({
+        const dur = parsedMrr ? Math.round(parsedContrato / parsedMrr) : 12;
+        const entryDate = new Date().toISOString().split('T')[0];
+        const clienteData = {
+          id: Date.now().toString(),
           name: lead.nome,
           responsible: lead.responsavel ?? '',
           plan: lead.programa_apresentado === 'Pro' ? 'Pro' : lead.programa_apresentado === 'Lite' ? 'Lite' : 'Basic',
           status: 'Onboarding',
-          entry_date: new Date().toISOString().split('T')[0],
-          contract_duration: parsedMrr ? Math.round(parsedContrato / parsedMrr) : 12,
+          entry_date: entryDate,
+          exit_date: '',
+          contract_duration: dur,
           docs: { access: '', transcription: '' },
           tags: [],
           platforms: [],
@@ -922,7 +932,9 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers }
           comments: [],
           offers: [],
           situation: '',
-        });
+        };
+        console.log('[clients] Inserting:', JSON.stringify(clienteData, null, 2));
+        await supabase.from('clients').insert(clienteData);
       } catch (err) { console.error('Failed to create client:', err); }
 
       // Notify Juliana via n8n (fire-and-forget)
@@ -948,7 +960,7 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers }
 
     // 3. comercial_tasks
     try {
-      await supabase.from('comercial_tasks').insert({
+      const taskData2 = {
         id: crypto.randomUUID(), type: 'Vendas', category: 'Reunião',
         collaborator: userSession?.name ?? '', meeting_status: rrStatusReuniao,
         sale_status: rrResultado || null,
@@ -958,7 +970,12 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers }
         image_url: uploadedUrl, completion_time: format(new Date(), 'dd/MM/yyyy HH:mm'),
         created_at: now, answered: null, touchpoint: null, scheduled: false,
         company_name: null, responsible_name: null,
-      });
+      };
+      console.log('[comercial_tasks] Inserting:', JSON.stringify(taskData2, null, 2));
+      const { error: taskErr2 } = await supabase.from('comercial_tasks').insert(taskData2);
+      if (taskErr2) {
+        console.log('[comercial_tasks] Error detail:', JSON.stringify(taskErr2));
+      }
     } catch (err) { console.error('comercial_tasks mirror failed:', err); }
 
     // 4. Auto-create task for R2+ / Reagendou
