@@ -2046,6 +2046,11 @@ const ClientModal = ({ client, allTags, teamMembers, onClose, onUpdateClient, on
   userSession: UserSession
 }) => {
   const [newComment, setNewComment] = useState('');
+  const [editName, setEditName] = useState(client.name);
+  const [editResponsible, setEditResponsible] = useState(client.responsible);
+
+  React.useEffect(() => { setEditName(client.name); }, [client.name]);
+  React.useEffect(() => { setEditResponsible(client.responsible); }, [client.responsible]);
   const [showMentionDropdown, setShowMentionDropdown] = useState(false);
   const [mentionFilter, setMentionFilter] = useState('');
   const [mentionIndex, setMentionIndex] = useState(0);
@@ -2129,7 +2134,14 @@ const ClientModal = ({ client, allTags, teamMembers, onClose, onUpdateClient, on
         <div className="p-6 border-b border-white/10 flex justify-between items-center bg-bg-sidebar/50">
           <div>
             <div className="flex items-center gap-3 mb-1">
-              <h2 className="text-2xl font-bold tracking-tight">{client.name}</h2>
+              <input
+                type="text"
+                value={editName}
+                onChange={e => setEditName(e.target.value)}
+                onBlur={() => { if (editName !== client.name && editName.trim()) onUpdateClient({ ...client, name: editName.trim() }); }}
+                onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+                className="text-2xl font-bold tracking-tight bg-transparent border-b border-transparent hover:border-white/20 focus:border-brand-primary focus:outline-none transition-all px-0 py-0"
+              />
               <span className={`text-xs font-bold px-2 py-0.5 rounded uppercase tracking-wider ${
                 client.plan === 'Pro' ? 'bg-purple-500/20 text-purple-400' :
                 client.plan === 'Basic' ? 'bg-blue-500/20 text-blue-400' : 'bg-gray-500/20 text-gray-400'
@@ -2137,7 +2149,16 @@ const ClientModal = ({ client, allTags, teamMembers, onClose, onUpdateClient, on
                 {client.plan}
               </span>
             </div>
-            <p className="text-sm text-gray-400">Responsável: <span className="text-white">{client.responsible}</span></p>
+            <p className="text-sm text-gray-400 flex items-center gap-1">Responsável:
+              <input
+                type="text"
+                value={editResponsible}
+                onChange={e => setEditResponsible(e.target.value)}
+                onBlur={() => { if (editResponsible !== client.responsible && editResponsible.trim()) onUpdateClient({ ...client, responsible: editResponsible.trim() }); }}
+                onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+                className="text-white bg-transparent border-b border-transparent hover:border-white/20 focus:border-brand-primary focus:outline-none transition-all text-sm px-0 py-0"
+              />
+            </p>
           </div>
           <button onClick={onClose} className="p-2 hover:bg-white/5 rounded-full text-gray-400 hover:text-white transition-colors">
             <X size={24} />
@@ -3265,8 +3286,22 @@ export default function App() {
 
   const handleUpdateClient = async (updated: Client) => {
     try {
+      // Detectar mudança de nome para atualizar demandas
+      const oldClient = clients.find(c => c.id === updated.id);
+      const nameChanged = oldClient && oldClient.name !== updated.name;
+
       const result = await updateClient(updated);
       setClients(clients.map(c => c.id === result.id ? result : c));
+
+      // Atualizar nome do cliente nas demandas existentes
+      if (nameChanged) {
+        const affectedDemands = demands.filter(d => d.clientId === updated.id);
+        for (const d of affectedDemands) {
+          const updatedDemand = { ...d, clientName: updated.name };
+          const saved = await updateDemand(updatedDemand);
+          setDemands(prev => prev.map(dd => dd.id === saved.id ? saved : dd));
+        }
+      }
     } catch (error) {
       console.error('Error updating client:', error);
       alert('Erro ao atualizar cliente no banco de dados.');
