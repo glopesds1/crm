@@ -1,5 +1,5 @@
 import { supabase } from './supabase';
-import type { Client, TeamMember, AgencyConfig, Tag, ComercialTask } from '../types';
+import type { Client, TeamMember, AgencyConfig, Tag, ComercialTask, Demand } from '../types';
 
 // --- Mappers Client camelCase <-> snake_case ---
 function clientToDb(c: Client): Record<string, unknown> {
@@ -81,6 +81,7 @@ function memberToDb(m: TeamMember): Record<string, unknown> {
     status: m.status,
     color: m.color,
     photo_url: m.photoUrl ?? '',
+    phone: m.phone ?? '',
   };
   if (m.password) row.password = m.password;
   return row;
@@ -96,6 +97,7 @@ function dbToMember(row: Record<string, unknown>): TeamMember {
     status: row.status as TeamMember['status'],
     color: (row.color as string) ?? '#00FF88',
     photoUrl: (row.photo_url as string) || '',
+    phone: (row.phone as string) || '',
   };
 }
 
@@ -316,5 +318,54 @@ export async function createComercialTask(task: ComercialTask): Promise<Comercia
 }
 export async function deleteComercialTask(id: string): Promise<void> {
   const { error } = await supabase.from('comercial_tasks').delete().eq('id', id);
+  if (error) throw error;
+}
+
+// --- DEMANDS ---
+function demandToDb(d: Demand): Record<string, unknown> {
+  return {
+    id: d.id,
+    client_id: d.clientId,
+    client_name: d.clientName,
+    assigned_to: d.assignedTo,
+    assigned_name: d.assignedName,
+    text: d.text,
+    priority: d.priority,
+    status: d.status,
+    comment_author: d.commentAuthor,
+  };
+}
+function dbToDemand(row: Record<string, unknown>): Demand {
+  return {
+    id: row.id as string,
+    clientId: row.client_id as string,
+    clientName: row.client_name as string,
+    assignedTo: row.assigned_to as string,
+    assignedName: row.assigned_name as string,
+    text: row.text as string,
+    priority: (row.priority as Demand['priority']) ?? 'media',
+    status: (row.status as Demand['status']) ?? 'pendente',
+    commentAuthor: row.comment_author as string,
+    createdAt: row.created_at as string,
+  };
+}
+export async function getDemands(): Promise<Demand[]> {
+  const { data, error } = await supabase.from('demands').select('*').order('created_at', { ascending: false });
+  if (error) throw error;
+  return (data ?? []).map((row) => dbToDemand(row as Record<string, unknown>));
+}
+export async function createDemand(demand: Demand): Promise<Demand> {
+  const { data, error } = await supabase.from('demands').insert(demandToDb(demand)).select().single();
+  if (error) throw error;
+  return dbToDemand(data as Record<string, unknown>);
+}
+export async function updateDemand(demand: Demand): Promise<Demand> {
+  const { id, ...dbData } = demandToDb(demand);
+  const { data, error } = await supabase.from('demands').update(dbData).eq('id', demand.id).select().single();
+  if (error) throw error;
+  return dbToDemand(data as Record<string, unknown>);
+}
+export async function deleteDemand(id: string): Promise<void> {
+  const { error } = await supabase.from('demands').delete().eq('id', id);
   if (error) throw error;
 }

@@ -38,7 +38,9 @@ import {
   PanelLeftClose,
   PanelLeft,
   Sparkles,
-  Loader2
+  Loader2,
+  ClipboardList,
+  AtSign
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -83,6 +85,7 @@ import {
   OnboardingItem, 
   MonthlyMeeting,
   MeetingActionItem,
+  Demand,
   TeamMember,
   AgencyConfig,
   Notification,
@@ -95,7 +98,8 @@ import {
   getTeamMembers, createTeamMember, updateTeamMember, deleteTeamMember,
   getAgencyConfig, updateAgencyConfig,
   getTags, saveTag, deleteTag,
-  getComercialTasks, deleteComercialTask
+  getComercialTasks, createComercialTask, deleteComercialTask,
+  getDemands, createDemand, updateDemand, deleteDemand
 } from './lib/database';
 import { supabase } from './lib/supabase';
 
@@ -136,18 +140,19 @@ const generateMeetings = (entryDate: string, duration: number): MonthlyMeeting[]
 
 // --- Components ---
 
-const SidebarItem = ({ icon: Icon, label, active, onClick }: { icon: any, label: string, active?: boolean, onClick: () => void }) => (
-  <button 
+const SidebarItem = ({ icon: Icon, label, active, onClick, badge }: { icon: any, label: string, active?: boolean, onClick: () => void, badge?: number }) => (
+  <button
     onClick={onClick}
     className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all duration-200 group ${
-      active 
-        ? 'bg-brand-primary/10 text-brand-primary' 
+      active
+        ? 'bg-brand-primary/10 text-brand-primary'
         : 'text-gray-400 hover:bg-white/5 hover:text-white'
     }`}
   >
     <Icon size={20} className={active ? 'text-brand-primary' : 'group-hover:text-white'} />
     <span className="font-medium text-sm">{label}</span>
-    {active && <motion.div layoutId="active-pill" className="ml-auto w-1.5 h-1.5 rounded-full bg-brand-primary" />}
+    {badge ? <span className="ml-auto text-[10px] font-bold bg-red-500/20 text-red-400 px-1.5 py-0.5 rounded-full">{badge}</span> : null}
+    {active && !badge && <motion.div layoutId="active-pill" className="ml-auto w-1.5 h-1.5 rounded-full bg-brand-primary" />}
   </button>
 );
 
@@ -1835,7 +1840,8 @@ const TeamMemberModal = ({
     password: '',
     confirmPassword: '',
     status: 'Ativo' as 'Ativo' | 'Inativo',
-    photoUrl: ''
+    photoUrl: '',
+    phone: ''
   });
   const [showPassword, setShowPassword] = useState(false);
 
@@ -1858,7 +1864,8 @@ const TeamMemberModal = ({
         password: '',
         confirmPassword: '',
         status: member.status,
-        photoUrl: member.photoUrl || ''
+        photoUrl: member.photoUrl || '',
+        phone: member.phone || ''
       });
     } else {
       setFormData({
@@ -1868,7 +1875,8 @@ const TeamMemberModal = ({
         password: '',
         confirmPassword: '',
         status: 'Ativo',
-        photoUrl: ''
+        photoUrl: '',
+        phone: ''
       });
     }
   }, [member, isOpen]);
@@ -1885,7 +1893,8 @@ const TeamMemberModal = ({
       ...formData,
       id: member?.id || `tm-${Date.now()}`,
       color: member?.color || COLOR_PALETTE[Math.floor(Math.random() * COLOR_PALETTE.length)],
-      photoUrl: formData.photoUrl
+      photoUrl: formData.photoUrl,
+      phone: formData.phone
     });
     onClose();
   };
@@ -1960,6 +1969,17 @@ const TeamMemberModal = ({
           </div>
 
           <div>
+            <label className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-2 block">Telefone (WhatsApp)</label>
+            <input
+              type="tel"
+              value={formData.phone}
+              onChange={e => setFormData({ ...formData, phone: e.target.value })}
+              className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-brand-primary transition-all"
+              placeholder="5531999999999"
+            />
+          </div>
+
+          <div>
             <label className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-2 block">Cargo / Função</label>
             <input 
               type="text" 
@@ -2029,26 +2049,85 @@ const TeamMemberModal = ({
   );
 };
 
-const ClientModal = ({ client, allTags, teamMembers, onClose, onUpdateClient, onSaveTag, onDeleteTag }: { 
-  client: Client, 
+const ClientModal = ({ client, allTags, teamMembers, onClose, onUpdateClient, onSaveTag, onDeleteTag, onCreateDemand, userSession }: {
+  client: Client,
   allTags: Record<string, Tag>,
   teamMembers: TeamMember[],
   onClose: () => void,
-  onUpdateClient: (updated: Client) => void,
+  onUpdateClient: (updated: Client, oldName?: string) => void,
   onSaveTag: (tag: Tag) => void,
-  onDeleteTag: (id: string) => void
+  onDeleteTag: (id: string) => void,
+  onCreateDemand: (demand: Demand) => void,
+  userSession: UserSession
 }) => {
   const [newComment, setNewComment] = useState('');
+  const [editName, setEditName] = useState(client.name);
+  const [editResponsible, setEditResponsible] = useState(client.responsible);
+  const [originalName] = useState(client.name);
+
+  React.useEffect(() => { setEditName(client.name); }, [client.name]);
+  React.useEffect(() => { setEditResponsible(client.responsible); }, [client.responsible]);
+  const [showMentionDropdown, setShowMentionDropdown] = useState(false);
+  const [mentionFilter, setMentionFilter] = useState('');
+  const [mentionIndex, setMentionIndex] = useState(0);
+
+  const filteredMembers = teamMembers.filter(m =>
+    m.name.toLowerCase().includes(mentionFilter.toLowerCase())
+  );
+
+  const handleCommentChange = (value: string) => {
+    setNewComment(value);
+    const lastAt = value.lastIndexOf('@');
+    if (lastAt !== -1 && lastAt === value.length - 1 || (lastAt !== -1 && !value.substring(lastAt).includes(' '))) {
+      const query = value.substring(lastAt + 1);
+      setMentionFilter(query);
+      setShowMentionDropdown(true);
+      setMentionIndex(0);
+    } else {
+      setShowMentionDropdown(false);
+    }
+  };
+
+  const insertMention = (member: TeamMember) => {
+    const lastAt = newComment.lastIndexOf('@');
+    const before = newComment.substring(0, lastAt);
+    setNewComment(`${before}@${member.name} `);
+    setShowMentionDropdown(false);
+  };
 
   const handleAddComment = () => {
     if (!newComment.trim()) return;
     const comment: ClientComment = {
       id: Date.now().toString(),
-      author: 'Thalisson',
+      author: userSession.name,
       text: newComment,
       date: new Date().toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })
     };
     onUpdateClient({ ...client, comments: [comment, ...client.comments] });
+
+    // Detectar @ menções e criar demandas
+    const mentionRegex = /@([A-Za-zÀ-ÿ]+(?:\s[A-Za-zÀ-ÿ]+)*)/g;
+    let match;
+    while ((match = mentionRegex.exec(newComment)) !== null) {
+      const mentionedName = match[1].trim();
+      const member = teamMembers.find(m => m.name.toLowerCase().startsWith(mentionedName.toLowerCase()));
+      if (member) {
+        const demand: Demand = {
+          id: `dem-${Date.now()}-${member.id}`,
+          clientId: client.id,
+          clientName: client.name,
+          assignedTo: member.id,
+          assignedName: member.name,
+          text: newComment,
+          priority: 'media',
+          status: 'pendente',
+          commentAuthor: userSession.name,
+          createdAt: new Date().toISOString()
+        };
+        onCreateDemand(demand);
+      }
+    }
+
     setNewComment('');
   };
 
@@ -2071,7 +2150,14 @@ const ClientModal = ({ client, allTags, teamMembers, onClose, onUpdateClient, on
         <div className="p-6 border-b border-white/10 flex justify-between items-center bg-bg-sidebar/50">
           <div>
             <div className="flex items-center gap-3 mb-1">
-              <h2 className="text-2xl font-bold tracking-tight">{client.name}</h2>
+              <input
+                type="text"
+                value={editName}
+                onChange={e => setEditName(e.target.value)}
+                onBlur={() => { if (editName.trim() && editName.trim() !== originalName) onUpdateClient({ ...client, name: editName.trim() }, originalName); }}
+                onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+                className="text-2xl font-bold tracking-tight bg-transparent border-b border-transparent hover:border-white/20 focus:border-brand-primary focus:outline-none transition-all px-0 py-0"
+              />
               <span className={`text-xs font-bold px-2 py-0.5 rounded uppercase tracking-wider ${
                 client.plan === 'Pro' ? 'bg-purple-500/20 text-purple-400' :
                 client.plan === 'Basic' ? 'bg-blue-500/20 text-blue-400' : 'bg-gray-500/20 text-gray-400'
@@ -2079,7 +2165,16 @@ const ClientModal = ({ client, allTags, teamMembers, onClose, onUpdateClient, on
                 {client.plan}
               </span>
             </div>
-            <p className="text-sm text-gray-400">Responsável: <span className="text-white">{client.responsible}</span></p>
+            <p className="text-sm text-gray-400 flex items-center gap-1">Responsável:
+              <input
+                type="text"
+                value={editResponsible}
+                onChange={e => setEditResponsible(e.target.value)}
+                onBlur={() => { if (editResponsible !== client.responsible && editResponsible.trim()) onUpdateClient({ ...client, responsible: editResponsible.trim() }); }}
+                onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+                className="text-white bg-transparent border-b border-transparent hover:border-white/20 focus:border-brand-primary focus:outline-none transition-all text-sm px-0 py-0"
+              />
+            </p>
           </div>
           <button onClick={onClose} className="p-2 hover:bg-white/5 rounded-full text-gray-400 hover:text-white transition-colors">
             <X size={24} />
@@ -2130,9 +2225,13 @@ const ClientModal = ({ client, allTags, teamMembers, onClose, onUpdateClient, on
                 <div className="flex flex-wrap gap-2">
                   {teamMembers.map(member => (
                     <div key={member.id} className="flex items-center gap-2 bg-white/5 px-2 py-1 rounded-lg border border-white/5">
-                      <div className="w-5 h-5 rounded-full flex items-center justify-center text-[8px] font-bold" style={{ backgroundColor: `${member.color}33`, color: member.color }}>
-                        {member.name.split(' ').map(n => n[0]).join('')}
-                      </div>
+                      {member.photoUrl ? (
+                        <img src={member.photoUrl} alt={member.name} className="w-5 h-5 rounded-full object-cover" referrerPolicy="no-referrer" />
+                      ) : (
+                        <div className="w-5 h-5 rounded-full flex items-center justify-center text-[8px] font-bold" style={{ backgroundColor: `${member.color}33`, color: member.color }}>
+                          {member.name.split(' ').map(n => n[0]).join('')}
+                        </div>
+                      )}
                       <span className="text-[10px] text-gray-300">{member.name}</span>
                     </div>
                   ))}
@@ -2288,18 +2387,22 @@ const ClientModal = ({ client, allTags, teamMembers, onClose, onUpdateClient, on
           </div>
 
           {/* Right Col: Communication (Exclusive) */}
-          <div className="lg:col-span-4 flex flex-col h-full bg-bg-sidebar/20">
-            <div className="flex-1 flex flex-col min-h-0 p-6">
+          <div className="lg:col-span-4 flex flex-col bg-bg-sidebar/20">
+            <div className="flex flex-col min-h-0 p-6 h-full">
               <div className="flex items-center justify-between mb-6">
                 <h3 className="text-sm font-bold uppercase tracking-widest text-brand-primary">Comentários e Atividades</h3>
               </div>
-              
-              <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 space-y-6">
+
+              <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 space-y-6 max-h-[60vh]">
                 {client.comments.length > 0 ? client.comments.map(comment => (
                   <div key={comment.id} className="flex gap-3">
-                    <div className="w-8 h-8 rounded-full bg-white/10 flex-shrink-0 flex items-center justify-center text-[10px] font-bold border border-white/5">
-                      {comment.author[0]}
-                    </div>
+                    {(() => { const m = teamMembers.find(t => t.name === comment.author); return m?.photoUrl ? (
+                      <img src={m.photoUrl} alt={m.name} className="w-8 h-8 rounded-full object-cover flex-shrink-0 border border-white/5" referrerPolicy="no-referrer" />
+                    ) : (
+                      <div className="w-8 h-8 rounded-full bg-white/10 flex-shrink-0 flex items-center justify-center text-[10px] font-bold border border-white/5">
+                        {comment.author[0]}
+                      </div>
+                    ); })()}
                     <div className="flex-1">
                       <div className="flex items-center gap-2 mb-1">
                         <span className="text-xs font-bold text-white">{comment.author}</span>
@@ -2319,17 +2422,52 @@ const ClientModal = ({ client, allTags, teamMembers, onClose, onUpdateClient, on
               </div>
 
               <div className="mt-6 pt-6 border-t border-white/5">
-                <div className="flex gap-2">
-                  <input 
-                    type="text" 
-                    placeholder="Adicionar comentário..."
+                <div className="flex gap-2 relative">
+                  <input
+                    type="text"
+                    placeholder="Adicionar comentário... Use @ para mencionar"
                     value={newComment}
-                    onChange={e => setNewComment(e.target.value)}
-                    onKeyDown={e => e.key === 'Enter' && handleAddComment()}
+                    onChange={e => handleCommentChange(e.target.value)}
+                    onKeyDown={e => {
+                      if (showMentionDropdown && filteredMembers.length > 0) {
+                        if (e.key === 'ArrowDown') { e.preventDefault(); setMentionIndex(i => Math.min(i + 1, filteredMembers.length - 1)); }
+                        else if (e.key === 'ArrowUp') { e.preventDefault(); setMentionIndex(i => Math.max(i - 1, 0)); }
+                        else if (e.key === 'Enter') { e.preventDefault(); insertMention(filteredMembers[mentionIndex]); }
+                        else if (e.key === 'Escape') setShowMentionDropdown(false);
+                      } else if (e.key === 'Enter') handleAddComment();
+                    }}
                     className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-xs focus:outline-none focus:border-brand-primary transition-all"
                   />
-                  <button 
-                    onClick={handleAddComment} 
+                  {showMentionDropdown && filteredMembers.length > 0 && (
+                    <div className="absolute bottom-full left-0 mb-2 w-64 bg-bg-sidebar border border-white/10 rounded-xl shadow-2xl overflow-hidden z-50">
+                      <div className="p-2 border-b border-white/5">
+                        <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest flex items-center gap-1"><AtSign size={10} /> Mencionar colaborador</p>
+                      </div>
+                      <div className="max-h-40 overflow-y-auto">
+                        {filteredMembers.map((m, i) => (
+                          <button
+                            key={m.id}
+                            onClick={() => insertMention(m)}
+                            className={`w-full flex items-center gap-2 px-3 py-2 text-left transition-colors ${i === mentionIndex ? 'bg-brand-primary/10 text-brand-primary' : 'text-gray-300 hover:bg-white/5'}`}
+                          >
+                            {m.photoUrl ? (
+                              <img src={m.photoUrl} alt={m.name} className="w-6 h-6 rounded-full object-cover" referrerPolicy="no-referrer" />
+                            ) : (
+                              <div className="w-6 h-6 rounded-full flex items-center justify-center text-[9px] font-bold" style={{ backgroundColor: `${m.color}33`, color: m.color }}>
+                                {m.name.split(' ').map(n => n[0]).join('')}
+                              </div>
+                            )}
+                            <div>
+                              <p className="text-xs font-medium">{m.name}</p>
+                              <p className="text-[9px] text-gray-500">{m.role}</p>
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  <button
+                    onClick={handleAddComment}
                     className="p-3 rounded-xl bg-brand-primary text-bg-main hover:scale-105 active:scale-95 transition-all shadow-glow"
                   >
                     <Plus size={20} />
@@ -3011,10 +3149,10 @@ export default function App() {
   const canSee = (tab: string): boolean => {
     const role = (userSession?.role ?? '').toLowerCase();
     const permissions: Record<string, string[]> = {
-      'admin':     ['Dashboard', 'Clientes', 'Kanban de Operação', 'Equipe', 'Relatórios', 'Aquisição', 'Playbooks', 'Configurações'],
-      'comercial': ['Aquisição', 'Playbooks'],
-      'suporte':   ['Clientes', 'Kanban de Operação', 'Relatórios', 'Playbooks'],
-      'entrega':   ['Clientes', 'Kanban de Operação', 'Relatórios', 'Playbooks'],
+      'admin':     ['Dashboard', 'Clientes', 'Kanban de Operação', 'Equipe', 'Demandas', 'Relatórios', 'Aquisição', 'Playbooks', 'Configurações'],
+      'comercial': ['Demandas', 'Aquisição', 'Playbooks'],
+      'suporte':   ['Clientes', 'Kanban de Operação', 'Demandas', 'Relatórios', 'Playbooks'],
+      'entrega':   ['Clientes', 'Kanban de Operação', 'Demandas', 'Relatórios', 'Playbooks'],
     };
     return (permissions[role] ?? permissions['admin']).includes(tab);
   };
@@ -3026,6 +3164,10 @@ export default function App() {
   const [agencyConfig, setAgencyConfig] = useState<AgencyConfig>(INITIAL_AGENCY_CONFIG);
   const [userSession, setUserSession] = useState<UserSession | null>(null);
   const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [demands, setDemands] = useState<Demand[]>([]);
+  const [demandFilter, setDemandFilter] = useState<'todos' | 'pendente' | 'concluido'>('pendente');
+  const [demandPriorityFilter, setDemandPriorityFilter] = useState<'todas' | 'alta' | 'media' | 'baixa'>('todas');
+  const [deletingDemandId, setDeletingDemandId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   
   const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
@@ -3046,12 +3188,14 @@ export default function App() {
       if (!userSession && isLoading) setIsLoading(true);
       
       try {
-        const [dbClients, dbTags, dbTeam, dbConfig] = await Promise.all([
+        const [dbClients, dbTags, dbTeam, dbConfig, dbDemands] = await Promise.all([
           getClients(),
           getTags(),
           getTeamMembers(),
-          getAgencyConfig()
+          getAgencyConfig(),
+          getDemands()
         ]);
+        setDemands(dbDemands);
 
         if (dbClients.length > 0) {
           setClients(dbClients);
@@ -3169,10 +3313,20 @@ export default function App() {
     });
   }, [clients, searchQuery, kanbanFilters]);
 
-  const handleUpdateClient = async (updated: Client) => {
+  const handleUpdateClient = async (updated: Client, oldName?: string) => {
     try {
       const result = await updateClient(updated);
       setClients(clients.map(c => c.id === result.id ? result : c));
+
+      // Atualizar nome do cliente nas demandas existentes
+      if (oldName && oldName !== updated.name) {
+        const affectedDemands = demands.filter(d => d.clientId === updated.id);
+        for (const d of affectedDemands) {
+          const updatedDemand = { ...d, clientName: updated.name };
+          const saved = await updateDemand(updatedDemand);
+          setDemands(prev => prev.map(dd => dd.id === saved.id ? saved : dd));
+        }
+      }
     } catch (error) {
       console.error('Error updating client:', error);
       alert('Erro ao atualizar cliente no banco de dados.');
@@ -3340,6 +3494,170 @@ export default function App() {
     return <LoginScreen onLogin={setUserSession} teamMembers={teamMembers} agencyConfig={agencyConfig} />;
   }
 
+  const renderDemandas = () => {
+    const myName = userSession?.name ?? '';
+    const filtered = demands.filter(d => {
+      // Mostra: demandas atribuídas a mim OU criadas por mim
+      if (d.assignedName !== myName && d.commentAuthor !== myName) return false;
+      if (demandFilter !== 'todos' && d.status !== demandFilter) return false;
+      if (demandPriorityFilter !== 'todas' && d.priority !== demandPriorityFilter) return false;
+      return true;
+    });
+
+    const priorityColors = { alta: 'text-red-400 bg-red-500/10 border-red-500/20', media: 'text-yellow-400 bg-yellow-500/10 border-yellow-500/20', baixa: 'text-blue-400 bg-blue-500/10 border-blue-500/20' };
+    const priorityLabels = { alta: 'Alta', media: 'Média', baixa: 'Baixa' };
+
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">Demandas</h1>
+          <p className="text-gray-400 mt-1">Tarefas geradas a partir de menções nos comentários dos clientes.</p>
+        </div>
+
+        {/* Filtros */}
+        <div className="flex flex-wrap gap-3">
+          <div className="flex gap-1 bg-white/5 p-1 rounded-lg">
+            {(['pendente', 'concluido', 'todos'] as const).map(f => (
+              <button key={f} onClick={() => setDemandFilter(f)}
+                className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${demandFilter === f ? 'bg-brand-primary/20 text-brand-primary' : 'text-gray-400 hover:text-white'}`}
+              >{f === 'pendente' ? 'Pendentes' : f === 'concluido' ? 'Concluídos' : 'Todos'}</button>
+            ))}
+          </div>
+          <div className="flex gap-1 bg-white/5 p-1 rounded-lg">
+            {(['todas', 'alta', 'media', 'baixa'] as const).map(p => (
+              <button key={p} onClick={() => setDemandPriorityFilter(p)}
+                className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${demandPriorityFilter === p ? 'bg-brand-primary/20 text-brand-primary' : 'text-gray-400 hover:text-white'}`}
+              >{p === 'todas' ? 'Todas' : priorityLabels[p]}</button>
+            ))}
+          </div>
+        </div>
+
+        {/* Lista */}
+        {filtered.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-20 text-gray-500">
+            <ClipboardList size={48} className="mb-4 opacity-30" />
+            <p className="font-medium">Nenhuma demanda {demandFilter === 'pendente' ? 'pendente' : demandFilter === 'concluido' ? 'concluída' : ''}</p>
+            <p className="text-sm mt-1">Mencione @colaborador nos comentários para criar demandas</p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {filtered.map(demand => (
+              <motion.div
+                key={demand.id}
+                layout
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className={`p-5 rounded-xl border transition-all ${demand.status === 'concluido' ? 'bg-white/[0.02] border-white/5 opacity-60' : 'glass-card'}`}
+              >
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-2 flex-wrap">
+                      <span className="text-xs font-bold text-brand-primary">{demand.clientName}</span>
+                      <span className={`text-[9px] font-bold uppercase px-2 py-0.5 rounded-full border ${priorityColors[demand.priority]}`}>
+                        {priorityLabels[demand.priority]}
+                      </span>
+                    </div>
+                    <p className={`text-sm ${demand.status === 'concluido' ? 'line-through text-gray-600' : 'text-white'}`}>{demand.text}</p>
+                    <div className="flex items-center gap-4 mt-3 text-[10px] text-gray-500">
+                      <span>Para: <strong className="text-gray-300">{demand.assignedName}</strong></span>
+                      <span>Por: {demand.commentAuthor}</span>
+                      <span>{new Date(demand.createdAt).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    {/* Prioridade */}
+                    <select
+                      value={demand.priority}
+                      onChange={async (e) => {
+                        const updated = { ...demand, priority: e.target.value as Demand['priority'] };
+                        const saved = await updateDemand(updated);
+                        setDemands(prev => prev.map(d => d.id === saved.id ? saved : d));
+                      }}
+                      className="bg-white/5 border border-white/10 rounded-lg px-2 py-1 text-[10px] text-gray-300 focus:outline-none"
+                    >
+                      <option value="alta">Alta</option>
+                      <option value="media">Média</option>
+                      <option value="baixa">Baixa</option>
+                    </select>
+                    {/* Botão concluir */}
+                    <button
+                      onClick={async () => {
+                        const updated = { ...demand, status: demand.status === 'pendente' ? 'concluido' as const : 'pendente' as const };
+                        const saved = await updateDemand(updated);
+                        setDemands(prev => prev.map(d => d.id === saved.id ? saved : d));
+                      }}
+                      className={`p-2 rounded-lg transition-all ${demand.status === 'concluido' ? 'bg-brand-primary/20 text-brand-primary' : 'bg-white/5 text-gray-400 hover:text-brand-primary hover:bg-brand-primary/10'}`}
+                    >
+                      <Check size={16} />
+                    </button>
+                    {/* Só quem criou pode excluir */}
+                    {demand.commentAuthor === myName && (
+                      <button
+                        onClick={() => setDeletingDemandId(demand.id)}
+                        className="p-2 rounded-lg bg-white/5 text-gray-400 hover:text-red-400 hover:bg-red-500/10 transition-all"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </motion.div>
+            ))}
+          </div>
+        )}
+
+        {/* Modal de confirmação de exclusão */}
+        <AnimatePresence>
+          {deletingDemandId && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm"
+              onClick={() => setDeletingDemandId(null)}
+            >
+              <motion.div
+                initial={{ scale: 0.9, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.9, opacity: 0 }}
+                className="bg-bg-main border border-white/10 w-full max-w-sm rounded-2xl overflow-hidden shadow-2xl"
+                onClick={e => e.stopPropagation()}
+              >
+                <div className="p-6 flex flex-col items-center text-center">
+                  <div className="w-12 h-12 rounded-full bg-red-500/10 flex items-center justify-center mb-4">
+                    <Trash2 size={24} className="text-red-400" />
+                  </div>
+                  <h3 className="text-lg font-bold text-white mb-2">Excluir demanda?</h3>
+                  <p className="text-sm text-gray-400 mb-6">Essa ação não pode ser desfeita.</p>
+                  <div className="flex gap-3 w-full">
+                    <button
+                      onClick={() => setDeletingDemandId(null)}
+                      className="flex-1 py-2.5 rounded-xl bg-white/5 border border-white/10 text-sm font-semibold text-gray-300 hover:bg-white/10 transition-all"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      onClick={async () => {
+                        try {
+                          await deleteDemand(deletingDemandId);
+                          setDemands(prev => prev.filter(d => d.id !== deletingDemandId));
+                        } catch { /* ignore */ }
+                        setDeletingDemandId(null);
+                      }}
+                      className="flex-1 py-2.5 rounded-xl bg-red-500/20 border border-red-500/30 text-sm font-semibold text-red-400 hover:bg-red-500/30 transition-all"
+                    >
+                      Excluir
+                    </button>
+                  </div>
+                </div>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+    );
+  };
+
   const renderEquipe = () => (
     <div className="space-y-8">
       <div className="flex justify-between items-center">
@@ -3400,7 +3718,9 @@ export default function App() {
 
             <h3 className="text-lg font-bold text-white">{member.name}</h3>
             <p className="text-brand-primary text-xs font-bold uppercase tracking-widest mt-1">{member.role}</p>
-            <p className="text-gray-500 text-xs mt-3 mb-6">{member.email}</p>
+            <p className="text-gray-500 text-xs mt-3">{member.email}</p>
+            {member.phone && <p className="text-gray-600 text-[10px] mt-1 mb-4">{member.phone}</p>}
+            {!member.phone && <div className="mb-6" />}
 
             <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-white/5 border border-white/5">
               <div className={`w-1.5 h-1.5 rounded-full ${member.status === 'Ativo' ? 'bg-brand-primary shadow-[0_0_8px_rgba(0,255,136,0.5)]' : 'bg-gray-600'}`} />
@@ -3622,6 +3942,7 @@ export default function App() {
           {canSee('Clientes') && <SidebarItem icon={Users} label="Clientes" active={activeTab === 'Clientes'} onClick={() => setActiveTab('Clientes')} />}
           {canSee('Kanban de Operação') && <SidebarItem icon={KanbanIcon} label="Kanban de Operação" active={activeTab === 'Kanban de Operação'} onClick={() => setActiveTab('Kanban de Operação')} />}
           {canSee('Equipe') && <SidebarItem icon={Users} label="Equipe" active={activeTab === 'Equipe'} onClick={() => setActiveTab('Equipe')} />}
+          {canSee('Demandas') && <SidebarItem icon={ClipboardList} label="Demandas" active={activeTab === 'Demandas'} onClick={() => setActiveTab('Demandas')} badge={demands.filter(d => d.status === 'pendente').length || undefined} />}
           {canSee('Relatórios') && <SidebarItem icon={BarChart3} label="Relatórios" active={activeTab === 'Relatórios'} onClick={() => setActiveTab('Relatórios')} />}
           {canSee('Playbooks') && <SidebarItem icon={BookOpen} label="Playbooks" active={activeTab === 'Playbooks'} onClick={() => setActiveTab('Playbooks')} />}
           
@@ -3656,12 +3977,14 @@ export default function App() {
         <div className="mt-auto pt-6 border-t border-white/5 relative">
           {canSee('Configurações') && <SidebarItem icon={Settings} label="Configurações" active={activeTab === 'Configurações'} onClick={() => setActiveTab('Configurações')} />}
           <div className="mt-6 p-4 rounded-xl bg-white/5 border border-white/5 flex items-center gap-3 relative">
-            <div 
-              className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold"
-              style={{ backgroundColor: userSession.color + '33', color: userSession.color }}
-            >
-              {userSession.name.split(' ').map(n => n[0]).join('')}
-            </div>
+            {(() => { const me = teamMembers.find(t => t.name === userSession.name); return me?.photoUrl ? (
+              <img src={me.photoUrl} alt={me.name} className="w-8 h-8 rounded-full object-cover" referrerPolicy="no-referrer" />
+            ) : (
+              <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold"
+                style={{ backgroundColor: userSession.color + '33', color: userSession.color }}>
+                {userSession.name.split(' ').map(n => n[0]).join('')}
+              </div>
+            ); })()}
             {!sidebarCollapsed && (
               <>
                 <div className="flex-1 min-w-0">
@@ -3742,10 +4065,11 @@ export default function App() {
                 onMarkRead={(id) => setNotifications(notifications.map(n => n.id === id ? { ...n, read: true } : n))}
               />
             </div>
-            <div 
-              className="w-8 h-8 rounded-full"
-              style={{ backgroundColor: userSession.color }}
-            />
+            {(() => { const me = teamMembers.find(t => t.name === userSession?.name); return me?.photoUrl ? (
+              <img src={me.photoUrl} alt={me.name} className="w-8 h-8 rounded-full object-cover" referrerPolicy="no-referrer" />
+            ) : (
+              <div className="w-8 h-8 rounded-full" style={{ backgroundColor: userSession.color }} />
+            ); })()}
           </div>
         </header>
 
@@ -3764,6 +4088,7 @@ export default function App() {
               {activeTab === 'Clientes' && renderClientes()}
               {activeTab === 'Kanban de Operação' && renderKanban()}
               {activeTab === 'Equipe' && renderEquipe()}
+              {activeTab === 'Demandas' && renderDemandas()}
               {activeTab === 'Configurações' && (
                 <SettingsView 
                   config={agencyConfig} 
@@ -3813,14 +4138,21 @@ export default function App() {
 
       <AnimatePresence>
         {selectedClient && (
-          <ClientModal 
-            client={selectedClient} 
+          <ClientModal
+            client={selectedClient}
             allTags={allTags}
             teamMembers={teamMembers}
-            onClose={() => setSelectedClientId(null)} 
+            onClose={() => setSelectedClientId(null)}
             onUpdateClient={handleUpdateClient}
             onSaveTag={handleSaveTag}
             onDeleteTag={handleDeleteTag}
+            userSession={userSession!}
+            onCreateDemand={async (demand) => {
+              try {
+                const saved = await createDemand(demand);
+                setDemands(prev => [saved, ...prev]);
+              } catch (err) { console.error('Erro ao criar demanda:', err); }
+            }}
           />
         )}
       </AnimatePresence>
