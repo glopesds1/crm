@@ -5,7 +5,7 @@ import {
   Plus, RefreshCw, Search, Phone, Building2, DollarSign,
   User, X, ChevronRight, Loader2, MapPin, Clock,
   PhoneCall, Users, FileText, Calendar, CheckCircle2,
-  ChevronDown, Trash2, Bell, Volume2
+  ChevronDown, Trash2, Bell, Volume2, Send
 } from 'lucide-react';
 import type { TeamMember } from './types';
 import { DEFAULT_ONBOARDING_ITEMS } from './constants';
@@ -814,6 +814,71 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
   const [agResponsavel, setAgResponsavel] = useState('');
   const [agSaving, setAgSaving] = useState(false);
   const [tab, setTab] = useState<'info' | 'timeline' | 'tarefas'>('info');
+  // ── Agendar Reunião (BANT) ──────────────────────────────────
+  const [showAgendarReuniao, setShowAgendarReuniao] = useState(false);
+  const [arTipo, setArTipo] = useState<'R1' | 'R2'>('R1');
+  const [arDataHora, setArDataHora] = useState('');
+  const [arDuracao, setArDuracao] = useState('60');
+  const [arCloser, setArCloser] = useState('');
+  const [arFaturamento, setArFaturamento] = useState(lead.faturamento ?? '');
+  const [arBudget, setArBudget] = useState('');
+  const [arMomento, setArMomento] = useState('');
+  const [arCaptacao, setArCaptacao] = useState('');
+  const [arAutoridade, setArAutoridade] = useState('');
+  const [arNecessidade, setArNecessidade] = useState('');
+  const [arTiming, setArTiming] = useState('');
+  const [arSdr, setArSdr] = useState('');
+  const [arObs, setArObs] = useState('');
+  const [arSaving, setArSaving] = useState(false);
+  const [arSuccess, setArSuccess] = useState(false);
+
+  const handleAgendarReuniao = async () => {
+    if (!arDataHora || !arCloser) return;
+    setArSaving(true);
+    try {
+      const payload = {
+        lead_nome: lead.nome,
+        lead_telefone: lead.telefone ?? '',
+        closer: arCloser,
+        tipo_reuniao: arTipo,
+        data_hora: new Date(arDataHora).toISOString(),
+        duracao_min: parseInt(arDuracao) || 60,
+        bant: {
+          faturamento: arFaturamento,
+          budget: arBudget,
+          momento: arMomento,
+          captacao: arCaptacao,
+          autoridade: arAutoridade,
+          necessidade: arNecessidade,
+          timing: arTiming,
+          sdr: arSdr,
+          observacoes: arObs,
+        },
+      };
+      const webhookBase = import.meta.env.VITE_WEBHOOK_BASE?.replace('/webhook/dashboard', '') ?? 'https://webhook.m2black.com';
+      await fetch(`${webhookBase}/webhook/agendar-reuniao`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const upd: Partial<CRMLead> = {
+        etapa: 'rm_marcada',
+        proxima_reuniao: new Date(arDataHora).toISOString(),
+        faturamento: arFaturamento,
+        responsavel: arCloser,
+        etapa_desde: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+      await onSave(upd);
+      setEtapa('rm_marcada');
+      setArSuccess(true);
+      setTimeout(() => { setShowAgendarReuniao(false); setArSuccess(false); }, 2000);
+    } catch (err) {
+      console.error('Erro ao agendar reunião:', err);
+    }
+    setArSaving(false);
+  };
+
   // Reunião Realizada section (rm_marcada)
   const [reuniaoRealizada, setReuniaoRealizada] = useState(false);
   const [rrStatusReuniao, setRrStatusReuniao] = useState<'Compareceu' | 'Não compareceu' | null>(null);
@@ -1546,10 +1611,156 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
               </div>
             )}
 
-            {/* Nova Atividade + Agendar Tarefa inline */}
+            {/* Nova Atividade + Agendar Reunião + Agendar Tarefa inline */}
             <div className="border-t border-white/5 pt-3">
               {showAtivForm ? (
                 <NovaAtividadeForm lead={lead} leadId={lead.id} leadName={lead.nome} userSession={userSession} onSaved={handleAtivSaved} onCancel={() => setShowAtivForm(false)} onLeadUpdated={handleLeadUpdated} onClientCreated={onClientCreated} onTarefaCreated={onTarefaCreated} />
+              ) : showAgendarReuniao ? (
+                <div className="space-y-3 bg-white/[0.02] border border-yellow-500/20 rounded-xl p-4">
+                  <p className="text-[9px] font-bold uppercase tracking-widest text-yellow-400">Agendar Reunião</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">Tipo</label>
+                      <select value={arTipo} onChange={e => setArTipo(e.target.value as 'R1' | 'R2')}
+                        className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-1.5 text-sm text-white focus:outline-none focus:border-yellow-500 appearance-none"
+                      >
+                        <option value="R1" className="bg-bg-main">R1</option>
+                        <option value="R2" className="bg-bg-main">R2</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">Duração (min)</label>
+                      <input value={arDuracao} onChange={e => setArDuracao(e.target.value)} type="number"
+                        className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-1.5 text-sm text-white focus:outline-none focus:border-yellow-500"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">Data e hora <span className="text-red-400">*</span></label>
+                    <input type="datetime-local" value={arDataHora} onChange={e => setArDataHora(e.target.value)}
+                      className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-1.5 text-sm text-gray-300 focus:outline-none focus:border-yellow-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">Closer responsável <span className="text-red-400">*</span></label>
+                    <select value={arCloser} onChange={e => setArCloser(e.target.value)}
+                      className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-1.5 text-sm text-white focus:outline-none focus:border-yellow-500 appearance-none"
+                    >
+                      <option value="" className="bg-bg-main">Selecionar...</option>
+                      <option value="Gabriel Fonseca" className="bg-bg-main">Gabriel Fonseca</option>
+                      <option value="Carla" className="bg-bg-main">Carla</option>
+                      <option value="Gabriel Moreira" className="bg-bg-main">Gabriel Moreira</option>
+                    </select>
+                  </div>
+                  {/* Divisor BANT */}
+                  <div className="flex items-center gap-2 pt-1">
+                    <div className="flex-1 h-px bg-white/10" />
+                    <span className="text-[9px] font-bold uppercase tracking-widest text-gray-600">BANT</span>
+                    <div className="flex-1 h-px bg-white/10" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">Faturamento (R$)</label>
+                      <input value={arFaturamento} onChange={e => setArFaturamento(e.target.value)}
+                        className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-1.5 text-sm text-white focus:outline-none focus:border-yellow-500"
+                        placeholder="Ex: 100.000"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">Budget líquido (R$)</label>
+                      <input value={arBudget} onChange={e => setArBudget(e.target.value)}
+                        className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-1.5 text-sm text-white focus:outline-none focus:border-yellow-500"
+                        placeholder="Ex: 5.000"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">Momento do negócio</label>
+                    <select value={arMomento} onChange={e => setArMomento(e.target.value)}
+                      className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-1.5 text-sm text-white focus:outline-none focus:border-yellow-500 appearance-none"
+                    >
+                      <option value="" className="bg-bg-main">Selecionar...</option>
+                      <option value="Comecei agora e preciso de estrutura no digital" className="bg-bg-main">Comecei agora e preciso de estrutura no digital</option>
+                      <option value="Já contratei agência, mas não tive resultado" className="bg-bg-main">Já contratei agência, mas não tive resultado</option>
+                      <option value="Já vendo por indicação, mas quero escalar via internet" className="bg-bg-main">Já vendo por indicação, mas quero escalar via internet</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">Como capta clientes hoje</label>
+                    <select value={arCaptacao} onChange={e => setArCaptacao(e.target.value)}
+                      className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-1.5 text-sm text-white focus:outline-none focus:border-yellow-500 appearance-none"
+                    >
+                      <option value="" className="bg-bg-main">Selecionar...</option>
+                      <option value="Indicação" className="bg-bg-main">Indicação</option>
+                      <option value="Tráfego Pago" className="bg-bg-main">Tráfego Pago</option>
+                      <option value="Ainda não tenho clientes" className="bg-bg-main">Ainda não tenho clientes</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">Autoridade (Decisores)</label>
+                    <select value={arAutoridade} onChange={e => setArAutoridade(e.target.value)}
+                      className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-1.5 text-sm text-white focus:outline-none focus:border-yellow-500 appearance-none"
+                    >
+                      <option value="" className="bg-bg-main">Selecionar...</option>
+                      <option value="Nenhum decisor envolvido / lead terceirizado" className="bg-bg-main">Nenhum decisor envolvido / lead terceirizado</option>
+                      <option value="Tem influência, mas depende do sócio ou gestor" className="bg-bg-main">Tem influência, mas depende do sócio ou gestor</option>
+                      <option value="Decisor principal e sócio confirmado para a reunião" className="bg-bg-main">Decisor principal e sócio confirmado para a reunião</option>
+                      <option value="É o único decisor e demonstra autoridade total" className="bg-bg-main">É o único decisor e demonstra autoridade total</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">Necessidade / Dor</label>
+                    <select value={arNecessidade} onChange={e => setArNecessidade(e.target.value)}
+                      className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-1.5 text-sm text-white focus:outline-none focus:border-yellow-500 appearance-none"
+                    >
+                      <option value="" className="bg-bg-main">Selecionar...</option>
+                      <option value="Quer melhorar marketing, mas sem dor clara" className="bg-bg-main">Quer melhorar marketing, mas sem dor clara</option>
+                      <option value="Reconhece que falta previsibilidade, mas ainda sem urgência" className="bg-bg-main">Reconhece que falta previsibilidade, mas ainda sem urgência</option>
+                      <option value="Sofre com falta de leads ou estrutura comercial e quer resolver" className="bg-bg-main">Sofre com falta de leads ou estrutura comercial e quer resolver</option>
+                      <option value="Está com prejuízo, sem previsibilidade e quer agir agora" className="bg-bg-main">Está com prejuízo, sem previsibilidade e quer agir agora</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">Timing / Urgência</label>
+                    <select value={arTiming} onChange={e => setArTiming(e.target.value)}
+                      className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-1.5 text-sm text-white focus:outline-none focus:border-yellow-500 appearance-none"
+                    >
+                      <option value="" className="bg-bg-main">Selecionar...</option>
+                      <option value="Não tem previsão / talvez no futuro" className="bg-bg-main">Não tem previsão / talvez no futuro</option>
+                      <option value="Pensa em agir em até 3 meses" className="bg-bg-main">Pensa em agir em até 3 meses</option>
+                      <option value="Quer começar em até 30 dias" className="bg-bg-main">Quer começar em até 30 dias</option>
+                      <option value="Quer iniciar imediatamente / essa semana" className="bg-bg-main">Quer iniciar imediatamente / essa semana</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">SDR responsável</label>
+                    <select value={arSdr} onChange={e => setArSdr(e.target.value)}
+                      className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-1.5 text-sm text-white focus:outline-none focus:border-yellow-500 appearance-none"
+                    >
+                      <option value="" className="bg-bg-main">Selecionar...</option>
+                      <option value="Vitória Mendes" className="bg-bg-main">Vitória Mendes</option>
+                      <option value="Pedro Relvas" className="bg-bg-main">Pedro Relvas</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">Desafio, dor e observações</label>
+                    <textarea value={arObs} onChange={e => setArObs(e.target.value)} rows={3}
+                      className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-1.5 text-sm text-white focus:outline-none focus:border-yellow-500 resize-none"
+                      placeholder="Descreva o cenário do lead..."
+                    />
+                  </div>
+                  <div className="flex gap-2">
+                    <button onClick={() => setShowAgendarReuniao(false)}
+                      className="flex-1 py-1.5 rounded-xl bg-white/5 border border-white/10 text-xs text-gray-400 hover:text-white transition-colors cursor-pointer"
+                    >Cancelar</button>
+                    <button onClick={handleAgendarReuniao} disabled={arSaving || arSuccess || !arDataHora || !arCloser}
+                      className="flex-1 py-1.5 rounded-xl bg-yellow-500 text-black text-xs font-bold hover:bg-yellow-400 disabled:opacity-40 transition-colors flex items-center justify-center gap-2 cursor-pointer"
+                    >
+                      {arSaving ? <Loader2 size={12} className="animate-spin" /> : arSuccess ? <CheckCircle2 size={12} /> : <Send size={12} />}
+                      {arSuccess ? 'Agendado!' : 'Agendar e Notificar'}
+                    </button>
+                  </div>
+                </div>
               ) : showAgendarTarefa ? (
                 <div className="space-y-3 bg-white/[0.02] border border-white/10 rounded-xl p-4">
                   <p className="text-[9px] font-bold uppercase tracking-widest text-brand-primary">Agendar Tarefa</p>
@@ -1598,6 +1809,13 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
                       <Plus size={13} /> Registrar atividade
                     </button>
                     <p className="text-[9px] text-gray-700 text-center mt-1">Para atividades já realizadas</p>
+                  </div>
+                  <div className="flex-1">
+                    <button onClick={() => setShowAgendarReuniao(true)}
+                      className="w-full py-2 rounded-xl border border-dashed border-yellow-500/30 text-xs text-gray-500 hover:text-yellow-400 hover:border-yellow-500/50 transition-all flex items-center justify-center gap-2"
+                    >
+                      <Calendar size={13} /> Agendar Reunião
+                    </button>
                   </div>
                   <div className="flex-1">
                     <button onClick={() => setShowAgendarTarefa(true)}
