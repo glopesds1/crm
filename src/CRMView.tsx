@@ -2701,11 +2701,20 @@ export default function CRMView({ userSession, teamMembers, openLeadByName, onLe
 
   const sortLeads = (list: CRMLead[], order: 'newest' | 'oldest' | 'more_time' | 'less_time') => {
     return [...list].sort((a, b) => {
-      if (order === 'newest')    return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
-      if (order === 'oldest')    return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
-      if (order === 'more_time') return new Date(a.etapa_desde ?? a.updated_at).getTime() - new Date(b.etapa_desde ?? b.updated_at).getTime();
-      if (order === 'less_time') return new Date(b.etapa_desde ?? b.updated_at).getTime() - new Date(a.etapa_desde ?? a.updated_at).getTime();
-      return 0;
+      let diff = 0;
+      if (order === 'newest')    diff = new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+      else if (order === 'oldest')    diff = new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+      else if (order === 'more_time') diff = new Date(a.etapa_desde ?? a.updated_at).getTime() - new Date(b.etapa_desde ?? b.updated_at).getTime();
+      else if (order === 'less_time') diff = new Date(b.etapa_desde ?? b.updated_at).getTime() - new Date(a.etapa_desde ?? a.updated_at).getTime();
+      if (diff !== 0) return diff;
+      // Desempate: lead_externo_id numérico (Facebook IDs são sequenciais — maior = mais recente)
+      const aExt = Number(a.lead_externo_id);
+      const bExt = Number(b.lead_externo_id);
+      if (!isNaN(aExt) && !isNaN(bExt) && aExt !== bExt) {
+        return (order === 'oldest' || order === 'more_time') ? aExt - bExt : bExt - aExt;
+      }
+      // Último desempate: updated_at mais recente primeiro
+      return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime();
     });
   };
 
