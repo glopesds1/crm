@@ -245,13 +245,13 @@ export default function DashboardView({ userSession }: { userSession: any }) {
             </div>
           </>)}
           {page === 'reunioes' && (
-            <div className="flex items-center gap-2">
-              <Calendar size={14} className="text-gray-500" />
+            <div className="relative flex items-center">
+              <Calendar size={14} className="text-gray-500 absolute left-3 pointer-events-none z-10" />
               <input
                 type="date"
                 value={range.inicio}
                 onChange={e => { const d = e.target.value; setRange({ inicio: d, fim: d }); }}
-                className="bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-gray-300 focus:outline-none focus:border-brand-primary"
+                className="bg-white/5 border border-white/10 rounded-lg pl-8 pr-3 py-1.5 text-xs text-gray-300 focus:outline-none focus:border-brand-primary cursor-pointer [&::-webkit-calendar-picker-indicator]:opacity-0 [&::-webkit-calendar-picker-indicator]:absolute [&::-webkit-calendar-picker-indicator]:inset-0 [&::-webkit-calendar-picker-indicator]:w-full [&::-webkit-calendar-picker-indicator]:h-full [&::-webkit-calendar-picker-indicator]:cursor-pointer"
               />
             </div>
           )}
