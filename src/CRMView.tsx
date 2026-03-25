@@ -1081,8 +1081,22 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
   };
 
   const toggleTarefa = async (t: CRMTarefa) => {
-    await supabase.from('crm_tarefas').update({ concluida: !t.concluida }).eq('id', t.id);
-    setTarefas(prev => prev.map(x => x.id === t.id ? { ...x, concluida: !x.concluida } : x));
+    const novoEstado = !t.concluida;
+    await supabase.from('crm_tarefas').update({ concluida: novoEstado }).eq('id', t.id);
+    setTarefas(prev => prev.map(x => x.id === t.id ? { ...x, concluida: novoEstado } : x));
+    // Ao concluir, registrar na timeline de atividades do lead
+    if (novoEstado) {
+      const now = new Date().toISOString();
+      const { data: ativData } = await supabase.from('crm_atividades').insert({
+        lead_id: t.lead_id,
+        tipo: 'tarefa',
+        descricao: t.titulo + (t.data_agendada ? ` (agendada: ${fmtDateSP(t.data_agendada, { year: true })})` : ''),
+        data_atividade: now,
+        realizado_por: userSession?.name ?? '',
+        created_at: now,
+      }).select().single();
+      if (ativData) setAtividades(prev => [ativData, ...prev]);
+    }
   };
 
   const etapaObj = ETAPA_MAP[etapa];
@@ -1585,7 +1599,7 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
                     <div className="flex-1 bg-white/5 rounded-xl p-3 space-y-1.5">
                       <div className="flex items-center justify-between gap-2">
                         <span className="text-[10px] font-bold uppercase tracking-widest text-gray-500">
-                          {a.tipo === 'ligacao' ? 'Ligação' : a.tipo === 'reuniao' ? 'Reunião' : a.tipo}
+                          {a.tipo === 'ligacao' ? 'Ligação' : a.tipo === 'reuniao' ? 'Reunião' : a.tipo === 'tarefa' ? 'Tarefa Concluída' : a.tipo}
                         </span>
                         <span className="text-[9px] text-gray-700">{fmtAtivDate(a.created_at)}</span>
                       </div>
@@ -1835,11 +1849,11 @@ export default function CRMView({ userSession, teamMembers, openLeadByName, onLe
         if (t.concluida || !t.data_agendada || dismissedRef.current.has(t.id)) return false;
         const agendada = parseDateSP(t.data_agendada);
         if (agendada > now) return false;
-        // Show for task responsible or lead responsible
+        // Mostrar apenas para responsável pela tarefa ou pela oportunidade
         const lead = leads.find(l => l.id === t.lead_id);
         const isTaskResponsavel = (t.responsavel ?? '').toLowerCase() === userName.toLowerCase();
         const isLeadResponsavel = (lead?.responsavel ?? '').toLowerCase() === userName.toLowerCase();
-        return isAdmin || isTaskResponsavel || isLeadResponsavel;
+        return isTaskResponsavel || isLeadResponsavel;
       });
 
       if (due.length > 0) {
@@ -1863,9 +1877,22 @@ export default function CRMView({ userSession, teamMembers, openLeadByName, onLe
   };
 
   const completeAlarm = async (tarefaId: string) => {
+    const tarefa = tarefas.find(t => t.id === tarefaId);
     await supabase.from('crm_tarefas').update({ concluida: true }).eq('id', tarefaId);
     setTarefas(prev => prev.map(t => t.id === tarefaId ? { ...t, concluida: true } : t));
     setAlarmTarefas(prev => prev.filter(t => t.id !== tarefaId));
+    // Registrar conclusão na timeline de atividades do lead
+    if (tarefa) {
+      const now = new Date().toISOString();
+      await supabase.from('crm_atividades').insert({
+        lead_id: tarefa.lead_id,
+        tipo: 'tarefa',
+        descricao: tarefa.titulo + (tarefa.data_agendada ? ` (agendada: ${fmtDateSP(tarefa.data_agendada, { year: true })})` : ''),
+        data_atividade: now,
+        realizado_por: userSession?.name ?? '',
+        created_at: now,
+      });
+    }
   };
 
   const loadLeads = useCallback(async () => {
