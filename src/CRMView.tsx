@@ -203,6 +203,7 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
   lead?: CRMLead; leadId: string; leadName: string; userSession: any; onSaved: (a: CRMAtividade) => void; onCancel: () => void; onLeadUpdated?: (upd: Partial<CRMLead>) => void; onClientCreated?: () => void;
   onTarefaCreated?: (tarefa: CRMTarefa) => void; teamMembers?: TeamMember[];
 }) {
+  const [responsavelAtividade, setResponsavelAtividade] = useState(leadObj?.responsavel ?? userSession?.name ?? '');
   const [tipo, setTipo] = useState<'ligacao' | 'reuniao'>('ligacao');
   const [statusChamada, setStatusChamada] = useState<'Atendeu' | 'Não atendeu' | null>(null);
   const [touchpoint, setTouchpoint] = useState('');
@@ -329,7 +330,7 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
       lead_id: leadId,
       tipo,
       data_atividade: now,
-      realizado_por: userSession?.name ?? '',
+      realizado_por: responsavelAtividade || userSession?.name || '',
       descricao: finalDescricao,
       status_chamada: tipo === 'ligacao' ? statusChamada : null,
       agendou: tipo === 'ligacao' ? agendou : null,
@@ -523,7 +524,7 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
         id: crypto.randomUUID(),
         type: tipo === 'ligacao' ? 'PreVendas' : 'Vendas',
         category: tipo === 'ligacao' ? 'Ligação' : 'Reunião',
-        collaborator: leadObj?.responsavel || userSession?.name || '',
+        collaborator: responsavelAtividade || leadObj?.responsavel || userSession?.name || '',
         answered: tipo === 'ligacao' ? statusChamada : null,
         touchpoint: tipo === 'ligacao' && touchpoint ? parseInt(touchpoint) : null,
         scheduled: tipo === 'ligacao' ? agendou : false,
@@ -575,6 +576,19 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
             {t === 'ligacao' ? '📞 Ligação' : '🤝 Reunião'}
           </button>
         ))}
+      </div>
+
+      {/* Responsável pela atividade */}
+      <div>
+        <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">Responsável pela atividade <span className="text-red-400">*</span></label>
+        <select value={responsavelAtividade} onChange={e => setResponsavelAtividade(e.target.value)}
+          className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-1.5 text-sm text-white focus:outline-none focus:border-brand-primary appearance-none"
+        >
+          <option value="" className="bg-bg-main">Selecionar...</option>
+          {teamMembers.filter(m => ['admin','comercial'].includes((m.role ?? '').toLowerCase()))
+            .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'))
+            .map(m => <option key={m.id} value={m.name} className="bg-bg-main">{m.name}</option>)}
+        </select>
       </div>
 
       {tipo === 'ligacao' && (
