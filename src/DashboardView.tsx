@@ -298,7 +298,7 @@ export default function DashboardView({ userSession }: { userSession: any }) {
       {!loading && !error && data && (
         <>
           {page === 'overview' && <PageOverview data={data} range={range} userSession={userSession} />}
-          {page === 'metas' && <PageMetas data={data} userSession={userSession} />}
+          {page === 'metas' && <PageMetas data={data} userSession={userSession} range={range} />}
           {page === 'semanal' && <PageSemanal data={data} userSession={userSession} />}
           {page === 'reunioes' && <PageReunioes data={data} />}
           {page === 'analise' && <PageAnalise data={data} />}
@@ -562,7 +562,7 @@ function PageOverview({ data, range, userSession }: { data: any; range: any; use
 
 
 // ── PAGE: Metas ───────────────────────────────────────────────
-function PageMetas({ data, userSession }: { data: any; userSession: any }) {
+function PageMetas({ data, userSession, range }: { data: any; userSession: any; range: DateRange }) {
   const m       = Array.isArray(data?.metas)   ? data.metas[0]   : data?.metas;
   const closers: any[] = Array.isArray(data?.closers) ? data.closers : data?.closers ? [data.closers] : [];
   const sdrs:    any[] = Array.isArray(data?.sdrs)    ? data.sdrs    : data?.sdrs    ? [data.sdrs]    : [];
@@ -572,15 +572,15 @@ function PageMetas({ data, userSession }: { data: any; userSession: any }) {
   const [editVal, setEditVal] = useState('');
   const isAdmin = (userSession?.role ?? '').toLowerCase() === 'admin';
 
-  // Negociando — apenas leads do mês vigente (Supabase)
+  // Negociando — leads em negociação no período selecionado (Supabase)
   const [negociando, setNegociando] = useState<{ contrato: number; cc: number; mrr: number }>({ contrato: 0, cc: 0, mrr: 0 });
   useEffect(() => {
-    const mesInicio = format(startOfMonth(new Date()), 'yyyy-MM-dd');
     supabase.from('crm_leads')
       .select('valor_contrato,valor_cc,valor_mrr')
       .in('etapa', ['rm_realizada', 'fup_ativa'])
       .is('deletado_em', null)
-      .gte('etapa_desde', mesInicio)
+      .gte('etapa_desde', range.inicio)
+      .lte('etapa_desde', range.fim)
       .then(({ data: leads }) => {
         if (!leads) return;
         const contrato = leads.reduce((acc, l: any) => acc + (parseFloat(l.valor_contrato) || 0), 0);
@@ -588,7 +588,7 @@ function PageMetas({ data, userSession }: { data: any; userSession: any }) {
         const mrr = leads.reduce((acc, l: any) => acc + (parseFloat(l.valor_mrr) || 0), 0);
         setNegociando({ contrato, cc, mrr });
       });
-  }, []);
+  }, [range.inicio, range.fim]);
 
   // Carrega metas do Supabase (fonte de verdade), não do webhook
   useEffect(() => {
