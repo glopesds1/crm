@@ -207,6 +207,21 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
   const [statusChamada, setStatusChamada] = useState<'Atendeu' | 'Não atendeu' | null>(null);
   const [touchpoint, setTouchpoint] = useState('');
   const [agendou, setAgendou] = useState(false);
+  // BANT fields for scheduling (Ligação → Atendeu → Agendar Reunião)
+  const [bantTipo, setBantTipo] = useState<'R1' | 'R2'>('R1');
+  const [bantDataHora, setBantDataHora] = useState('');
+  const [bantDuracao, setBantDuracao] = useState('60');
+  const [bantCloser, setBantCloser] = useState('');
+  const [bantFaturamento, setBantFaturamento] = useState(leadObj?.faturamento ?? '');
+  const [bantBudget, setBantBudget] = useState('');
+  const [bantMomento, setBantMomento] = useState('');
+  const [bantCaptacao, setBantCaptacao] = useState('');
+  const [bantAutoridade, setBantAutoridade] = useState('');
+  const [bantNecessidade, setBantNecessidade] = useState('');
+  const [bantTiming, setBantTiming] = useState('');
+  const [bantSdr, setBantSdr] = useState('');
+  const [bantObs, setBantObs] = useState('');
+  const [imageError, setImageError] = useState(false);
   const [statusReuniao, setStatusReuniao] = useState<'Compareceu' | 'Não compareceu' | null>(null);
   const [resultado, setResultado] = useState('');
   const [descricao, setDescricao] = useState('');
@@ -252,6 +267,10 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
 
   const handleSave = async () => {
     if (resultado === 'Perdido' && !motivoPerda.trim()) { setErroMotivo(true); return; }
+    // Print obrigatório quando Ligação → Atendeu
+    if (tipo === 'ligacao' && statusChamada === 'Atendeu' && !imageFile) { setImageError(true); return; }
+    // Validar campos obrigatórios do agendamento BANT
+    if (tipo === 'ligacao' && statusChamada === 'Atendeu' && agendou && (!bantDataHora || !bantCloser)) return;
     setSaving(true);
     const now = new Date().toISOString();
 
@@ -279,8 +298,11 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
       const extras: Record<string, string> = {};
       if (resumoLigacao) extras.resumo_ligacao = resumoLigacao;
       if (motivoNaoAtendeu) extras.motivo_nao_atendeu = motivoNaoAtendeu;
-      if (nomeLeadConfirmado) extras.nome_lead_confirmado = nomeLeadConfirmado;
-      if (dataAgendamento) extras.data_agendamento = dataAgendamento;
+      if (agendou && bantDataHora) {
+        extras.data_agendamento = bantDataHora;
+        extras.closer = bantCloser;
+        extras.tipo_reuniao = bantTipo;
+      }
       if (Object.keys(extras).length > 0) {
         finalDescricao = JSON.stringify({ obs: descricao || '', ...extras });
       }
@@ -323,14 +345,46 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
 
     // Side-effects based on tipo/resultado (fire-and-forget)
     if (tipo === 'ligacao') {
-      // Auto-create task + move to rm_marcada when agendou
-      if (agendou && dataAgendamento) {
+      // Auto-create task + move to rm_marcada + send BANT webhook when agendou
+      if (agendou && bantDataHora && bantCloser) {
+        // Send BANT payload to webhook
+        try {
+          const bantPayload = {
+            lead_nome: leadName,
+            lead_telefone: leadObj?.telefone ?? '',
+            closer: bantCloser,
+            tipo_reuniao: bantTipo,
+            data_hora: new Date(bantDataHora).toISOString(),
+            duracao_min: parseInt(bantDuracao) || 60,
+            bant: {
+              faturamento: bantFaturamento,
+              budget: bantBudget,
+              momento: bantMomento,
+              captacao: bantCaptacao,
+              autoridade: bantAutoridade,
+              necessidade: bantNecessidade,
+              timing: bantTiming,
+              sdr: bantSdr,
+              observacoes: bantObs,
+            },
+          };
+          const webhookBase = import.meta.env.VITE_WEBHOOK_BASE?.replace('/webhook/dashboard', '') ?? 'https://webhook.m2black.com';
+          fetch(`${webhookBase}/webhook/agendar-reuniao`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(bantPayload),
+          }).catch(e => console.warn('Webhook agendar-reuniao (CORS em dev):', e.message));
+        } catch (err) {
+          console.error('Failed to send BANT webhook:', err);
+        }
+
+        // Create scheduled task
         try {
           const { data: newTask } = await supabase.from('crm_tarefas').insert({
             lead_id: leadId,
-            titulo: `Reunião - ${leadName}`,
-            data_agendada: localDatetimeToISO(dataAgendamento),
-            responsavel: userSession?.name ?? '',
+            titulo: `Reunião ${bantTipo} - ${leadName}`,
+            data_agendada: localDatetimeToISO(bantDataHora),
+            responsavel: bantCloser,
             concluida: false,
             created_at: now,
           }).select().single();
@@ -338,12 +392,14 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
         } catch (err) {
           console.error('Failed to create scheduled meeting task:', err);
         }
-        // Move lead to rm_marcada
+        // Move lead to rm_marcada + update closer as responsavel
         try {
           const leadUpd: Partial<CRMLead> = {
             etapa: 'rm_marcada',
             etapa_desde: now,
-            proxima_reuniao: localDatetimeToISO(dataAgendamento),
+            proxima_reuniao: localDatetimeToISO(bantDataHora),
+            faturamento: bantFaturamento || undefined,
+            responsavel: bantCloser,
             updated_at: now,
           };
           await supabase.from('crm_leads').update(leadUpd).eq('id', leadId);
@@ -475,7 +531,7 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
         sale_status: tipo === 'reuniao' ? resultado || null : null,
         contract_value: tipo === 'reuniao' && valorContrato ? parseFloat(valorContrato) : null,
         cash_collect: tipo === 'reuniao' && valorCc ? parseFloat(valorCc) : null,
-        next_meeting_date: tipo === 'reuniao' && proximaReuniao ? localDatetimeToISO(proximaReuniao) : (tipo === 'ligacao' && agendou && dataAgendamento ? localDatetimeToISO(dataAgendamento) : null),
+        next_meeting_date: tipo === 'reuniao' && proximaReuniao ? localDatetimeToISO(proximaReuniao) : (tipo === 'ligacao' && agendou && bantDataHora ? localDatetimeToISO(bantDataHora) : null),
         loss_reason: tipo === 'reuniao' && motivoPerda ? motivoPerda : (tipo === 'ligacao' && statusChamada === 'Não atendeu' && motivoNaoAtendeu ? motivoNaoAtendeu : null),
         company_name: tipo === 'reuniao' && razaoSocial ? razaoSocial : null,
         responsible_name: tipo === 'reuniao' && nomeResponsavel ? nomeResponsavel : null,
@@ -530,47 +586,168 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
               >{s}</button>
             ))}
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">Touchpoint</label>
-              <input type="number" value={touchpoint} onChange={e => setTouchpoint(e.target.value)}
-                className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-1.5 text-sm text-white focus:outline-none focus:border-brand-primary"
-              />
-            </div>
-            <div className="flex items-end pb-1.5">
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input type="checkbox" checked={agendou} onChange={e => setAgendou(e.target.checked)} className="w-4 h-4 accent-brand-primary" />
-                <span className="text-xs text-gray-400">Marcou reunião</span>
-              </label>
-            </div>
-          </div>
-
-          {/* Resumo da ligação */}
-          <div>
-            <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">Resumo da ligação</label>
-            <textarea value={resumoLigacao} onChange={e => setResumoLigacao(e.target.value)} rows={2}
-              className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm text-gray-300 focus:outline-none focus:border-brand-primary resize-none"
-              placeholder="O que foi conversado..."
-            />
-          </div>
-
-          {/* Agendou — dados do agendamento */}
-          {agendou && (
-            <div className="grid grid-cols-2 gap-2">
+          {statusChamada === 'Atendeu' && (
+            <>
               <div>
-                <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">Data/hora da reunião</label>
-                <input type="datetime-local" value={dataAgendamento} onChange={e => setDataAgendamento(e.target.value)}
-                  className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-1.5 text-sm text-gray-300 focus:outline-none focus:border-brand-primary"
-                />
-              </div>
-              <div>
-                <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">Nome confirmado</label>
-                <input value={nomeLeadConfirmado} onChange={e => setNomeLeadConfirmado(e.target.value)}
+                <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">Touchpoint</label>
+                <input type="number" value={touchpoint} onChange={e => setTouchpoint(e.target.value)}
                   className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-1.5 text-sm text-white focus:outline-none focus:border-brand-primary"
-                  placeholder="Nome do lead"
                 />
               </div>
-            </div>
+
+              {/* Resumo da ligação */}
+              <div>
+                <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">Resumo da ligação</label>
+                <textarea value={resumoLigacao} onChange={e => setResumoLigacao(e.target.value)} rows={2}
+                  className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm text-gray-300 focus:outline-none focus:border-brand-primary resize-none"
+                  placeholder="O que foi conversado..."
+                />
+              </div>
+
+              {/* Botão Agendar Reunião */}
+              <button onClick={() => setAgendou(!agendou)} type="button"
+                className={`w-full py-2 rounded-xl border border-dashed text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer ${agendou ? 'bg-yellow-500/20 border-yellow-500 text-yellow-400' : 'border-yellow-500/30 text-gray-500 hover:text-yellow-400 hover:border-yellow-500/50'}`}
+              >
+                <Calendar size={13} /> {agendou ? '✓ Reunião sendo agendada' : 'Agendar Reunião'}
+              </button>
+
+              {/* Campos BANT de agendamento */}
+              {agendou && (
+                <div className="space-y-3 bg-white/[0.02] border border-yellow-500/20 rounded-xl p-3">
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">Tipo</label>
+                      <select value={bantTipo} onChange={e => setBantTipo(e.target.value as 'R1' | 'R2')}
+                        className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-1.5 text-sm text-white focus:outline-none focus:border-yellow-500 appearance-none"
+                      >
+                        <option value="R1" className="bg-bg-main">R1</option>
+                        <option value="R2" className="bg-bg-main">R2</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">Duração (min)</label>
+                      <input value={bantDuracao} onChange={e => setBantDuracao(e.target.value)} type="number"
+                        className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-1.5 text-sm text-white focus:outline-none focus:border-yellow-500"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">Data e hora <span className="text-red-400">*</span></label>
+                    <input type="datetime-local" value={bantDataHora} onChange={e => setBantDataHora(e.target.value)}
+                      className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-1.5 text-sm text-gray-300 focus:outline-none focus:border-yellow-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">Closer responsável <span className="text-red-400">*</span></label>
+                    <select value={bantCloser} onChange={e => setBantCloser(e.target.value)}
+                      className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-1.5 text-sm text-white focus:outline-none focus:border-yellow-500 appearance-none"
+                    >
+                      <option value="" className="bg-bg-main">Selecionar...</option>
+                      <option value="Gabriel Fonseca" className="bg-bg-main">Gabriel Fonseca</option>
+                      <option value="Carla" className="bg-bg-main">Carla</option>
+                      <option value="Gabriel Moreira" className="bg-bg-main">Gabriel Moreira</option>
+                    </select>
+                  </div>
+                  {/* Divisor BANT */}
+                  <div className="flex items-center gap-2 pt-1">
+                    <div className="flex-1 h-px bg-white/10" />
+                    <span className="text-[9px] font-bold uppercase tracking-widest text-gray-600">BANT</span>
+                    <div className="flex-1 h-px bg-white/10" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">Faturamento (R$)</label>
+                      <input value={bantFaturamento} onChange={e => setBantFaturamento(e.target.value)}
+                        className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-1.5 text-sm text-white focus:outline-none focus:border-yellow-500"
+                        placeholder="Ex: 100.000"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">Budget líquido (R$)</label>
+                      <input value={bantBudget} onChange={e => setBantBudget(e.target.value)}
+                        className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-1.5 text-sm text-white focus:outline-none focus:border-yellow-500"
+                        placeholder="Ex: 5.000"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">Momento do negócio</label>
+                    <select value={bantMomento} onChange={e => setBantMomento(e.target.value)}
+                      className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-1.5 text-sm text-white focus:outline-none focus:border-yellow-500 appearance-none"
+                    >
+                      <option value="" className="bg-bg-main">Selecionar...</option>
+                      <option value="Comecei agora e preciso de estrutura no digital" className="bg-bg-main">Comecei agora e preciso de estrutura no digital</option>
+                      <option value="Já contratei agência, mas não tive resultado" className="bg-bg-main">Já contratei agência, mas não tive resultado</option>
+                      <option value="Já vendo por indicação, mas quero escalar via internet" className="bg-bg-main">Já vendo por indicação, mas quero escalar via internet</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">Como capta clientes hoje</label>
+                    <select value={bantCaptacao} onChange={e => setBantCaptacao(e.target.value)}
+                      className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-1.5 text-sm text-white focus:outline-none focus:border-yellow-500 appearance-none"
+                    >
+                      <option value="" className="bg-bg-main">Selecionar...</option>
+                      <option value="Indicação" className="bg-bg-main">Indicação</option>
+                      <option value="Tráfego Pago" className="bg-bg-main">Tráfego Pago</option>
+                      <option value="Ainda não tenho clientes" className="bg-bg-main">Ainda não tenho clientes</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">Autoridade (Decisores)</label>
+                    <select value={bantAutoridade} onChange={e => setBantAutoridade(e.target.value)}
+                      className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-1.5 text-sm text-white focus:outline-none focus:border-yellow-500 appearance-none"
+                    >
+                      <option value="" className="bg-bg-main">Selecionar...</option>
+                      <option value="Nenhum decisor envolvido / lead terceirizado" className="bg-bg-main">Nenhum decisor envolvido / lead terceirizado</option>
+                      <option value="Tem influência, mas depende do sócio ou gestor" className="bg-bg-main">Tem influência, mas depende do sócio ou gestor</option>
+                      <option value="Decisor principal e sócio confirmado para a reunião" className="bg-bg-main">Decisor principal e sócio confirmado para a reunião</option>
+                      <option value="É o único decisor e demonstra autoridade total" className="bg-bg-main">É o único decisor e demonstra autoridade total</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">Necessidade / Dor</label>
+                    <select value={bantNecessidade} onChange={e => setBantNecessidade(e.target.value)}
+                      className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-1.5 text-sm text-white focus:outline-none focus:border-yellow-500 appearance-none"
+                    >
+                      <option value="" className="bg-bg-main">Selecionar...</option>
+                      <option value="Quer melhorar marketing, mas sem dor clara" className="bg-bg-main">Quer melhorar marketing, mas sem dor clara</option>
+                      <option value="Reconhece que falta previsibilidade, mas ainda sem urgência" className="bg-bg-main">Reconhece que falta previsibilidade, mas ainda sem urgência</option>
+                      <option value="Sofre com falta de leads ou estrutura comercial e quer resolver" className="bg-bg-main">Sofre com falta de leads ou estrutura comercial e quer resolver</option>
+                      <option value="Está com prejuízo, sem previsibilidade e quer agir agora" className="bg-bg-main">Está com prejuízo, sem previsibilidade e quer agir agora</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">Timing / Urgência</label>
+                    <select value={bantTiming} onChange={e => setBantTiming(e.target.value)}
+                      className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-1.5 text-sm text-white focus:outline-none focus:border-yellow-500 appearance-none"
+                    >
+                      <option value="" className="bg-bg-main">Selecionar...</option>
+                      <option value="Não tem previsão / talvez no futuro" className="bg-bg-main">Não tem previsão / talvez no futuro</option>
+                      <option value="Pensa em agir em até 3 meses" className="bg-bg-main">Pensa em agir em até 3 meses</option>
+                      <option value="Quer começar em até 30 dias" className="bg-bg-main">Quer começar em até 30 dias</option>
+                      <option value="Quer iniciar imediatamente / essa semana" className="bg-bg-main">Quer iniciar imediatamente / essa semana</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">SDR responsável</label>
+                    <select value={bantSdr} onChange={e => setBantSdr(e.target.value)}
+                      className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-1.5 text-sm text-white focus:outline-none focus:border-yellow-500 appearance-none"
+                    >
+                      <option value="" className="bg-bg-main">Selecionar...</option>
+                      <option value="Vitória Mendes" className="bg-bg-main">Vitória Mendes</option>
+                      <option value="Pedro Relvas" className="bg-bg-main">Pedro Relvas</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">Desafio, dor e observações</label>
+                    <textarea value={bantObs} onChange={e => setBantObs(e.target.value)} rows={2}
+                      className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-1.5 text-sm text-white focus:outline-none focus:border-yellow-500 resize-none"
+                      placeholder="Descreva o cenário do lead..."
+                    />
+                  </div>
+                </div>
+              )}
+            </>
           )}
 
           {/* Não atendeu — motivo */}
@@ -741,10 +918,13 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
 
       {/* Upload de print */}
       <div>
-        <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">Print da tela (opcional)</label>
-        <input type="file" accept="image/*" onChange={handleImageChange}
-          className="w-full text-xs text-gray-400 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-white/10 file:text-gray-300 hover:file:bg-white/20 file:cursor-pointer file:transition-colors"
+        <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">
+          Print da tela {tipo === 'ligacao' && statusChamada === 'Atendeu' ? <span className="text-red-400">* (obrigatório)</span> : '(opcional)'}
+        </label>
+        <input type="file" accept="image/*" onChange={e => { handleImageChange(e); setImageError(false); }}
+          className={`w-full text-xs text-gray-400 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-white/10 file:text-gray-300 hover:file:bg-white/20 file:cursor-pointer file:transition-colors ${imageError ? 'ring-1 ring-red-500 rounded-lg' : ''}`}
         />
+        {imageError && <p className="text-[10px] text-red-400 mt-1">Print obrigatório para ligações atendidas</p>}
         {imagePreview && (
           <div className="mt-2 relative">
             <img src={imagePreview} alt="Preview" className="w-full max-h-40 object-contain rounded-lg border border-white/10" />
