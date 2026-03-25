@@ -132,6 +132,48 @@ base → triagem → rm_marcada → rm_realizada → fup_ativa → fechado
 
 ---
 
+## CRM — Registrar Atividade (NovaAtividadeForm)
+
+**Campos do formulário:**
+1. **Tipo:** Ligação ou Reunião
+2. **Responsável pela atividade:** seletor com membros da equipe comercial, pré-selecionado com o responsável pela oportunidade (`lead.responsavel`)
+3. **Print da tela:** obrigatório para TODAS as atividades (ligação e reunião)
+4. Campos específicos por tipo (veja abaixo)
+
+**Ligação → Atendeu:**
+- Touchpoint (número)
+- Botão "Agendar Reunião" → abre painel BANT completo (substitui o antigo checkbox "Marcou reunião")
+
+**Ligação → Não atendeu:**
+- Motivo (select)
+
+**Painel BANT (agendamento de reunião dentro da ligação):**
+- Tipo (R1/R2), Duração, Data/hora*, Closer responsável*, SDR responsável*
+- BANT: Faturamento, Budget, Momento, Captação, Autoridade, Necessidade, Timing
+- Desafio/dor/observações
+- Ao salvar: envia ao webhook `agendar-reuniao`, cria tarefa em `crm_tarefas`, move lead para `rm_marcada`, atualiza responsável do lead para o Closer selecionado
+
+**Regra de responsável no relatório (`comercial_tasks.collaborator`):**
+- **Ligações e reuniões:** `collaborator` = responsável pela atividade (campo selecionado no form, default = responsável pela oportunidade)
+- **Tarefas agendadas:** `collaborator` = responsável pela tarefa (`tarefa.responsavel`), mesmo que diferente do responsável pelo lead
+
+**Onde NÃO aparece mais:**
+- "Resumo da ligação" — removido do form de ligação
+- "Agendar próxima atividade" — removido do form, movido para aba Tarefas
+- Botão "Agendar Reunião" — removido da aba Informações (fica apenas dentro do form de ligação atendida)
+
+---
+
+## CRM — Card do Lead (LeadModal)
+
+**Aba Informações:** telefone, origem, área de atuação, faturamento, responsável, etapa, etiquetas, observações, negociação (se aplicável). Botões: "Registrar atividade" e "Agendar Tarefa" (redireciona para aba Tarefas).
+
+**Aba Timeline:** histórico de atividades do lead.
+
+**Aba Tarefas:** lista de tarefas agendadas com botão "Agendar próxima atividade" (form inline: título*, data/hora*, responsável).
+
+---
+
 ## CRM — Tarefas Agendadas
 
 **Fluxo de conclusão:**
@@ -142,10 +184,6 @@ base → triagem → rm_marcada → rm_realizada → fup_ativa → fechado
    - `crm_tarefas` → marca `concluida: true`
    - `crm_atividades` → insere registro tipo `'tarefa'` com `imagem_url` (aparece na timeline do lead como "Tarefa Concluída")
    - `comercial_tasks` → insere no relatório com `category: 'Tarefa'`
-
-**Regra de responsável no relatório (`comercial_tasks.collaborator`):**
-- **Ligações e reuniões:** `collaborator` = responsável pela oportunidade (`lead.responsavel`)
-- **Tarefas agendadas:** `collaborator` = responsável pela tarefa (`tarefa.responsavel`), mesmo que diferente do responsável pelo lead
 
 **Notificações (alarme de tarefas):**
 - Aparecem apenas para o responsável pela tarefa (`tarefa.responsavel`) ou o responsável pela oportunidade (`lead.responsavel`)
@@ -182,6 +220,7 @@ base → triagem → rm_marcada → rm_realizada → fup_ativa → fechado
 ## n8n Workflows Relevantes
 
 - **Sync CRM:** `POST https://webhook.m2black.com/webhook/sync-crm-leads` — sincroniza Railway → Supabase crm_leads em lotes de 50
+- **Agendar Reunião:** `POST https://webhook.m2black.com/webhook/agendar-reuniao` — recebe payload BANT e notifica o closer
 - **Dashboard API:** responde ao webhook do dashboard com dados do Railway
 - **Supabase Keepalive:** pinga o Supabase a cada 5 dias para evitar pause no plano Nano
 
@@ -191,6 +230,12 @@ base → triagem → rm_marcada → rm_realizada → fup_ativa → fechado
 
 - **Closers:** Gabriel Fonseca (gerente comercial), Carla, Gabriel Moreira
 - **SDRs:** Vitória Mendes, Pedro Relvas
+
+---
+
+## Relatório Comercial (App.tsx — módulo Aquisição)
+
+**Histórico de atividades:** grid de cards com thumbnail da imagem enviada. Ao clicar na imagem, abre lightbox em tela cheia (state `lightboxUrl`).
 
 ---
 
@@ -217,6 +262,11 @@ base → triagem → rm_marcada → rm_realizada → fup_ativa → fechado
 6. Filtro por responsável no kanban
 7. Filtro por etiqueta
 8. Sync de etapa → atualizar de volta no Postgres/Sheets
+25. ~~Agendamento BANT no fluxo de ligação atendida~~ ✅ Botão + painel BANT com webhook
+26. ~~Print obrigatório em todas as atividades~~ ✅ Validação universal
+27. ~~Lightbox no histórico do relatório~~ ✅ Clique na imagem abre tela cheia
+28. ~~Responsável pela atividade no form~~ ✅ Seletor pré-preenchido com responsável da oportunidade
+29. ~~Reorganizar card do lead (info/atividades/tarefas)~~ ✅ Agendar tarefa na aba Tarefas, removido Agendar Reunião da info
 
 ### Dashboard
 9. Negociando → mostrar apenas leads do mês vigente
