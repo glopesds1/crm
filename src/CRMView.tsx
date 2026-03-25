@@ -276,7 +276,7 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
 
   const captureScreenshot = async (): Promise<File | null> => {
     try {
-      const stream = await navigator.mediaDevices.getDisplayMedia({ video: { displaySurface: 'screen' } as any });
+      const stream = await navigator.mediaDevices.getDisplayMedia({ video: { displaySurface: 'monitor' } as any, preferCurrentTab: false } as any);
       const track = stream.getVideoTracks()[0];
       // @ts-ignore — ImageCapture is available in modern browsers
       const capture = new ImageCapture(track);
@@ -299,7 +299,7 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
     setTipo(t);
     if (t === 'ligacao' && leadObj?.telefone) {
       const waNumber = formatPhoneForWhatsApp(leadObj.telefone);
-      if (waNumber) window.open(`https://wa.me/${waNumber}`, '_blank');
+      if (waNumber) window.open(`whatsapp://send?phone=${waNumber}`, '_self');
       // Wait for WhatsApp to open, then capture screen
       await new Promise(r => setTimeout(r, 1500));
       const file = await captureScreenshot();
