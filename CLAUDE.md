@@ -40,7 +40,7 @@ VITE_SYNC_CRM_WEBHOOK=https://webhook.m2black.com/webhook/sync-crm-leads
 - **Ícones:** lucide-react
 - **Gráficos:** recharts
 - **PDF:** jsPDF + jspdf-autotable
-- **Datas:** date-fns com locale ptBR
+- **Datas:** date-fns (v4) — NÃO usar `format()` do date-fns no CRM; usar helpers `fmtDateSP`/`parseDateSP` com timezone fixo `America/Sao_Paulo`
 - **Backend:** Supabase (PostgreSQL gerenciado) — plano Nano
 - **Banco externo:** PostgreSQL no Railway (dados de leads e métricas de campanha)
 - **Automações:** n8n self-hosted em `webhook.m2black.com`
@@ -132,6 +132,33 @@ base → triagem → rm_marcada → rm_realizada → fup_ativa → fechado
 
 ---
 
+## CRM — Tarefas Agendadas
+
+**Fluxo de conclusão:**
+1. Usuário clica "Concluir" na tarefa (modal ou popup de alarme)
+2. Painel de upload abre — é obrigatório anexar print antes de confirmar
+3. Imagem é enviada ao bucket `comercial-prints` no Supabase Storage
+4. Ao confirmar:
+   - `crm_tarefas` → marca `concluida: true`
+   - `crm_atividades` → insere registro tipo `'tarefa'` com `imagem_url` (aparece na timeline do lead como "Tarefa Concluída")
+   - `comercial_tasks` → insere no relatório com `category: 'Tarefa'`
+
+**Regra de responsável no relatório (`comercial_tasks.collaborator`):**
+- **Ligações e reuniões:** `collaborator` = responsável pela oportunidade (`lead.responsavel`)
+- **Tarefas agendadas:** `collaborator` = responsável pela tarefa (`tarefa.responsavel`), mesmo que diferente do responsável pelo lead
+
+**Notificações (alarme de tarefas):**
+- Aparecem apenas para o responsável pela tarefa (`tarefa.responsavel`) ou o responsável pela oportunidade (`lead.responsavel`)
+- Admin **não** recebe notificações de todas as tarefas — somente das que é responsável
+
+**Helpers de timezone (topo de CRMView.tsx):**
+- `SP_TZ = 'America/Sao_Paulo'` — constante de timezone
+- `localDatetimeToISO(dt)` — converte datetime-local para ISO com offset `-03:00`
+- `parseDateSP(iso)` — parse de data do Supabase, trata strings sem offset como São Paulo
+- `fmtDateSP(iso, opts?)` — formata data usando `Intl.DateTimeFormat` com timezone SP
+
+---
+
 ## Dashboard Comercial — Sub-páginas
 
 7 sub-páginas com seletor de período independente por aba:
@@ -173,7 +200,8 @@ base → triagem → rm_marcada → rm_realizada → fup_ativa → fechado
 - Animações: `import { motion, AnimatePresence } from 'motion/react'` (não `framer-motion`)
 - Arrays do Supabase: sempre tratar como `Array.isArray(d) ? d : d ? [d] : []`
 - Ao paginar o Supabase, deduplicar por `id` após juntar as páginas
-- Datas: usar `date-fns` com locale `ptBR` para formatação
+- Datas no CRM: usar os helpers `fmtDateSP(iso, opts?)` e `parseDateSP(iso)` definidos no topo de `CRMView.tsx` — nunca usar `format()` do date-fns nem `toLocaleDateString()` sem `timeZone: 'America/Sao_Paulo'`
+- Ao salvar datas de `<input type="datetime-local">`, usar `localDatetimeToISO(dt)` que anexa `-03:00` (São Paulo, sem horário de verão desde 2019)
 - Não modificar seções marcadas como TRAVADO nos comentários do DashboardView.tsx
 
 ---
@@ -182,8 +210,8 @@ base → triagem → rm_marcada → rm_realizada → fup_ativa → fechado
 
 ### CRM
 1. Botão de ligar → abrir WhatsApp Beta
-2. Timeline → integrar com histórico do módulo Comercial
-3. Tarefas → alarme sonoro e visual
+2. ~~Timeline → integrar com histórico do módulo Comercial~~ ✅ Tarefas concluídas aparecem na timeline
+3. ~~Tarefas → alarme sonoro e visual~~ ✅ Implementado com popup + som + botão concluir com print
 4. Ao selecionar tarefa no histórico → abrir card do lead
 5. Informações financeiras pós-reunião editáveis no card
 6. Filtro por responsável no kanban
@@ -193,7 +221,7 @@ base → triagem → rm_marcada → rm_realizada → fup_ativa → fechado
 ### Dashboard
 9. Negociando → mostrar apenas leads do mês vigente
 10. KPI's Pré-vendas → implementar (aguardando tabela de ligações)
-11. Diferença timezone leads/RR vs Looker Studio
+11. ~~Diferença timezone leads/RR vs Looker Studio~~ ✅ Timezone fixo America/Sao_Paulo
 
 ### App geral
 12. Botão de esconder a barra lateral
