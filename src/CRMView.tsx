@@ -270,7 +270,7 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
     // Print obrigatório quando Ligação → Atendeu
     if (tipo === 'ligacao' && statusChamada === 'Atendeu' && !imageFile) { setImageError(true); return; }
     // Validar campos obrigatórios do agendamento BANT
-    if (tipo === 'ligacao' && statusChamada === 'Atendeu' && agendou && (!bantDataHora || !bantCloser)) return;
+    if (tipo === 'ligacao' && statusChamada === 'Atendeu' && agendou && (!bantDataHora || !bantCloser || !bantSdr)) return;
     setSaving(true);
     const now = new Date().toISOString();
 
@@ -595,15 +595,6 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
                 />
               </div>
 
-              {/* Resumo da ligação */}
-              <div>
-                <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">Resumo da ligação</label>
-                <textarea value={resumoLigacao} onChange={e => setResumoLigacao(e.target.value)} rows={2}
-                  className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm text-gray-300 focus:outline-none focus:border-brand-primary resize-none"
-                  placeholder="O que foi conversado..."
-                />
-              </div>
-
               {/* Botão Agendar Reunião */}
               <button onClick={() => setAgendou(!agendou)} type="button"
                 className={`w-full py-2 rounded-xl border border-dashed text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer ${agendou ? 'bg-yellow-500/20 border-yellow-500 text-yellow-400' : 'border-yellow-500/30 text-gray-500 hover:text-yellow-400 hover:border-yellow-500/50'}`}
@@ -650,7 +641,7 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
                       </select>
                     </div>
                     <div>
-                      <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">SDR responsável</label>
+                      <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">SDR responsável <span className="text-red-400">*</span></label>
                       <select value={bantSdr} onChange={e => setBantSdr(e.target.value)}
                         className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-1.5 text-sm text-white focus:outline-none focus:border-yellow-500 appearance-none"
                       >
@@ -938,20 +929,6 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
             </button>
           </div>
         )}
-      </div>
-
-      {/* Agendar próxima atividade */}
-      <div className="border-t border-white/5 pt-3 space-y-2">
-        <p className="text-[9px] font-bold uppercase tracking-widest text-gray-600">Agendar próxima atividade</p>
-        <div className="grid grid-cols-2 gap-2">
-          <input value={tituloTarefa} onChange={e => setTituloTarefa(e.target.value)}
-            placeholder="Título da tarefa"
-            className="bg-white/5 border border-white/10 rounded-xl px-3 py-1.5 text-xs text-white placeholder-gray-700 focus:outline-none focus:border-brand-primary"
-          />
-          <input type="datetime-local" value={dataAgendada} onChange={e => setDataAgendada(e.target.value)}
-            className="bg-white/5 border border-white/10 rounded-xl px-3 py-1.5 text-xs text-gray-300 focus:outline-none focus:border-brand-primary"
-          />
-        </div>
       </div>
 
       <div className="flex gap-2">
@@ -1945,45 +1922,6 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
                     </button>
                   </div>
                 </div>
-              ) : showAgendarTarefa ? (
-                <div className="space-y-3 bg-white/[0.02] border border-white/10 rounded-xl p-4">
-                  <p className="text-[9px] font-bold uppercase tracking-widest text-brand-primary">Agendar Tarefa</p>
-                  <div>
-                    <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">Título da tarefa <span className="text-red-400">*</span></label>
-                    <input value={agTitulo} onChange={e => setAgTitulo(e.target.value)}
-                      className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-1.5 text-sm text-white focus:outline-none focus:border-brand-primary"
-                      placeholder="Ex: Reunião de follow-up"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">Data e hora <span className="text-red-400">*</span></label>
-                    <input type="datetime-local" value={agData} onChange={e => setAgData(e.target.value)}
-                      className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-1.5 text-sm text-gray-300 focus:outline-none focus:border-brand-primary"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">Responsável</label>
-                    <select value={agResponsavel} onChange={e => setAgResponsavel(e.target.value)}
-                      className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-1.5 text-sm text-white focus:outline-none focus:border-brand-primary appearance-none"
-                    >
-                      <option value="" className="bg-bg-main">Selecionar...</option>
-                      {teamMembers.filter(m => ['admin','comercial'].includes((m.role ?? '').toLowerCase()))
-                        .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'))
-                        .map(m => <option key={m.id} value={m.name} className="bg-bg-main">{m.name}</option>)}
-                    </select>
-                  </div>
-                  <div className="flex gap-2">
-                    <button onClick={() => setShowAgendarTarefa(false)}
-                      className="flex-1 py-1.5 rounded-xl bg-white/5 border border-white/10 text-xs text-gray-400 hover:text-white transition-colors"
-                    >Cancelar</button>
-                    <button onClick={handleAgendarTarefa} disabled={agSaving || !agTitulo.trim() || !agData}
-                      className="flex-1 py-1.5 rounded-xl bg-brand-primary text-black text-xs font-bold hover:bg-brand-primary/80 disabled:opacity-40 transition-colors flex items-center justify-center gap-2"
-                    >
-                      {agSaving && <Loader2 size={12} className="animate-spin" />}
-                      Salvar
-                    </button>
-                  </div>
-                </div>
               ) : (
                 <div className="flex gap-2">
                   <div className="flex-1">
@@ -1995,14 +1933,7 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
                     <p className="text-[9px] text-gray-700 text-center mt-1">Para atividades já realizadas</p>
                   </div>
                   <div className="flex-1">
-                    <button onClick={() => setShowAgendarReuniao(true)}
-                      className="w-full py-2 rounded-xl border border-dashed border-yellow-500/30 text-xs text-gray-500 hover:text-yellow-400 hover:border-yellow-500/50 transition-all flex items-center justify-center gap-2"
-                    >
-                      <Calendar size={13} /> Agendar Reunião
-                    </button>
-                  </div>
-                  <div className="flex-1">
-                    <button onClick={() => setShowAgendarTarefa(true)}
+                    <button onClick={() => { setShowAgendarTarefa(true); setTab('tarefas'); }}
                       className="w-full py-2 rounded-xl border border-dashed border-white/15 text-xs text-gray-500 hover:text-brand-primary hover:border-brand-primary/40 transition-all flex items-center justify-center gap-2"
                     >
                       <Calendar size={13} /> Agendar Tarefa
@@ -2065,8 +1996,56 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
           {/* ── TAB: TAREFAS ──────────────── */}
           {tab === 'tarefas' && (
             <div className="space-y-3">
+              {/* Agendar próxima atividade */}
+              {showAgendarTarefa ? (
+                <div className="space-y-3 bg-white/[0.02] border border-white/10 rounded-xl p-4">
+                  <p className="text-[9px] font-bold uppercase tracking-widest text-brand-primary">Agendar Próxima Atividade</p>
+                  <div>
+                    <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">Título da tarefa <span className="text-red-400">*</span></label>
+                    <input value={agTitulo} onChange={e => setAgTitulo(e.target.value)}
+                      className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-1.5 text-sm text-white focus:outline-none focus:border-brand-primary"
+                      placeholder="Ex: Reunião de follow-up"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">Data e hora <span className="text-red-400">*</span></label>
+                    <input type="datetime-local" value={agData} onChange={e => setAgData(e.target.value)}
+                      className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-1.5 text-sm text-gray-300 focus:outline-none focus:border-brand-primary"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">Responsável</label>
+                    <select value={agResponsavel} onChange={e => setAgResponsavel(e.target.value)}
+                      className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-1.5 text-sm text-white focus:outline-none focus:border-brand-primary appearance-none"
+                    >
+                      <option value="" className="bg-bg-main">Selecionar...</option>
+                      {teamMembers.filter(m => ['admin','comercial'].includes((m.role ?? '').toLowerCase()))
+                        .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'))
+                        .map(m => <option key={m.id} value={m.name} className="bg-bg-main">{m.name}</option>)}
+                    </select>
+                  </div>
+                  <div className="flex gap-2">
+                    <button onClick={() => setShowAgendarTarefa(false)}
+                      className="flex-1 py-1.5 rounded-xl bg-white/5 border border-white/10 text-xs text-gray-400 hover:text-white transition-colors cursor-pointer"
+                    >Cancelar</button>
+                    <button onClick={handleAgendarTarefa} disabled={agSaving || !agTitulo.trim() || !agData}
+                      className="flex-1 py-1.5 rounded-xl bg-brand-primary text-black text-xs font-bold hover:bg-brand-primary/80 disabled:opacity-40 transition-colors flex items-center justify-center gap-2 cursor-pointer"
+                    >
+                      {agSaving && <Loader2 size={12} className="animate-spin" />}
+                      Salvar
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <button onClick={() => setShowAgendarTarefa(true)}
+                  className="w-full py-2 rounded-xl border border-dashed border-white/15 text-xs text-gray-500 hover:text-brand-primary hover:border-brand-primary/40 transition-all flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  <Plus size={13} /> Agendar próxima atividade
+                </button>
+              )}
+
               <input ref={tarefaFileRef} type="file" accept="image/*" onChange={handleTarefaImage} className="hidden" />
-              {tarefas.length === 0 && <div className="py-12 text-center text-xs text-gray-600">Nenhuma tarefa agendada.</div>}
+              {tarefas.length === 0 && !showAgendarTarefa && <div className="py-12 text-center text-xs text-gray-600">Nenhuma tarefa agendada.</div>}
               {tarefas.map(t => (
                 <div key={t.id} className={`rounded-xl transition-colors ${t.concluida ? 'bg-white/3 opacity-50' : 'bg-white/5'}`}>
                   <div className="flex items-start gap-3 p-3">
