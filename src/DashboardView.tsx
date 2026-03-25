@@ -155,7 +155,10 @@ export default function DashboardView({ userSession }: { userSession: any }) {
       const url = `${WEBHOOK_BASE}?page=${p}&data_inicio=${di}&data_fim=${df}`;
       const res = await fetch(url);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const json = await res.json();
+      const text = await res.text();
+      if (!text || !text.trim()) { setData({}); return; }
+      let json: any;
+      try { json = JSON.parse(text); } catch { setData({}); return; }
       setData(json);
     } catch (e: any) {
       setError(e.message === 'Failed to fetch'
