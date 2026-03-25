@@ -2553,6 +2553,8 @@ const ComercialView = ({ teamMembers, userSession, onOpenInCRM }: {
     return filtered;
   }, [tasks, selectedCollaborator, userSession, dateRange]);
 
+  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
+
   const handleDeleteTask = async (id: string) => {
     if (!confirm('Tem certeza que deseja excluir este registro?')) return;
     try {
@@ -2819,7 +2821,7 @@ const ComercialView = ({ teamMembers, userSession, onOpenInCRM }: {
                   animate={{ opacity: 1, scale: 1 }}
                   className="glass-card overflow-hidden group border border-white/5 hover:border-brand-primary/20"
                 >
-                  <div className="aspect-video w-full relative overflow-hidden bg-bg-sidebar">
+                  <div className="aspect-video w-full relative overflow-hidden bg-bg-sidebar cursor-pointer" onClick={() => task.imageUrl && setLightboxUrl(task.imageUrl)}>
                     {task.imageUrl ? (
                       <img src={task.imageUrl} alt="Print" className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
                     ) : (
@@ -2995,6 +2997,30 @@ const ComercialView = ({ teamMembers, userSession, onOpenInCRM }: {
             </div>
           </div>
         </div>
+
+      {/* Lightbox — imagem em tela cheia */}
+      <AnimatePresence>
+        {lightboxUrl && (
+          <motion.div
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[300] flex items-center justify-center p-4 bg-black/90 backdrop-blur-md cursor-pointer"
+            onClick={() => setLightboxUrl(null)}
+          >
+            <motion.img
+              initial={{ scale: 0.8, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.8, opacity: 0 }}
+              src={lightboxUrl} alt="Print completo"
+              className="max-w-[90vw] max-h-[90vh] object-contain rounded-xl shadow-2xl"
+              onClick={e => e.stopPropagation()}
+            />
+            <button
+              onClick={() => setLightboxUrl(null)}
+              className="absolute top-6 right-6 p-2 rounded-full bg-white/10 text-white hover:bg-white/20 transition-colors"
+            >
+              <X size={20} />
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Task detail modal */}
       <AnimatePresence>
