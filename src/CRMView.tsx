@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from './lib/supabase';
-import { format } from 'date-fns';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plus, RefreshCw, Search, Phone, Building2, DollarSign,
@@ -11,19 +10,45 @@ import {
 import type { TeamMember } from './types';
 import { DEFAULT_ONBOARDING_ITEMS } from './constants';
 
-// ── Helpers ───────────────────────────────────────────────────
+// ── Helpers — Fuso horário fixo: America/Sao_Paulo (UTC-3) ───
+// Brasil aboliu horário de verão em 2019, então -03:00 é fixo.
+const SP_TZ = 'America/Sao_Paulo';
+
 // datetime-local retorna "2026-03-24T18:00" sem timezone.
-// Ao criar new Date() o browser interpreta como local, mas ao enviar
-// a string crua pro Supabase (timestamptz) ele interpreta como UTC.
-// Esta função adiciona o offset local para preservar o horário correto.
+// Anexa explicitamente -03:00 para que o Supabase (timestamptz) interprete
+// como horário de São Paulo, independente do fuso do navegador.
 function localDatetimeToISO(dt: string): string {
   if (!dt) return dt;
-  const d = new Date(dt);
-  const offset = -d.getTimezoneOffset();
-  const sign = offset >= 0 ? '+' : '-';
-  const hh = String(Math.floor(Math.abs(offset) / 60)).padStart(2, '0');
-  const mm = String(Math.abs(offset) % 60).padStart(2, '0');
-  return `${dt}:00${sign}${hh}:${mm}`;
+  // Se já tem offset, não duplicar
+  if (/[+-]\d{2}:\d{2}$/.test(dt) || dt.endsWith('Z')) return dt;
+  // datetime-local dá "YYYY-MM-DDTHH:mm", pode ou não ter segundos
+  const needsSec = (dt.match(/:/g) || []).length < 2;
+  return `${dt}${needsSec ? ':00' : ''}-03:00`;
+}
+
+// Parse uma data do Supabase garantindo interpretação correta do fuso.
+// timestamptz vem com +00:00; timestamp vem sem offset (tratar como SP).
+function parseDateSP(iso: string): Date {
+  if (!iso) return new Date(NaN);
+  if (!iso.includes('+') && !iso.endsWith('Z') && !/[+-]\d{2}:\d{2}$/.test(iso)) {
+    return new Date(iso + '-03:00');
+  }
+  return new Date(iso);
+}
+
+// Formata uma data ISO na timezone de São Paulo.
+function fmtDateSP(iso: string, opts?: { year?: boolean }): string {
+  if (!iso) return '—';
+  try {
+    const d = parseDateSP(iso);
+    if (isNaN(d.getTime())) return '—';
+    return d.toLocaleString('pt-BR', {
+      timeZone: SP_TZ,
+      day: '2-digit', month: '2-digit',
+      ...(opts?.year ? { year: '2-digit' } : {}),
+      hour: '2-digit', minute: '2-digit',
+    });
+  } catch { return '—'; }
 }
 
 // ── Types ─────────────────────────────────────────────────────
@@ -123,7 +148,7 @@ const TIPO_ICON: Record<string, any> = {
 // ── Lead Card ─────────────────────────────────────────────────
 function LeadCard({ lead, proximaTarefa, onClick }: { key?: React.Key; lead: CRMLead; proximaTarefa?: CRMTarefa; onClick: () => void }) {
   const etapa = ETAPA_MAP[lead.etapa];
-  const fmtDate = (d: string) => { try { return format(new Date(d), 'dd/MM HH:mm'); } catch { return '—'; } };
+  const fmtDate = (d: string) => fmtDateSP(d);
   return (
     <motion.div layout initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
       onClick={onClick}
@@ -167,7 +192,7 @@ function LeadCard({ lead, proximaTarefa, onClick }: { key?: React.Key; lead: CRM
         </div>
       )}
       <div className="text-[9px] text-gray-700 pt-1 border-t border-white/5">
-        {lead.created_at ? new Date(lead.created_at).toLocaleDateString('pt-BR', { day:'2-digit', month:'2-digit', year:'2-digit' }) : '—'}
+        {lead.created_at ? fmtDateSP(lead.created_at, { year: true }) : '—'}
       </div>
     </motion.div>
   );
@@ -454,7 +479,7 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
         loss_reason: tipo === 'reuniao' && motivoPerda ? motivoPerda : (tipo === 'ligacao' && statusChamada === 'Não atendeu' && motivoNaoAtendeu ? motivoNaoAtendeu : null),
         company_name: tipo === 'reuniao' && razaoSocial ? razaoSocial : null,
         responsible_name: tipo === 'reuniao' && nomeResponsavel ? nomeResponsavel : null,
-        completion_time: format(new Date(), 'dd/MM/yyyy HH:mm'),
+        completion_time: new Date().toLocaleString('pt-BR', { timeZone: SP_TZ, day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
         image_url: uploadedImageUrl || '',
         created_at: new Date().toISOString(),
       };
@@ -876,8 +901,8 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
       }).select().single();
       if (data) { setTarefas(prev => [...prev, data]); onTarefaCreated?.(data); }
       // Update proxima_reuniao if this task is sooner
-      const agDate = new Date(agData);
-      if (agDate > new Date() && (!lead.proxima_reuniao || agDate < new Date(lead.proxima_reuniao))) {
+      const agDate = parseDateSP(agData);
+      if (agDate > new Date() && (!lead.proxima_reuniao || agDate < parseDateSP(lead.proxima_reuniao))) {
         await supabase.from('crm_leads').update({ proxima_reuniao: localDatetimeToISO(agData) }).eq('id', lead.id);
         onSave({ proxima_reuniao: localDatetimeToISO(agData) });
       }
@@ -1021,7 +1046,7 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
         contract_value: rrValorContrato ? parseFloat(rrValorContrato) : null,
         cash_collect: rrValorCc ? parseFloat(rrValorCc) : null,
         next_meeting_date: rrProximaReuniao ? localDatetimeToISO(rrProximaReuniao) : null, loss_reason: rrMotivoPerda || null,
-        image_url: uploadedUrl || '', completion_time: format(new Date(), 'dd/MM/yyyy HH:mm'),
+        image_url: uploadedUrl || '', completion_time: new Date().toLocaleString('pt-BR', { timeZone: SP_TZ, day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
         created_at: now, answered: null, touchpoint: null, scheduled: false,
         company_name: null, responsible_name: null,
       };
@@ -1062,7 +1087,7 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
 
   const etapaObj = ETAPA_MAP[etapa];
 
-  const fmtAtivDate = (d: string) => new Date(d).toLocaleDateString('pt-BR', { day:'2-digit', month:'2-digit', year:'2-digit', hour:'2-digit', minute:'2-digit' });
+  const fmtAtivDate = (d: string) => fmtDateSP(d, { year: true });
 
   useEffect(() => {
     const handleEsc = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
@@ -1589,7 +1614,7 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
                   <CheckCircle2 size={16} className={t.concluida ? 'text-brand-primary mt-0.5' : 'text-gray-600 mt-0.5'} />
                   <div className="flex-1">
                     <p className={`text-sm font-bold ${t.concluida ? 'line-through text-gray-600' : 'text-white'}`}>{t.titulo}</p>
-                    {t.data_agendada && <p className="text-[10px] text-gray-500 mt-0.5">{new Date(t.data_agendada).toLocaleDateString('pt-BR', { day:'2-digit', month:'2-digit', year:'2-digit', hour:'2-digit', minute:'2-digit' })}</p>}
+                    {t.data_agendada && <p className="text-[10px] text-gray-500 mt-0.5">{fmtDateSP(t.data_agendada, { year: true })}</p>}
                     {t.responsavel && <p className="text-[9px] text-gray-700">{t.responsavel}</p>}
                   </div>
                 </div>
@@ -1692,7 +1717,7 @@ function playAlarmSound() {
 function TaskAlarmPopup({ tarefa, lead, onDismiss, onOpenLead, onComplete }: {
   tarefa: CRMTarefa; lead?: CRMLead; onDismiss: () => void; onOpenLead?: () => void; onComplete: () => void;
 }) {
-  const fmtDate = (d: string) => { try { return format(new Date(d), 'dd/MM/yyyy HH:mm'); } catch { return d; } };
+  const fmtDate = (d: string) => fmtDateSP(d, { year: true });
 
   return (
     <motion.div
@@ -1808,7 +1833,7 @@ export default function CRMView({ userSession, teamMembers, openLeadByName, onLe
       const now = new Date();
       const due = tarefas.filter(t => {
         if (t.concluida || !t.data_agendada || dismissedRef.current.has(t.id)) return false;
-        const agendada = new Date(t.data_agendada);
+        const agendada = parseDateSP(t.data_agendada);
         if (agendada > now) return false;
         // Show for task responsible or lead responsible
         const lead = leads.find(l => l.id === t.lead_id);
