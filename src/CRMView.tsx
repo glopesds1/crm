@@ -267,8 +267,8 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
 
   const handleSave = async () => {
     if (resultado === 'Perdido' && !motivoPerda.trim()) { setErroMotivo(true); return; }
-    // Print obrigatório quando Ligação → Atendeu
-    if (tipo === 'ligacao' && statusChamada === 'Atendeu' && !imageFile) { setImageError(true); return; }
+    // Print obrigatório para todas as atividades
+    if (!imageFile) { setImageError(true); return; }
     // Validar campos obrigatórios do agendamento BANT
     if (tipo === 'ligacao' && statusChamada === 'Atendeu' && agendou && (!bantDataHora || !bantCloser || !bantSdr)) return;
     setSaving(true);
@@ -913,12 +913,12 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
       {/* Upload de print */}
       <div>
         <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">
-          Print da tela {tipo === 'ligacao' && statusChamada === 'Atendeu' ? <span className="text-red-400">* (obrigatório)</span> : '(opcional)'}
+          Print da tela <span className="text-red-400">* (obrigatório)</span>
         </label>
         <input type="file" accept="image/*" onChange={e => { handleImageChange(e); setImageError(false); }}
           className={`w-full text-xs text-gray-400 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-white/10 file:text-gray-300 hover:file:bg-white/20 file:cursor-pointer file:transition-colors ${imageError ? 'ring-1 ring-red-500 rounded-lg' : ''}`}
         />
-        {imageError && <p className="text-[10px] text-red-400 mt-1">Print obrigatório para ligações atendidas</p>}
+        {imageError && <p className="text-[10px] text-red-400 mt-1">Print obrigatório para registrar atividade</p>}
         {imagePreview && (
           <div className="mt-2 relative">
             <img src={imagePreview} alt="Preview" className="w-full max-h-40 object-contain rounded-lg border border-white/10" />
