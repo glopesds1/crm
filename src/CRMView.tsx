@@ -2452,6 +2452,8 @@ export default function CRMView({ userSession, teamMembers, openLeadByName, onLe
   const [syncing, setSyncing] = useState(false);
   const [search, setSearch] = useState('');
   const [etapaSort, setEtapaSort] = useState<Record<string, 'newest' | 'oldest' | 'more_time' | 'less_time'>>({});
+  const LEADS_PER_PAGE = 20;
+  const [etapaVisible, setEtapaVisible] = useState<Record<string, number>>({});
   const [selectedLead, setSelectedLead] = useState<CRMLead | null>(null);
   const [showNewLead, setShowNewLead] = useState(false);
   const [filtroResponsavel, setFiltroResponsavel] = useState('');
@@ -2790,14 +2792,32 @@ export default function CRMView({ userSession, teamMembers, openLeadByName, onLe
                   </div>
                 </div>
                 <div className="space-y-2 min-h-[100px]">
-                  <AnimatePresence>
-                    {etapaLeads.map(lead => (
-                      <LeadCard key={lead.id} lead={lead}
-                        proximaTarefa={proximaTarefaByLead[lead.id] as CRMTarefa | undefined}
-                        onClick={() => setSelectedLead(lead)}
-                      />
-                    ))}
-                  </AnimatePresence>
+                  {(() => {
+                    const limit = etapaVisible[etapa.id] ?? LEADS_PER_PAGE;
+                    const visible = etapaLeads.slice(0, limit);
+                    const remaining = etapaLeads.length - limit;
+                    return (
+                      <>
+                        <AnimatePresence>
+                          {visible.map(lead => (
+                            <LeadCard key={lead.id} lead={lead}
+                              proximaTarefa={proximaTarefaByLead[lead.id] as CRMTarefa | undefined}
+                              onClick={() => setSelectedLead(lead)}
+                            />
+                          ))}
+                        </AnimatePresence>
+                        {remaining > 0 && (
+                          <button
+                            onClick={() => setEtapaVisible(prev => ({ ...prev, [etapa.id]: limit + LEADS_PER_PAGE }))}
+                            className="w-full flex items-center justify-center gap-1 py-2 rounded-xl bg-white/5 border border-white/10 text-[10px] text-gray-400 hover:text-white hover:border-white/20 transition-colors"
+                          >
+                            <ChevronDown size={12} />
+                            Ver mais {Math.min(remaining, LEADS_PER_PAGE)} de {remaining}
+                          </button>
+                        )}
+                      </>
+                    );
+                  })()}
                   {etapaLeads.length === 0 && (
                     <div className="h-16 border border-dashed border-white/5 rounded-xl flex items-center justify-center">
                       <span className="text-[10px] text-gray-700">Vazio</span>
