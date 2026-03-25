@@ -199,9 +199,9 @@ function LeadCard({ lead, proximaTarefa, onClick }: { key?: React.Key; lead: CRM
 }
 
 // ── Nova Atividade Form ────────────────────────────────────────
-function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSaved, onCancel, onLeadUpdated, onClientCreated, onTarefaCreated }: {
+function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSaved, onCancel, onLeadUpdated, onClientCreated, onTarefaCreated, teamMembers = [] }: {
   lead?: CRMLead; leadId: string; leadName: string; userSession: any; onSaved: (a: CRMAtividade) => void; onCancel: () => void; onLeadUpdated?: (upd: Partial<CRMLead>) => void; onClientCreated?: () => void;
-  onTarefaCreated?: (tarefa: CRMTarefa) => void;
+  onTarefaCreated?: (tarefa: CRMTarefa) => void; teamMembers?: TeamMember[];
 }) {
   const [tipo, setTipo] = useState<'ligacao' | 'reuniao'>('ligacao');
   const [statusChamada, setStatusChamada] = useState<'Atendeu' | 'Não atendeu' | null>(null);
@@ -637,16 +637,29 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
                       className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-1.5 text-sm text-gray-300 focus:outline-none focus:border-yellow-500"
                     />
                   </div>
-                  <div>
-                    <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">Closer responsável <span className="text-red-400">*</span></label>
-                    <select value={bantCloser} onChange={e => setBantCloser(e.target.value)}
-                      className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-1.5 text-sm text-white focus:outline-none focus:border-yellow-500 appearance-none"
-                    >
-                      <option value="" className="bg-bg-main">Selecionar...</option>
-                      <option value="Gabriel Fonseca" className="bg-bg-main">Gabriel Fonseca</option>
-                      <option value="Carla" className="bg-bg-main">Carla</option>
-                      <option value="Gabriel Moreira" className="bg-bg-main">Gabriel Moreira</option>
-                    </select>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">Closer responsável <span className="text-red-400">*</span></label>
+                      <select value={bantCloser} onChange={e => setBantCloser(e.target.value)}
+                        className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-1.5 text-sm text-white focus:outline-none focus:border-yellow-500 appearance-none"
+                      >
+                        <option value="" className="bg-bg-main">Selecionar...</option>
+                        {teamMembers.filter(m => ['admin','comercial'].includes((m.role ?? '').toLowerCase()))
+                          .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'))
+                          .map(m => <option key={m.id} value={m.name} className="bg-bg-main">{m.name}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">SDR responsável</label>
+                      <select value={bantSdr} onChange={e => setBantSdr(e.target.value)}
+                        className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-1.5 text-sm text-white focus:outline-none focus:border-yellow-500 appearance-none"
+                      >
+                        <option value="" className="bg-bg-main">Selecionar...</option>
+                        {teamMembers.filter(m => ['admin','comercial'].includes((m.role ?? '').toLowerCase()))
+                          .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'))
+                          .map(m => <option key={m.id} value={m.name} className="bg-bg-main">{m.name}</option>)}
+                      </select>
+                    </div>
                   </div>
                   {/* Divisor BANT */}
                   <div className="flex items-center gap-2 pt-1">
@@ -726,16 +739,6 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
                       <option value="Pensa em agir em até 3 meses" className="bg-bg-main">Pensa em agir em até 3 meses</option>
                       <option value="Quer começar em até 30 dias" className="bg-bg-main">Quer começar em até 30 dias</option>
                       <option value="Quer iniciar imediatamente / essa semana" className="bg-bg-main">Quer iniciar imediatamente / essa semana</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">SDR responsável</label>
-                    <select value={bantSdr} onChange={e => setBantSdr(e.target.value)}
-                      className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-1.5 text-sm text-white focus:outline-none focus:border-yellow-500 appearance-none"
-                    >
-                      <option value="" className="bg-bg-main">Selecionar...</option>
-                      <option value="Vitória Mendes" className="bg-bg-main">Vitória Mendes</option>
-                      <option value="Pedro Relvas" className="bg-bg-main">Pedro Relvas</option>
                     </select>
                   </div>
                   <div>
@@ -1794,7 +1797,7 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
             {/* Nova Atividade + Agendar Reunião + Agendar Tarefa inline */}
             <div className="border-t border-white/5 pt-3">
               {showAtivForm ? (
-                <NovaAtividadeForm lead={lead} leadId={lead.id} leadName={lead.nome} userSession={userSession} onSaved={handleAtivSaved} onCancel={() => setShowAtivForm(false)} onLeadUpdated={handleLeadUpdated} onClientCreated={onClientCreated} onTarefaCreated={onTarefaCreated} />
+                <NovaAtividadeForm lead={lead} leadId={lead.id} leadName={lead.nome} userSession={userSession} teamMembers={teamMembers} onSaved={handleAtivSaved} onCancel={() => setShowAtivForm(false)} onLeadUpdated={handleLeadUpdated} onClientCreated={onClientCreated} onTarefaCreated={onTarefaCreated} />
               ) : showAgendarReuniao ? (
                 <div className="space-y-3 bg-white/[0.02] border border-yellow-500/20 rounded-xl p-4">
                   <p className="text-[9px] font-bold uppercase tracking-widest text-yellow-400">Agendar Reunião</p>
@@ -2026,7 +2029,7 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
               >
                 <Plus size={13} /> Registrar atividade
               </button>
-              {showAtivForm && <NovaAtividadeForm lead={lead} leadId={lead.id} leadName={lead.nome} userSession={userSession} onSaved={handleAtivSaved} onCancel={() => setShowAtivForm(false)} onLeadUpdated={handleLeadUpdated} onClientCreated={onClientCreated} onTarefaCreated={onTarefaCreated} />}
+              {showAtivForm && <NovaAtividadeForm lead={lead} leadId={lead.id} leadName={lead.nome} userSession={userSession} teamMembers={teamMembers} onSaved={handleAtivSaved} onCancel={() => setShowAtivForm(false)} onLeadUpdated={handleLeadUpdated} onClientCreated={onClientCreated} onTarefaCreated={onTarefaCreated} />}
               {atividades.length === 0 && !showAtivForm && (
                 <div className="py-12 text-center text-xs text-gray-600">Nenhuma atividade registrada ainda.</div>
               )}
