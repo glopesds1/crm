@@ -467,7 +467,7 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
         id: crypto.randomUUID(),
         type: tipo === 'ligacao' ? 'PreVendas' : 'Vendas',
         category: tipo === 'ligacao' ? 'Ligação' : 'Reunião',
-        collaborator: userSession?.name ?? '',
+        collaborator: leadObj?.responsavel || userSession?.name || '',
         answered: tipo === 'ligacao' ? statusChamada : null,
         touchpoint: tipo === 'ligacao' && touchpoint ? parseInt(touchpoint) : null,
         scheduled: tipo === 'ligacao' ? agendou : false,
@@ -1041,7 +1041,7 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
     try {
       const taskData2 = {
         id: crypto.randomUUID(), type: 'Vendas', category: 'Reunião',
-        collaborator: userSession?.name ?? '', meeting_status: rrStatusReuniao,
+        collaborator: lead.responsavel || userSession?.name || '', meeting_status: rrStatusReuniao,
         sale_status: rrResultado || null,
         contract_value: rrValorContrato ? parseFloat(rrValorContrato) : null,
         cash_collect: rrValorCc ? parseFloat(rrValorCc) : null,
@@ -1080,23 +1080,66 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
     setTab('timeline');
   };
 
-  const toggleTarefa = async (t: CRMTarefa) => {
-    const novoEstado = !t.concluida;
-    await supabase.from('crm_tarefas').update({ concluida: novoEstado }).eq('id', t.id);
-    setTarefas(prev => prev.map(x => x.id === t.id ? { ...x, concluida: novoEstado } : x));
-    // Ao concluir, registrar na timeline de atividades do lead
-    if (novoEstado) {
-      const now = new Date().toISOString();
-      const { data: ativData } = await supabase.from('crm_atividades').insert({
-        lead_id: t.lead_id,
-        tipo: 'tarefa',
-        descricao: t.titulo + (t.data_agendada ? ` (agendada: ${fmtDateSP(t.data_agendada, { year: true })})` : ''),
-        data_atividade: now,
-        realizado_por: userSession?.name ?? '',
+  // Estado para concluir tarefa com print
+  const [concluindoTarefa, setConcluindoTarefa] = useState<string | null>(null);
+  const [tarefaImageFile, setTarefaImageFile] = useState<File | null>(null);
+  const [tarefaImagePreview, setTarefaImagePreview] = useState<string | null>(null);
+  const [tarefaUploading, setTarefaUploading] = useState(false);
+  const tarefaFileRef = useRef<HTMLInputElement>(null);
+
+  const handleTarefaImage = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0] ?? null;
+    setTarefaImageFile(file);
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => setTarefaImagePreview(reader.result as string);
+      reader.readAsDataURL(file);
+    } else { setTarefaImagePreview(null); }
+  };
+
+  const concluirTarefa = async (t: CRMTarefa) => {
+    if (!tarefaImageFile) return;
+    setTarefaUploading(true);
+    let imageUrl = '';
+    try {
+      const ext = tarefaImageFile.name.split('.').pop() ?? 'png';
+      const path = `${t.lead_id}/${Date.now()}.${ext}`;
+      const { error } = await supabase.storage.from('comercial-prints').upload(path, tarefaImageFile);
+      if (!error) {
+        const { data: urlData } = supabase.storage.from('comercial-prints').getPublicUrl(path);
+        imageUrl = urlData.publicUrl;
+      }
+    } catch { /* continue */ }
+
+    await supabase.from('crm_tarefas').update({ concluida: true }).eq('id', t.id);
+    setTarefas(prev => prev.map(x => x.id === t.id ? { ...x, concluida: true } : x));
+
+    const now = new Date().toISOString();
+    const descricao = t.titulo + (t.data_agendada ? ` (agendada: ${fmtDateSP(t.data_agendada, { year: true })})` : '');
+    // 1. crm_atividades (timeline)
+    const { data: ativData } = await supabase.from('crm_atividades').insert({
+      lead_id: t.lead_id, tipo: 'tarefa', descricao,
+      imagem_url: imageUrl || null,
+      data_atividade: now, realizado_por: userSession?.name ?? '', created_at: now,
+    }).select().single();
+    if (ativData) setAtividades(prev => [ativData, ...prev]);
+
+    // 2. comercial_tasks (relatório do responsável pela tarefa)
+    const collaborator = t.responsavel || lead.responsavel || userSession?.name || '';
+    try {
+      await supabase.from('comercial_tasks').insert({
+        id: crypto.randomUUID(), type: 'PreVendas', category: 'Tarefa',
+        collaborator, image_url: imageUrl || '',
+        completion_time: new Date().toLocaleString('pt-BR', { timeZone: SP_TZ, day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
+        meeting_summary: descricao,
         created_at: now,
-      }).select().single();
-      if (ativData) setAtividades(prev => [ativData, ...prev]);
-    }
+      });
+    } catch { /* fire-and-forget */ }
+
+    setTarefaUploading(false);
+    setConcluindoTarefa(null);
+    setTarefaImageFile(null);
+    setTarefaImagePreview(null);
   };
 
   const etapaObj = ETAPA_MAP[etapa];
@@ -1620,17 +1663,52 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
           {/* ── TAB: TAREFAS ──────────────── */}
           {tab === 'tarefas' && (
             <div className="space-y-3">
+              <input ref={tarefaFileRef} type="file" accept="image/*" onChange={handleTarefaImage} className="hidden" />
               {tarefas.length === 0 && <div className="py-12 text-center text-xs text-gray-600">Nenhuma tarefa agendada.</div>}
               {tarefas.map(t => (
-                <div key={t.id} onClick={() => toggleTarefa(t)}
-                  className={`flex items-start gap-3 p-3 rounded-xl cursor-pointer transition-colors ${t.concluida ? 'bg-white/3 opacity-50' : 'bg-white/5 hover:bg-white/8'}`}
-                >
-                  <CheckCircle2 size={16} className={t.concluida ? 'text-brand-primary mt-0.5' : 'text-gray-600 mt-0.5'} />
-                  <div className="flex-1">
-                    <p className={`text-sm font-bold ${t.concluida ? 'line-through text-gray-600' : 'text-white'}`}>{t.titulo}</p>
-                    {t.data_agendada && <p className="text-[10px] text-gray-500 mt-0.5">{fmtDateSP(t.data_agendada, { year: true })}</p>}
-                    {t.responsavel && <p className="text-[9px] text-gray-700">{t.responsavel}</p>}
+                <div key={t.id} className={`rounded-xl transition-colors ${t.concluida ? 'bg-white/3 opacity-50' : 'bg-white/5'}`}>
+                  <div className="flex items-start gap-3 p-3">
+                    <CheckCircle2 size={16} className={t.concluida ? 'text-brand-primary mt-0.5' : 'text-gray-600 mt-0.5'} />
+                    <div className="flex-1">
+                      <p className={`text-sm font-bold ${t.concluida ? 'line-through text-gray-600' : 'text-white'}`}>{t.titulo}</p>
+                      {t.data_agendada && <p className="text-[10px] text-gray-500 mt-0.5">{fmtDateSP(t.data_agendada, { year: true })}</p>}
+                      {t.responsavel && <p className="text-[9px] text-gray-700">{t.responsavel}</p>}
+                    </div>
+                    {!t.concluida && concluindoTarefa !== t.id && (
+                      <button onClick={() => { setConcluindoTarefa(t.id); setTarefaImageFile(null); setTarefaImagePreview(null); }}
+                        className="text-[10px] font-bold text-brand-primary hover:text-white transition-colors cursor-pointer whitespace-nowrap"
+                      >Concluir</button>
+                    )}
                   </div>
+                  {/* Painel de conclusão com upload de print */}
+                  {concluindoTarefa === t.id && !t.concluida && (
+                    <div className="px-3 pb-3 space-y-2 border-t border-white/5 pt-2 mx-3">
+                      {!tarefaImagePreview ? (
+                        <button onClick={() => tarefaFileRef.current?.click()}
+                          className="w-full py-2 rounded-lg border border-dashed border-brand-primary/30 text-[11px] font-bold text-brand-primary hover:bg-brand-primary/5 transition-colors flex items-center justify-center gap-2 cursor-pointer"
+                        >
+                          <Plus size={12} /> Anexar print da tarefa
+                        </button>
+                      ) : (
+                        <div className="relative">
+                          <img src={tarefaImagePreview} alt="Print" className="w-full max-h-28 object-cover rounded-lg border border-white/10" />
+                          <button onClick={() => { setTarefaImageFile(null); setTarefaImagePreview(null); if (tarefaFileRef.current) tarefaFileRef.current.value = ''; }}
+                            className="absolute top-1 right-1 p-0.5 rounded-full bg-black/70 text-white hover:bg-red-500/80 transition-colors cursor-pointer"
+                          ><X size={10} /></button>
+                        </div>
+                      )}
+                      <div className="flex gap-2">
+                        <button onClick={() => concluirTarefa(t)} disabled={!tarefaImageFile || tarefaUploading}
+                          className={`flex-1 py-2 rounded-lg text-[11px] font-bold transition-colors flex items-center justify-center gap-1.5 ${tarefaImageFile ? 'bg-green-500/10 border border-green-500/30 text-green-400 hover:bg-green-500/20 cursor-pointer' : 'bg-white/3 border border-white/10 text-gray-600 cursor-not-allowed'}`}
+                        >
+                          {tarefaUploading ? <Loader2 size={12} className="animate-spin" /> : <CheckCircle2 size={12} />} Confirmar
+                        </button>
+                        <button onClick={() => { setConcluindoTarefa(null); setTarefaImageFile(null); setTarefaImagePreview(null); }}
+                          className="py-2 px-3 rounded-lg bg-white/5 border border-white/10 text-[11px] font-bold text-gray-400 hover:text-white transition-colors cursor-pointer"
+                        >Cancelar</button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -1729,9 +1807,40 @@ function playAlarmSound() {
 
 // ── Task Alarm Popup ──────────────────────────────────────────
 function TaskAlarmPopup({ tarefa, lead, onDismiss, onOpenLead, onComplete }: {
-  tarefa: CRMTarefa; lead?: CRMLead; onDismiss: () => void; onOpenLead?: () => void; onComplete: () => void;
+  tarefa: CRMTarefa; lead?: CRMLead; onDismiss: () => void; onOpenLead?: () => void; onComplete: (imageUrl: string) => void;
 }) {
   const fmtDate = (d: string) => fmtDateSP(d, { year: true });
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const handleImage = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0] ?? null;
+    setImageFile(file);
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => setImagePreview(reader.result as string);
+      reader.readAsDataURL(file);
+    } else { setImagePreview(null); }
+  };
+
+  const handleComplete = async () => {
+    if (!imageFile) return;
+    setUploading(true);
+    let url = '';
+    try {
+      const ext = imageFile.name.split('.').pop() ?? 'png';
+      const path = `${tarefa.lead_id}/${Date.now()}.${ext}`;
+      const { error } = await supabase.storage.from('comercial-prints').upload(path, imageFile);
+      if (!error) {
+        const { data: urlData } = supabase.storage.from('comercial-prints').getPublicUrl(path);
+        url = urlData.publicUrl;
+      }
+    } catch { /* continue */ }
+    setUploading(false);
+    onComplete(url);
+  };
 
   return (
     <motion.div
@@ -1797,6 +1906,25 @@ function TaskAlarmPopup({ tarefa, lead, onDismiss, onOpenLead, onComplete }: {
           )}
         </div>
 
+        {/* Upload de print */}
+        <div className="pt-1">
+          <input ref={fileRef} type="file" accept="image/*" onChange={handleImage} className="hidden" />
+          {!imagePreview ? (
+            <button onClick={() => fileRef.current?.click()}
+              className="w-full py-2.5 rounded-xl border border-dashed border-yellow-500/30 text-xs font-bold text-yellow-400 hover:bg-yellow-500/5 transition-colors flex items-center justify-center gap-2 cursor-pointer"
+            >
+              <Plus size={14} /> Anexar print da tarefa
+            </button>
+          ) : (
+            <div className="relative">
+              <img src={imagePreview} alt="Print" className="w-full max-h-32 object-cover rounded-xl border border-white/10" />
+              <button onClick={() => { setImageFile(null); setImagePreview(null); if (fileRef.current) fileRef.current.value = ''; }}
+                className="absolute top-1 right-1 p-1 rounded-full bg-black/70 text-white hover:bg-red-500/80 transition-colors cursor-pointer"
+              ><X size={12} /></button>
+            </div>
+          )}
+        </div>
+
         <div className="flex gap-2 pt-2">
           {onOpenLead && lead && (
             <button onClick={() => { onOpenLead(); onDismiss(); }}
@@ -1805,10 +1933,10 @@ function TaskAlarmPopup({ tarefa, lead, onDismiss, onOpenLead, onComplete }: {
               <ChevronRight size={14} /> Abrir Lead
             </button>
           )}
-          <button onClick={onComplete}
-            className="flex-1 py-2.5 rounded-xl bg-green-500/10 border border-green-500/30 text-xs font-bold text-green-400 hover:text-white hover:bg-green-500/20 transition-colors flex items-center justify-center gap-2 cursor-pointer"
+          <button onClick={handleComplete} disabled={!imageFile || uploading}
+            className={`flex-1 py-2.5 rounded-xl border text-xs font-bold transition-colors flex items-center justify-center gap-2 ${imageFile ? 'bg-green-500/10 border-green-500/30 text-green-400 hover:text-white hover:bg-green-500/20 cursor-pointer' : 'bg-white/3 border-white/10 text-gray-600 cursor-not-allowed'}`}
           >
-            <CheckCircle2 size={14} /> Concluir
+            {uploading ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />} Concluir
           </button>
           <button onClick={onDismiss}
             className="py-2.5 px-4 rounded-xl bg-white/5 border border-white/10 text-xs font-bold text-gray-400 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
@@ -1876,22 +2004,32 @@ export default function CRMView({ userSession, teamMembers, openLeadByName, onLe
     setAlarmTarefas(prev => prev.filter(t => t.id !== tarefaId));
   };
 
-  const completeAlarm = async (tarefaId: string) => {
+  const completeAlarm = async (tarefaId: string, imageUrl: string) => {
     const tarefa = tarefas.find(t => t.id === tarefaId);
     await supabase.from('crm_tarefas').update({ concluida: true }).eq('id', tarefaId);
     setTarefas(prev => prev.map(t => t.id === tarefaId ? { ...t, concluida: true } : t));
     setAlarmTarefas(prev => prev.filter(t => t.id !== tarefaId));
-    // Registrar conclusão na timeline de atividades do lead
     if (tarefa) {
       const now = new Date().toISOString();
+      const lead = leads.find(l => l.id === tarefa.lead_id);
+      const descricao = tarefa.titulo + (tarefa.data_agendada ? ` (agendada: ${fmtDateSP(tarefa.data_agendada, { year: true })})` : '');
+      // 1. crm_atividades (timeline do lead)
       await supabase.from('crm_atividades').insert({
-        lead_id: tarefa.lead_id,
-        tipo: 'tarefa',
-        descricao: tarefa.titulo + (tarefa.data_agendada ? ` (agendada: ${fmtDateSP(tarefa.data_agendada, { year: true })})` : ''),
-        data_atividade: now,
-        realizado_por: userSession?.name ?? '',
-        created_at: now,
+        lead_id: tarefa.lead_id, tipo: 'tarefa', descricao,
+        imagem_url: imageUrl || null,
+        data_atividade: now, realizado_por: userSession?.name ?? '', created_at: now,
       });
+      // 2. comercial_tasks (relatório do responsável pela tarefa)
+      const collaborator = tarefa.responsavel || lead?.responsavel || userSession?.name || '';
+      try {
+        await supabase.from('comercial_tasks').insert({
+          id: crypto.randomUUID(), type: 'PreVendas', category: 'Tarefa',
+          collaborator, image_url: imageUrl || '',
+          completion_time: new Date().toLocaleString('pt-BR', { timeZone: SP_TZ, day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
+          meeting_summary: descricao,
+          created_at: now,
+        });
+      } catch { /* fire-and-forget */ }
     }
   };
 
@@ -2158,7 +2296,7 @@ export default function CRMView({ userSession, teamMembers, openLeadByName, onLe
                 lead={lead}
                 onDismiss={() => dismissAlarm(tarefa.id)}
                 onOpenLead={lead ? () => setSelectedLead(lead) : undefined}
-                onComplete={() => completeAlarm(tarefa.id)}
+                onComplete={(imageUrl: string) => completeAlarm(tarefa.id, imageUrl)}
               />
             </div>
           );
