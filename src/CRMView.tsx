@@ -1327,6 +1327,47 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
   const [tarefaUploading, setTarefaUploading] = useState(false);
   const tarefaFileRef = useRef<HTMLInputElement>(null);
 
+  // Estado para reagendar tarefa
+  const [reagendandoTarefa, setReagendandoTarefa] = useState<string | null>(null);
+  const [reagendarData, setReagendarData] = useState('');
+  const [reagendarSaving, setReagendarSaving] = useState(false);
+
+  const reagendarTarefa = async (t: CRMTarefa) => {
+    if (!reagendarData) return;
+    setReagendarSaving(true);
+    try {
+      const novaData = localDatetimeToISO(reagendarData);
+      await supabase.from('crm_tarefas').update({ data_agendada: novaData }).eq('id', t.id);
+      setTarefas(prev => prev.map(x => x.id === t.id ? { ...x, data_agendada: novaData } : x));
+      // Atualizar proxima_reuniao no lead se aplicável
+      const agDate = parseDateSP(reagendarData);
+      if (agDate > new Date()) {
+        await supabase.from('crm_leads').update({ proxima_reuniao: novaData, updated_at: new Date().toISOString() }).eq('id', lead.id);
+        onSave({ proxima_reuniao: novaData });
+      }
+      // Enviar para webhook agendar-reuniao (atualizar Google Agenda)
+      try {
+        const webhookBase = import.meta.env.VITE_WEBHOOK_BASE?.replace('/webhook/dashboard', '') ?? 'https://webhook.m2black.com';
+        fetch(`${webhookBase}/webhook/agendar-reuniao`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            lead_nome: lead.nome,
+            lead_telefone: lead.telefone ?? '',
+            closer: t.responsavel || lead.responsavel || '',
+            tipo_reuniao: t.titulo?.includes('R2') ? 'R2' : 'R1',
+            data_hora: new Date(reagendarData).toISOString(),
+            duracao_min: 60,
+            reagendamento: true,
+          }),
+        });
+      } catch { /* fire-and-forget */ }
+      setReagendandoTarefa(null);
+      setReagendarData('');
+    } catch (err) { console.error('Erro ao reagendar tarefa:', err); }
+    setReagendarSaving(false);
+  };
+
   const handleTarefaImage = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0] ?? null;
     setTarefaImageFile(file);
@@ -2069,12 +2110,36 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
                       {t.data_agendada && <p className="text-[10px] text-gray-500 mt-0.5">{fmtDateSP(t.data_agendada, { year: true })}</p>}
                       {t.responsavel && <p className="text-[9px] text-gray-700">{t.responsavel}</p>}
                     </div>
-                    {!t.concluida && concluindoTarefa !== t.id && (
-                      <button onClick={() => { setConcluindoTarefa(t.id); setTarefaImageFile(null); setTarefaImagePreview(null); }}
-                        className="text-[10px] font-bold text-brand-primary hover:text-white transition-colors cursor-pointer whitespace-nowrap"
-                      >Concluir</button>
+                    {!t.concluida && concluindoTarefa !== t.id && reagendandoTarefa !== t.id && (
+                      <div className="flex items-center gap-2">
+                        <button onClick={() => { setReagendandoTarefa(t.id); setReagendarData(''); setConcluindoTarefa(null); }}
+                          className="text-[10px] font-bold text-yellow-400 hover:text-white transition-colors cursor-pointer whitespace-nowrap"
+                        >Reagendar</button>
+                        <button onClick={() => { setConcluindoTarefa(t.id); setTarefaImageFile(null); setTarefaImagePreview(null); setReagendandoTarefa(null); }}
+                          className="text-[10px] font-bold text-brand-primary hover:text-white transition-colors cursor-pointer whitespace-nowrap"
+                        >Concluir</button>
+                      </div>
                     )}
                   </div>
+                  {/* Painel de reagendamento */}
+                  {reagendandoTarefa === t.id && !t.concluida && (
+                    <div className="px-3 pb-3 space-y-2 border-t border-white/5 pt-2 mx-3">
+                      <p className="text-[9px] font-bold uppercase tracking-widest text-yellow-400">Reagendar tarefa</p>
+                      <input type="datetime-local" value={reagendarData} onChange={e => setReagendarData(e.target.value)}
+                        className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-sm text-gray-300 focus:outline-none focus:border-yellow-400"
+                      />
+                      <div className="flex gap-2">
+                        <button onClick={() => reagendarTarefa(t)} disabled={!reagendarData || reagendarSaving}
+                          className={`flex-1 py-2 rounded-lg text-[11px] font-bold transition-colors flex items-center justify-center gap-1.5 ${reagendarData ? 'bg-yellow-500/10 border border-yellow-500/30 text-yellow-400 hover:bg-yellow-500/20 cursor-pointer' : 'bg-white/3 border border-white/10 text-gray-600 cursor-not-allowed'}`}
+                        >
+                          {reagendarSaving ? <Loader2 size={12} className="animate-spin" /> : <Calendar size={12} />} Confirmar
+                        </button>
+                        <button onClick={() => { setReagendandoTarefa(null); setReagendarData(''); }}
+                          className="py-2 px-3 rounded-lg bg-white/5 border border-white/10 text-[11px] font-bold text-gray-400 hover:text-white transition-colors cursor-pointer"
+                        >Cancelar</button>
+                      </div>
+                    </div>
+                  )}
                   {/* Painel de conclusão com upload de print */}
                   {concluindoTarefa === t.id && !t.concluida && (
                     <div className="px-3 pb-3 space-y-2 border-t border-white/5 pt-2 mx-3">
@@ -2201,14 +2266,17 @@ function playAlarmSound() {
 }
 
 // ── Task Alarm Popup ──────────────────────────────────────────
-function TaskAlarmPopup({ tarefa, lead, onDismiss, onOpenLead, onComplete }: {
-  tarefa: CRMTarefa; lead?: CRMLead; onDismiss: () => void; onOpenLead?: () => void; onComplete: (imageUrl: string) => void;
+function TaskAlarmPopup({ tarefa, lead, onDismiss, onOpenLead, onComplete, onReschedule }: {
+  tarefa: CRMTarefa; lead?: CRMLead; onDismiss: () => void; onOpenLead?: () => void; onComplete: (imageUrl: string) => void; onReschedule: (novaData: string) => void;
 }) {
   const fmtDate = (d: string) => fmtDateSP(d, { year: true });
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+  const [showReschedule, setShowReschedule] = useState(false);
+  const [rescheduleDate, setRescheduleDate] = useState('');
+  const [rescheduleSaving, setRescheduleSaving] = useState(false);
 
   const handleImage = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0] ?? null;
@@ -2301,44 +2369,76 @@ function TaskAlarmPopup({ tarefa, lead, onDismiss, onOpenLead, onComplete }: {
           )}
         </div>
 
-        {/* Upload de print */}
-        <div className="pt-1">
-          <input ref={fileRef} type="file" accept="image/*" onChange={handleImage} className="hidden" />
-          {!imagePreview ? (
-            <button onClick={() => fileRef.current?.click()}
-              className="w-full py-2.5 rounded-xl border border-dashed border-yellow-500/30 text-xs font-bold text-yellow-400 hover:bg-yellow-500/5 transition-colors flex items-center justify-center gap-2 cursor-pointer"
-            >
-              <Plus size={14} /> Anexar print da tarefa
-            </button>
-          ) : (
-            <div className="relative">
-              <img src={imagePreview} alt="Print" className="w-full max-h-32 object-cover rounded-xl border border-white/10" />
-              <button onClick={() => { setImageFile(null); setImagePreview(null); if (fileRef.current) fileRef.current.value = ''; }}
-                className="absolute top-1 right-1 p-1 rounded-full bg-black/70 text-white hover:bg-red-500/80 transition-colors cursor-pointer"
-              ><X size={12} /></button>
+        {/* Painel de reagendamento */}
+        {showReschedule ? (
+          <div className="pt-1 space-y-2">
+            <p className="text-[10px] font-bold uppercase tracking-widest text-yellow-400">Reagendar tarefa</p>
+            <input type="datetime-local" value={rescheduleDate} onChange={e => setRescheduleDate(e.target.value)}
+              className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm text-gray-300 focus:outline-none focus:border-yellow-400"
+            />
+            <div className="flex gap-2">
+              <button onClick={async () => {
+                if (!rescheduleDate) return;
+                setRescheduleSaving(true);
+                await onReschedule(rescheduleDate);
+                setRescheduleSaving(false);
+              }} disabled={!rescheduleDate || rescheduleSaving}
+                className={`flex-1 py-2.5 rounded-xl border text-xs font-bold transition-colors flex items-center justify-center gap-2 ${rescheduleDate ? 'bg-yellow-500/10 border-yellow-500/30 text-yellow-400 hover:bg-yellow-500/20 cursor-pointer' : 'bg-white/3 border-white/10 text-gray-600 cursor-not-allowed'}`}
+              >
+                {rescheduleSaving ? <Loader2 size={14} className="animate-spin" /> : <Calendar size={14} />} Confirmar
+              </button>
+              <button onClick={() => { setShowReschedule(false); setRescheduleDate(''); }}
+                className="py-2.5 px-4 rounded-xl bg-white/5 border border-white/10 text-xs font-bold text-gray-400 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
+              >Cancelar</button>
             </div>
-          )}
-        </div>
+          </div>
+        ) : (
+          <>
+            {/* Upload de print */}
+            <div className="pt-1">
+              <input ref={fileRef} type="file" accept="image/*" onChange={handleImage} className="hidden" />
+              {!imagePreview ? (
+                <button onClick={() => fileRef.current?.click()}
+                  className="w-full py-2.5 rounded-xl border border-dashed border-yellow-500/30 text-xs font-bold text-yellow-400 hover:bg-yellow-500/5 transition-colors flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  <Plus size={14} /> Anexar print da tarefa
+                </button>
+              ) : (
+                <div className="relative">
+                  <img src={imagePreview} alt="Print" className="w-full max-h-32 object-cover rounded-xl border border-white/10" />
+                  <button onClick={() => { setImageFile(null); setImagePreview(null); if (fileRef.current) fileRef.current.value = ''; }}
+                    className="absolute top-1 right-1 p-1 rounded-full bg-black/70 text-white hover:bg-red-500/80 transition-colors cursor-pointer"
+                  ><X size={12} /></button>
+                </div>
+              )}
+            </div>
 
-        <div className="flex gap-2 pt-2">
-          {onOpenLead && lead && (
-            <button onClick={() => { onOpenLead(); onDismiss(); }}
-              className="flex-1 py-2.5 rounded-xl bg-brand-primary/10 border border-brand-primary/30 text-xs font-bold text-brand-primary hover:bg-brand-primary/20 transition-colors flex items-center justify-center gap-2 cursor-pointer"
-            >
-              <ChevronRight size={14} /> Abrir Lead
-            </button>
-          )}
-          <button onClick={handleComplete} disabled={!imageFile || uploading}
-            className={`flex-1 py-2.5 rounded-xl border text-xs font-bold transition-colors flex items-center justify-center gap-2 ${imageFile ? 'bg-green-500/10 border-green-500/30 text-green-400 hover:text-white hover:bg-green-500/20 cursor-pointer' : 'bg-white/3 border-white/10 text-gray-600 cursor-not-allowed'}`}
-          >
-            {uploading ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />} Concluir
-          </button>
-          <button onClick={onDismiss}
-            className="py-2.5 px-4 rounded-xl bg-white/5 border border-white/10 text-xs font-bold text-gray-400 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
-          >
-            Depois
-          </button>
-        </div>
+            <div className="flex gap-2 pt-2">
+              {onOpenLead && lead && (
+                <button onClick={() => { onOpenLead(); onDismiss(); }}
+                  className="flex-1 py-2.5 rounded-xl bg-brand-primary/10 border border-brand-primary/30 text-xs font-bold text-brand-primary hover:bg-brand-primary/20 transition-colors flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  <ChevronRight size={14} /> Abrir Lead
+                </button>
+              )}
+              <button onClick={handleComplete} disabled={!imageFile || uploading}
+                className={`flex-1 py-2.5 rounded-xl border text-xs font-bold transition-colors flex items-center justify-center gap-2 ${imageFile ? 'bg-green-500/10 border-green-500/30 text-green-400 hover:text-white hover:bg-green-500/20 cursor-pointer' : 'bg-white/3 border-white/10 text-gray-600 cursor-not-allowed'}`}
+              >
+                {uploading ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />} Concluir
+              </button>
+              <button onClick={() => setShowReschedule(true)}
+                className="py-2.5 px-4 rounded-xl bg-yellow-500/10 border border-yellow-500/30 text-xs font-bold text-yellow-400 hover:text-white hover:bg-yellow-500/20 transition-colors cursor-pointer flex items-center gap-1.5"
+              >
+                <Calendar size={13} /> Reagendar
+              </button>
+              <button onClick={onDismiss}
+                className="py-2.5 px-4 rounded-xl bg-white/5 border border-white/10 text-xs font-bold text-gray-400 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
+              >
+                Depois
+              </button>
+            </div>
+          </>
+        )}
       </div>
     </motion.div>
   );
@@ -2426,6 +2526,38 @@ export default function CRMView({ userSession, teamMembers, openLeadByName, onLe
         });
       } catch { /* fire-and-forget */ }
     }
+  };
+
+  const rescheduleAlarm = async (tarefaId: string, novaData: string) => {
+    const tarefa = tarefas.find(t => t.id === tarefaId);
+    if (!tarefa) return;
+    const novaDataISO = localDatetimeToISO(novaData);
+    await supabase.from('crm_tarefas').update({ data_agendada: novaDataISO }).eq('id', tarefaId);
+    setTarefas(prev => prev.map(t => t.id === tarefaId ? { ...t, data_agendada: novaDataISO } : t));
+    setAlarmTarefas(prev => prev.filter(t => t.id !== tarefaId));
+    // Atualizar proxima_reuniao no lead
+    const lead = leads.find(l => l.id === tarefa.lead_id);
+    if (lead) {
+      await supabase.from('crm_leads').update({ proxima_reuniao: novaDataISO, updated_at: new Date().toISOString() }).eq('id', lead.id);
+      setLeads(prev => prev.map(l => l.id === lead.id ? { ...l, proxima_reuniao: novaDataISO } : l));
+    }
+    // Enviar para webhook agendar-reuniao (atualizar Google Agenda)
+    try {
+      const webhookBase = import.meta.env.VITE_WEBHOOK_BASE?.replace('/webhook/dashboard', '') ?? 'https://webhook.m2black.com';
+      fetch(`${webhookBase}/webhook/agendar-reuniao`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          lead_nome: lead?.nome ?? '',
+          lead_telefone: lead?.telefone ?? '',
+          closer: tarefa.responsavel || lead?.responsavel || '',
+          tipo_reuniao: tarefa.titulo?.includes('R2') ? 'R2' : 'R1',
+          data_hora: new Date(novaData).toISOString(),
+          duracao_min: 60,
+          reagendamento: true,
+        }),
+      });
+    } catch { /* fire-and-forget */ }
   };
 
   const loadLeads = useCallback(async () => {
@@ -2692,6 +2824,7 @@ export default function CRMView({ userSession, teamMembers, openLeadByName, onLe
                 onDismiss={() => dismissAlarm(tarefa.id)}
                 onOpenLead={lead ? () => setSelectedLead(lead) : undefined}
                 onComplete={(imageUrl: string) => completeAlarm(tarefa.id, imageUrl)}
+                onReschedule={(novaData: string) => rescheduleAlarm(tarefa.id, novaData)}
               />
             </div>
           );
