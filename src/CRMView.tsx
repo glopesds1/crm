@@ -1133,6 +1133,7 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
   const handleLeadUpdated = (upd: Partial<CRMLead>) => {
     onSave(upd);
     if (upd.etapa) setEtapa(upd.etapa);
+    if (upd.responsavel) setResponsavel(upd.responsavel);
   };
 
   const handleAgendarTarefa = async () => {
