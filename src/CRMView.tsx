@@ -276,7 +276,7 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
 
   const captureScreenshot = async (): Promise<File | null> => {
     try {
-      const stream = await navigator.mediaDevices.getDisplayMedia({ video: { displaySurface: 'monitor' } as any, preferCurrentTab: false } as any);
+      const stream = await navigator.mediaDevices.getDisplayMedia({ video: { displaySurface: 'monitor' } as any, preferCurrentTab: false, selfBrowserSurface: 'exclude', surfaceTypes: ['monitor'] } as any);
       const track = stream.getVideoTracks()[0];
       // @ts-ignore — ImageCapture is available in modern browsers
       const capture = new ImageCapture(track);
