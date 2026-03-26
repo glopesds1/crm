@@ -274,42 +274,11 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
     return digits;
   };
 
-  const captureScreenshot = async (): Promise<File | null> => {
-    try {
-      const stream = await navigator.mediaDevices.getDisplayMedia({ video: { displaySurface: 'monitor' } as any, preferCurrentTab: false, selfBrowserSurface: 'exclude', surfaceTypes: ['monitor'] } as any);
-      const track = stream.getVideoTracks()[0];
-      // @ts-ignore — ImageCapture is available in modern browsers
-      const capture = new ImageCapture(track);
-      const bitmap = await capture.grabFrame();
-      track.stop();
-      const canvas = document.createElement('canvas');
-      canvas.width = bitmap.width;
-      canvas.height = bitmap.height;
-      const ctx = canvas.getContext('2d')!;
-      ctx.drawImage(bitmap, 0, 0);
-      const blob = await new Promise<Blob | null>(r => canvas.toBlob(r, 'image/png'));
-      if (!blob) return null;
-      return new File([blob], `screenshot-${Date.now()}.png`, { type: 'image/png' });
-    } catch {
-      return null;
-    }
-  };
-
-  const handleSelectTipo = async (t: 'ligacao' | 'reuniao') => {
+  const handleSelectTipo = (t: 'ligacao' | 'reuniao') => {
     setTipo(t);
     if (t === 'ligacao' && leadObj?.telefone) {
       const waNumber = formatPhoneForWhatsApp(leadObj.telefone);
       if (waNumber) window.open(`whatsapp://send?phone=${waNumber}`, '_self');
-      // Wait for WhatsApp to open, then capture screen
-      await new Promise(r => setTimeout(r, 1500));
-      const file = await captureScreenshot();
-      if (file) {
-        setImageFile(file);
-        const reader = new FileReader();
-        reader.onloadend = () => setImagePreview(reader.result as string);
-        reader.readAsDataURL(file);
-        setImageError(false);
-      }
     }
   };
 
