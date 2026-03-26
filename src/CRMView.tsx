@@ -2413,51 +2413,25 @@ function TaskAlarmPopup({ tarefa, lead, onDismiss, onOpenLead, onComplete, onRes
             </div>
           </div>
         ) : (
-          <>
-            {/* Upload de print */}
-            <div className="pt-1">
-              <input ref={fileRef} type="file" accept="image/*" onChange={handleImage} className="hidden" />
-              {!imagePreview ? (
-                <button onClick={() => fileRef.current?.click()}
-                  className="w-full py-2.5 rounded-xl border border-dashed border-yellow-500/30 text-xs font-bold text-yellow-400 hover:bg-yellow-500/5 transition-colors flex items-center justify-center gap-2 cursor-pointer"
-                >
-                  <Plus size={14} /> Anexar print da tarefa
-                </button>
-              ) : (
-                <div className="relative">
-                  <img src={imagePreview} alt="Print" className="w-full max-h-32 object-cover rounded-xl border border-white/10" />
-                  <button onClick={() => { setImageFile(null); setImagePreview(null); if (fileRef.current) fileRef.current.value = ''; }}
-                    className="absolute top-1 right-1 p-1 rounded-full bg-black/70 text-white hover:bg-red-500/80 transition-colors cursor-pointer"
-                  ><X size={12} /></button>
-                </div>
-              )}
-            </div>
-
-            <div className="flex gap-2 pt-2">
-              {onOpenLead && lead && (
-                <button onClick={() => { onOpenLead(); onDismiss(); }}
-                  className="flex-1 py-2.5 rounded-xl bg-brand-primary/10 border border-brand-primary/30 text-xs font-bold text-brand-primary hover:bg-brand-primary/20 transition-colors flex items-center justify-center gap-2 cursor-pointer"
-                >
-                  <ChevronRight size={14} /> Abrir Lead
-                </button>
-              )}
-              <button onClick={handleComplete} disabled={!imageFile || uploading}
-                className={`flex-1 py-2.5 rounded-xl border text-xs font-bold transition-colors flex items-center justify-center gap-2 ${imageFile ? 'bg-green-500/10 border-green-500/30 text-green-400 hover:text-white hover:bg-green-500/20 cursor-pointer' : 'bg-white/3 border-white/10 text-gray-600 cursor-not-allowed'}`}
+          <div className="flex gap-2 pt-2">
+            {onOpenLead && lead && (
+              <button onClick={() => { onOpenLead(); onDismiss(); }}
+                className="flex-1 py-2.5 rounded-xl bg-brand-primary/10 border border-brand-primary/30 text-xs font-bold text-brand-primary hover:bg-brand-primary/20 transition-colors flex items-center justify-center gap-2 cursor-pointer"
               >
-                {uploading ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />} Concluir
+                <ChevronRight size={14} /> Abrir Lead
               </button>
-              <button onClick={() => setShowReschedule(true)}
-                className="py-2.5 px-4 rounded-xl bg-yellow-500/10 border border-yellow-500/30 text-xs font-bold text-yellow-400 hover:text-white hover:bg-yellow-500/20 transition-colors cursor-pointer flex items-center gap-1.5"
-              >
-                <Calendar size={13} /> Reagendar
-              </button>
-              <button onClick={onDismiss}
-                className="py-2.5 px-4 rounded-xl bg-white/5 border border-white/10 text-xs font-bold text-gray-400 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
-              >
-                Depois
-              </button>
-            </div>
-          </>
+            )}
+            <button onClick={() => setShowReschedule(true)}
+              className="py-2.5 px-4 rounded-xl bg-yellow-500/10 border border-yellow-500/30 text-xs font-bold text-yellow-400 hover:text-white hover:bg-yellow-500/20 transition-colors cursor-pointer flex items-center gap-1.5"
+            >
+              <Calendar size={13} /> Reagendar
+            </button>
+            <button onClick={onDismiss}
+              className="py-2.5 px-4 rounded-xl bg-white/5 border border-white/10 text-xs font-bold text-gray-400 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
+            >
+              Depois
+            </button>
+          </div>
         )}
       </div>
     </motion.div>
