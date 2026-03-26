@@ -2744,7 +2744,8 @@ export default function CRMView({ userSession, teamMembers, openLeadByName, onLe
 
   const filteredLeads = leads
     .filter(l => {
-      if (filtroResponsavel && l.responsavel !== filtroResponsavel) return false;
+      if (filtroResponsavel === '__sem__' && l.responsavel) return false;
+      if (filtroResponsavel && filtroResponsavel !== '__sem__' && l.responsavel !== filtroResponsavel) return false;
       if (filtroTag && !(l.tags ?? []).includes(filtroTag)) return false;
       if (!search) return true;
       const q = search.toLowerCase();
@@ -2798,6 +2799,7 @@ export default function CRMView({ userSession, teamMembers, openLeadByName, onLe
               className="bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs text-gray-400 focus:outline-none focus:border-brand-primary appearance-none"
             >
               <option value="" className="bg-bg-main">Todos os responsáveis</option>
+              <option value="__sem__" className="bg-bg-main">Sem responsável</option>
               {responsaveis.map(r => <option key={r} value={r} className="bg-bg-main">{r}</option>)}
             </select>
           )}
