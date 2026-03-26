@@ -2040,7 +2040,6 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
                     >
                       <Plus size={13} /> Registrar atividade
                     </button>
-                    <p className="text-[9px] text-gray-700 text-center mt-1">Para atividades já realizadas</p>
                   </div>
                   <div className="flex-1">
                     <button onClick={() => { setShowAgendarTarefa(true); setTab('tarefas'); }}
