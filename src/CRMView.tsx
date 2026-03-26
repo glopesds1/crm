@@ -281,9 +281,10 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
 
   const handleSave = async () => {
     setValidationMsg('');
+    if (!tipo) { setValidationMsg('Selecione o tipo: Ligação ou Reunião'); return; }
+    if (!responsavelAtividade) { setValidationMsg('Selecione o responsável pela atividade'); return; }
     // Print obrigatório para todas as atividades
     if (!imageFile) { setImageError(true); return; }
-    if (!responsavelAtividade) { setValidationMsg('Selecione o responsável pela atividade'); return; }
 
     if (tipo === 'ligacao') {
       if (!statusChamada) { setValidationMsg('Selecione se atendeu ou não'); return; }
