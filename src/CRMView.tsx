@@ -153,7 +153,7 @@ function LeadCard({ lead, proximaTarefa, onClick }: { key?: React.Key; lead: CRM
   return (
     <motion.div layout initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
       onClick={onClick}
-      className={`bg-bg-card border ${etapa?.color ?? 'border-white/10'} border-l-2 rounded-xl p-3 cursor-pointer hover:bg-white/5 transition-colors space-y-2`}
+      className={`bg-[#161b26] border border-white/8 rounded-xl p-3.5 cursor-pointer hover:bg-[#1a2030] transition-all duration-200 space-y-2 shadow-md shadow-black/20`}
     >
       <div className="flex items-start justify-between gap-2">
         <p className="text-xs font-bold text-white leading-tight line-clamp-1">{lead.nome}</p>
@@ -186,7 +186,7 @@ function LeadCard({ lead, proximaTarefa, onClick }: { key?: React.Key; lead: CRM
           {lead.tags.map(tag => <span key={tag} className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full border ${TAGS_CONFIG[tag] ?? 'bg-white/5 text-gray-500 border-white/10'}`}>{tag}</span>)}
         </div>
       )}
-      <div className="text-[9px] text-gray-700 pt-1 border-t border-white/5">
+      <div className="text-[9px] text-gray-600 pt-1.5 mt-1 border-t border-white/8">
         {lead.created_at ? fmtDateSP(lead.created_at, { year: true }) : '—'}
       </div>
     </motion.div>
@@ -2562,12 +2562,12 @@ export default function CRMView({ userSession, teamMembers, openLeadByName, onLe
 
       {/* Kanban */}
       <div className="overflow-x-auto pb-4">
-        <div className="flex gap-3 min-w-max">
+        <div className="flex gap-4 min-w-max">
           {ETAPAS.map(etapa => {
             const etapaLeads = leadsByEtapa[etapa.id] ?? [];
             return (
-              <div key={etapa.id} className="w-56 flex-shrink-0">
-                <div className={`flex items-center justify-between mb-2 px-3 py-2 rounded-xl bg-white/3 border-l-2 ${etapa.color}`}>
+              <div key={etapa.id} className="w-64 flex-shrink-0 bg-[#1a1f2e] rounded-2xl p-2.5 border border-white/5">
+                <div className={`flex items-center justify-between mb-3 px-3 py-2.5 rounded-xl bg-white/5 border-l-2 ${etapa.color} sticky top-0 z-10 backdrop-blur-sm`}>
                   <span className="text-[10px] font-bold uppercase tracking-widest text-gray-400">{etapa.label}</span>
                   <div className="flex items-center gap-1.5">
                     <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${etapa.badge}`}>{etapaLeads.length}</span>
