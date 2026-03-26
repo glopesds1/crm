@@ -169,12 +169,6 @@ function LeadCard({ lead, proximaTarefa, onClick }: { key?: React.Key; lead: CRM
       {lead.valor_cc != null && lead.valor_cc > 0 && (
         <div className="text-[10px] font-bold text-blue-400">Cash Collect: R$ {Number(lead.valor_cc).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</div>
       )}
-      {lead.etapa === 'rm_marcada' && lead.proxima_reuniao && (
-        <div className="flex items-center gap-1.5 text-[10px] text-yellow-400 bg-yellow-900/20 rounded-lg px-2 py-1">
-          <Calendar size={9} />
-          <span>R1 - {fmtDate(lead.proxima_reuniao)}</span>
-        </div>
-      )}
       {proximaTarefa && !proximaTarefa.concluida && (() => {
         const isReuniao = proximaTarefa.titulo.startsWith('R1') || proximaTarefa.titulo.startsWith('R2');
         const colorClass = isReuniao ? 'text-orange-400 bg-orange-900/20' : 'text-yellow-400 bg-yellow-900/20';
