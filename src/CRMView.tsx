@@ -429,6 +429,7 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
             },
           };
           const webhookBase = import.meta.env.VITE_WEBHOOK_BASE?.replace('/webhook/dashboard', '') ?? 'https://webhook.m2black.com';
+          console.log('[BANT webhook] lead_externo_id:', leadObj?.lead_externo_id, 'lead.id:', leadId);
           fetch(`${webhookBase}/webhook/agendar-reuniao`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
