@@ -42,7 +42,8 @@ import {
   ClipboardList,
   AtSign,
   HelpCircle,
-  Send
+  Send,
+  Building2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -65,6 +66,9 @@ import { format, parseISO, isWithinInterval, subDays, startOfDay, startOfWeek, s
 import DashboardView from './DashboardView';
 import CRMView from './CRMView';
 import PlaybooksView from './PlaybooksView';
+import ClientCRMView from './ClientCRMView';
+import { getTenantByClientId, activateCrmForClient } from './lib/database';
+import type { CrmClientTenant } from './types';
 import { ptBR } from 'date-fns/locale';
 
 import { 
@@ -2066,7 +2070,68 @@ const TeamMemberModal = ({
   );
 };
 
-const ClientModal = ({ client, allTags, teamMembers, onClose, onUpdateClient, onSaveTag, onDeleteTag, onCreateDemand, userSession }: {
+// ── Seção CRM do Cliente (dentro do modal) ──
+const CrmClientSection = ({ clientId, clientName, onOpenCrm }: { clientId: string; clientName: string; onOpenCrm: (tenantId: string) => void }) => {
+  const [tenant, setTenant] = useState<CrmClientTenant | null | undefined>(undefined);
+  const [activating, setActivating] = useState(false);
+  const [leadCount, setLeadCount] = useState(0);
+
+  useEffect(() => {
+    getTenantByClientId(clientId).then(t => {
+      setTenant(t);
+      if (t) {
+        import('./lib/database').then(db => db.getClientLeads(t.id)).then(leads => setLeadCount(leads.length));
+      }
+    }).catch(() => setTenant(null));
+  }, [clientId]);
+
+  const handleActivate = async () => {
+    setActivating(true);
+    try {
+      const t = await activateCrmForClient(clientId, clientName);
+      setTenant(t);
+    } catch (err) {
+      console.error('Erro ao ativar CRM:', err);
+      alert('Erro ao ativar CRM.');
+    }
+    setActivating(false);
+  };
+
+  if (tenant === undefined) return null; // loading
+
+  return (
+    <section className="glass-card p-6 mb-6">
+      <h3 className="text-sm font-bold uppercase tracking-widest text-brand-primary mb-4">CRM do Cliente</h3>
+      {!tenant ? (
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-sm text-gray-400">CRM não configurado para este cliente.</p>
+          </div>
+          <button onClick={handleActivate} disabled={activating}
+            className="bg-brand-primary text-black font-bold rounded-xl px-5 py-2.5 text-sm hover:brightness-110 transition-all disabled:opacity-50 flex items-center gap-2">
+            {activating ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />}
+            {activating ? 'Ativando...' : 'Ativar CRM'}
+          </button>
+        </div>
+      ) : (
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <span className="flex items-center gap-1.5 text-sm">
+              <span className="w-2 h-2 rounded-full bg-green-400" /> Ativo
+            </span>
+            <span className="text-sm text-gray-400">{leadCount} leads</span>
+          </div>
+          <button onClick={() => onOpenCrm(tenant.id)}
+            className="bg-brand-primary text-black font-bold rounded-xl px-5 py-2.5 text-sm hover:brightness-110 transition-all flex items-center gap-2">
+            <ExternalLink size={16} /> Acessar CRM
+          </button>
+        </div>
+      )}
+    </section>
+  );
+};
+
+const ClientModal = ({ client, allTags, teamMembers, onClose, onUpdateClient, onSaveTag, onDeleteTag, onCreateDemand, userSession, onOpenClientCrm }: {
   client: Client,
   allTags: Record<string, Tag>,
   teamMembers: TeamMember[],
@@ -2075,7 +2140,8 @@ const ClientModal = ({ client, allTags, teamMembers, onClose, onUpdateClient, on
   onSaveTag: (tag: Tag) => void,
   onDeleteTag: (id: string) => void,
   onCreateDemand: (demand: Demand) => void,
-  userSession: UserSession
+  userSession: UserSession,
+  onOpenClientCrm?: (tenantId: string) => void,
 }) => {
   const [newComment, setNewComment] = useState('');
   const [editName, setEditName] = useState(client.name);
@@ -2265,12 +2331,18 @@ const ClientModal = ({ client, allTags, teamMembers, onClose, onUpdateClient, on
               />
             </section>
 
+            {/* ── CRM DO CLIENTE ── */}
+            <CrmClientSection clientId={client.id} clientName={client.name} onOpenCrm={(tenantId) => {
+              onClose();
+              if (onOpenClientCrm) onOpenClientCrm(tenantId);
+            }} />
+
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-              <MultiSelect 
-                label="Plataformas" 
-                options={PLATFORM_OPTIONS} 
-                selected={client.platforms} 
-                onChange={val => onUpdateClient({ ...client, platforms: val })} 
+              <MultiSelect
+                label="Plataformas"
+                options={PLATFORM_OPTIONS}
+                selected={client.platforms}
+                onChange={val => onUpdateClient({ ...client, platforms: val })}
               />
               <MultiSelect 
                 label="Funis Ativos" 
@@ -3190,15 +3262,16 @@ const ComercialView = ({ teamMembers, userSession, onOpenInCRM }: {
 export default function App() {
   const [activeTab, setActiveTab] = useState('Dashboard');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [selectedCrmTenantId, setSelectedCrmTenantId] = useState<string | null>(null);
 
   // Role-based permission helper
   const canSee = (tab: string): boolean => {
     const role = (userSession?.role ?? '').toLowerCase();
     const permissions: Record<string, string[]> = {
-      'admin':     ['Dashboard', 'Clientes', 'Kanban de Operação', 'Equipe', 'Demandas', 'Relatórios', 'Aquisição', 'Playbooks', 'Configurações'],
+      'admin':     ['Dashboard', 'Clientes', 'Kanban de Operação', 'Equipe', 'Demandas', 'CRM Clientes', 'Relatórios', 'Aquisição', 'Playbooks', 'Configurações'],
       'comercial': ['Demandas', 'Aquisição', 'Playbooks'],
-      'suporte':   ['Clientes', 'Kanban de Operação', 'Demandas', 'Relatórios', 'Playbooks'],
-      'entrega':   ['Clientes', 'Kanban de Operação', 'Demandas', 'Relatórios', 'Playbooks'],
+      'suporte':   ['Clientes', 'Kanban de Operação', 'Demandas', 'CRM Clientes', 'Relatórios', 'Playbooks'],
+      'entrega':   ['Clientes', 'Kanban de Operação', 'Demandas', 'CRM Clientes', 'Relatórios', 'Playbooks'],
     };
     return (permissions[role] ?? permissions['admin']).includes(tab);
   };
@@ -3991,6 +4064,7 @@ export default function App() {
           {canSee('Kanban de Operação') && <SidebarItem icon={KanbanIcon} label="Kanban de Operação" active={activeTab === 'Kanban de Operação'} onClick={() => setActiveTab('Kanban de Operação')} />}
           {canSee('Equipe') && <SidebarItem icon={Users} label="Equipe" active={activeTab === 'Equipe'} onClick={() => setActiveTab('Equipe')} />}
           {canSee('Demandas') && <SidebarItem icon={ClipboardList} label="Demandas" active={activeTab === 'Demandas'} onClick={() => setActiveTab('Demandas')} badge={demands.filter(d => d.status === 'pendente').length || undefined} />}
+          {canSee('CRM Clientes') && <SidebarItem icon={Building2} label="CRM Clientes" active={activeTab === 'CRM Clientes'} onClick={() => { setActiveTab('CRM Clientes'); setSelectedCrmTenantId(null); }} />}
           {canSee('Relatórios') && <SidebarItem icon={BarChart3} label="Relatórios" active={activeTab === 'Relatórios'} onClick={() => setActiveTab('Relatórios')} />}
           {canSee('Playbooks') && <SidebarItem icon={BookOpen} label="Playbooks" active={activeTab === 'Playbooks'} onClick={() => setActiveTab('Playbooks')} />}
           
@@ -4157,6 +4231,7 @@ export default function App() {
               )}
               {activeTab === 'Relatórios' && <ReportsView clients={clients} config={agencyConfig} />}
               {activeTab === 'Playbooks' && <PlaybooksView />}
+              {activeTab === 'CRM Clientes' && <ClientCRMView clients={clients} selectedTenantId={selectedCrmTenantId} onBack={() => setSelectedCrmTenantId(null)} />}
               {activeTab === 'Aquisição' && aquisicaoSubTab === 'CRM' && (
                 <div className="glass-card p-6">
                   <CRMView userSession={userSession} teamMembers={teamMembers} openLeadByName={openCRMLeadName} onLeadOpened={() => setOpenCRMLeadName('')} />
@@ -4196,6 +4271,7 @@ export default function App() {
             onSaveTag={handleSaveTag}
             onDeleteTag={handleDeleteTag}
             userSession={userSession!}
+            onOpenClientCrm={(tenantId) => { setSelectedCrmTenantId(tenantId); setActiveTab('CRM Clientes'); }}
             onCreateDemand={async (demand) => {
               try {
                 const saved = await createDemand(demand);
