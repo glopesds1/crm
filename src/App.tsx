@@ -2830,12 +2830,15 @@ const ComercialView = ({ teamMembers, userSession, onOpenInCRM }: {
                       </div>
                     )}
                     <div className="absolute inset-0 bg-gradient-to-t from-bg-main/90 via-bg-main/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end justify-between p-4">
-                      <button 
-                        onClick={(e) => { e.stopPropagation(); handleDeleteTask(task.id); }}
-                        className="p-2 rounded-lg bg-red-500/20 text-red-400 hover:bg-red-500 hover:text-white transition-all backdrop-blur-sm"
-                      >
-                        <Trash2 size={16} />
-                      </button>
+                      {(userSession?.role ?? '').toLowerCase() === 'admin' && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleDeleteTask(task.id); }}
+                          className="p-2 rounded-lg bg-red-500/20 text-red-400 hover:bg-red-500 hover:text-white transition-all backdrop-blur-sm"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      )}
+                      {(userSession?.role ?? '').toLowerCase() !== 'admin' && <div />}
                         <div className="flex flex-col items-end gap-2">
                           <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-brand-primary/20 border border-brand-primary/30 backdrop-blur-md">
                             <Clock size={12} className="text-brand-primary" />
