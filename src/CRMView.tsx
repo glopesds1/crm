@@ -288,8 +288,8 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
 
     if (tipo === 'ligacao') {
       if (!statusChamada) { setValidationMsg('Selecione se atendeu ou não'); return; }
+      if (!touchpoint) { setValidationMsg('Preencha o touchpoint'); return; }
       if (statusChamada === 'Atendeu') {
-        if (!touchpoint) { setValidationMsg('Preencha o touchpoint'); return; }
         if (agendou) {
           if (!bantDataHora) { setValidationMsg('Preencha a data/hora da reunião'); return; }
           if (!bantCloser) { setValidationMsg('Selecione o closer responsável'); return; }
@@ -665,15 +665,17 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
               >{s}</button>
             ))}
           </div>
+          {statusChamada && (
+            <div>
+              <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">Touchpoint <span className="text-red-400">*</span></label>
+              <input type="number" value={touchpoint} onChange={e => setTouchpoint(e.target.value)}
+                className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-1.5 text-sm text-white focus:outline-none focus:border-brand-primary"
+                placeholder="Nº da tentativa"
+              />
+            </div>
+          )}
           {statusChamada === 'Atendeu' && (
             <>
-              <div>
-                <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">Touchpoint</label>
-                <input type="number" value={touchpoint} onChange={e => setTouchpoint(e.target.value)}
-                  className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-1.5 text-sm text-white focus:outline-none focus:border-brand-primary"
-                />
-              </div>
-
               {/* Botão Agendar Reunião */}
               <button onClick={() => setAgendou(!agendou)} type="button"
                 className={`w-full py-2 rounded-xl border border-dashed text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer ${agendou ? 'bg-yellow-500/20 border-yellow-500 text-yellow-400' : 'border-yellow-500/30 text-gray-500 hover:text-yellow-400 hover:border-yellow-500/50'}`}
