@@ -1425,6 +1425,27 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
     if (leadUpd.valor_contrato != null) setValorContrato(leadUpd.valor_contrato);
     if (leadUpd.valor_cc != null) setValorCc(leadUpd.valor_cc);
     if (leadUpd.valor_mrr != null) setValorMrr(leadUpd.valor_mrr);
+
+    // 6. Sync financeiro → Railway (fire-and-forget)
+    try {
+      const webhookBase = import.meta.env.VITE_WEBHOOK_BASE?.replace('/webhook/dashboard', '') ?? 'https://webhook.m2black.com';
+      fetch(`${webhookBase}/webhook/sync-financeiro-crm`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          lead_id: lead.lead_externo_id ?? lead.id,
+          Data_Reuniao_Realizada: rrStatusReuniao === 'Compareceu' ? new Date().toISOString().split('T')[0] : null,
+          Status_TP: rrStatusReuniao === 'Não compareceu' ? 'No-show' : null,
+          Data_TP: rrStatusReuniao === 'Compareceu' ? new Date().toISOString().split('T')[0] : null,
+          programa: programaApresentado || null,
+          rs_contrato: rrValorContrato || null,
+          rs_cc: rrValorCc || null,
+          mrr_adicionado: computedMrr || null,
+          closer: responsavel || null,
+        }),
+      }).catch(() => {});
+    } catch { /* silent */ }
+
     setReuniaoRealizada(false);
     setRrSaving(false);
     setTab('timeline');
