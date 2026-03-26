@@ -300,6 +300,7 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
           if (!bantAutoridade) { setValidationMsg('Selecione a autoridade (BANT)'); return; }
           if (!bantNecessidade) { setValidationMsg('Selecione a necessidade/dor (BANT)'); return; }
           if (!bantTiming) { setValidationMsg('Selecione o timing/urgência (BANT)'); return; }
+          if (!bantObs.trim()) { setValidationMsg('Preencha o desafio, dor e observações (BANT)'); return; }
         }
       }
       if (statusChamada === 'Não atendeu' && !motivoNaoAtendeu) { setValidationMsg('Selecione o motivo'); return; }
@@ -308,9 +309,25 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
     if (tipo === 'reuniao') {
       if (!statusReuniao) { setValidationMsg('Selecione se compareceu ou não'); return; }
       if (!resultado) { setValidationMsg('Selecione o resultado da reunião'); return; }
+      if (!valorContrato) { setValidationMsg('Preencha o valor do contrato'); return; }
+      if (!valorCc) { setValidationMsg('Preencha o valor do cash collect'); return; }
+      if (!prazoMeses) { setValidationMsg('Preencha o prazo em meses'); return; }
+      if (!resumo.trim()) { setValidationMsg('Preencha o resumo da reunião'); return; }
+      if (resultado === 'Venda') {
+        if (!razaoSocial.trim()) { setValidationMsg('Preencha a razão social'); return; }
+        if (!cpfCnpj.trim()) { setValidationMsg('Preencha o CPF/CNPJ'); return; }
+        if (!endereco.trim()) { setValidationMsg('Preencha o endereço'); return; }
+        if (!emailContato.trim()) { setValidationMsg('Preencha o email de contato'); return; }
+        if (!telefoneContato.trim()) { setValidationMsg('Preencha o telefone de contato'); return; }
+        if (!nomeResponsavel.trim()) { setValidationMsg('Preencha o nome do responsável'); return; }
+        if (!formaPagamento) { setValidationMsg('Selecione a forma de pagamento'); return; }
+        if (!dataPrimeiroVencimento) { setValidationMsg('Preencha a data do 1º vencimento'); return; }
+      }
       if (resultado === 'Perdido' && !motivoPerda.trim()) { setErroMotivo(true); return; }
       if ((resultado === 'Marcou R2+' || resultado === 'Reagendou') && !proximaReuniao) { setValidationMsg('Preencha a data da próxima reunião'); return; }
     }
+
+    if (!descricao.trim()) { setValidationMsg('Preencha as observações sobre a atividade'); return; }
 
     setSaving(true);
     const now = new Date().toISOString();
