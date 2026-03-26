@@ -1186,6 +1186,34 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
     };
     if (etapa !== lead.etapa) upd.etapa_desde = new Date().toISOString();
     await onSave(upd);
+
+    // Sync financeiro → Railway via n8n (fire-and-forget)
+    const finChanged = (valorContrato !== '' && valorContrato !== (lead.valor_contrato ?? ''))
+      || (valorCc !== '' && valorCc !== (lead.valor_cc ?? ''))
+      || (valorMrr !== '' && valorMrr !== (lead.valor_mrr ?? ''))
+      || (programaApresentado && programaApresentado !== (lead.programa_apresentado ?? ''));
+    if (lead.lead_externo_id && finChanged) {
+      try {
+        const webhookBase = import.meta.env.VITE_WEBHOOK_BASE?.replace('/webhook/dashboard', '') ?? 'https://webhook.m2black.com';
+        fetch(`${webhookBase}/webhook/sync-financeiro-crm`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            lead_id: lead.lead_externo_id,
+            Data_Reuniao_Marcada: lead.proxima_reuniao ?? null,
+            Data_Venda: null,
+            programa: programaApresentado || null,
+            rs_contrato: valorContrato !== '' ? valorContrato : null,
+            rs_cc: valorCc !== '' ? valorCc : null,
+            tempo_contrato: valorMrr && valorContrato ? (Number(valorContrato) / Number(valorMrr)).toFixed(0) : null,
+            mrr_adicionado: valorMrr !== '' ? valorMrr : null,
+            closer: responsavel || null,
+            sdr: null,
+          }),
+        }).catch(() => {});
+      } catch { /* silent */ }
+    }
+
     setSaving(false);
   };
 
