@@ -328,7 +328,7 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
       if ((resultado === 'Marcou R2+' || resultado === 'Reagendou') && !proximaReuniao) { setValidationMsg('Preencha a data da próxima reunião'); return; }
     }
 
-    if (!descricao.trim()) { setValidationMsg('Preencha as observações sobre a atividade'); return; }
+    if (tipo !== 'reuniao' && !(tipo === 'ligacao' && agendou) && !descricao.trim()) { setValidationMsg('Preencha as observações sobre a atividade'); return; }
 
     setSaving(true);
     const now = new Date().toISOString();
@@ -986,10 +986,12 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
         </>
       )}
 
-      <textarea value={descricao} onChange={e => setDescricao(e.target.value)} rows={2}
-        placeholder="Observações sobre a atividade..."
-        className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm text-gray-300 focus:outline-none focus:border-brand-primary resize-none"
-      />
+      {tipo !== 'reuniao' && !(tipo === 'ligacao' && agendou) && (
+        <textarea value={descricao} onChange={e => setDescricao(e.target.value)} rows={2}
+          placeholder="Observações sobre a atividade..."
+          className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm text-gray-300 focus:outline-none focus:border-brand-primary resize-none"
+        />
+      )}
 
       {/* Upload de print */}
       <div>
