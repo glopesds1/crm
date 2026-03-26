@@ -5,7 +5,7 @@ import {
   Plus, RefreshCw, Search, Phone, Building2, DollarSign,
   User, X, ChevronRight, Loader2, MapPin, Clock,
   PhoneCall, Users, FileText, Calendar, CheckCircle2,
-  ChevronDown, Trash2, Bell, Volume2, Send
+  ChevronDown, Trash2, Bell, Volume2, Send, Video
 } from 'lucide-react';
 import type { TeamMember } from './types';
 import { DEFAULT_ONBOARDING_ITEMS } from './constants';
@@ -1003,6 +1003,7 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
   const [ativFormTipo, setAtivFormTipo] = useState<'ligacao' | 'reuniao' | undefined>(undefined);
   const [concluindoTarefaViaAtiv, setConcluindoTarefaViaAtiv] = useState<string | null>(null);
   const [showAgendarTarefa, setShowAgendarTarefa] = useState(false);
+  const [agTipo, setAgTipo] = useState<'ligacao' | 'reuniao' | null>(null);
   const [agTitulo, setAgTitulo] = useState('');
   const [agData, setAgData] = useState('');
   const [agResponsavel, setAgResponsavel] = useState('');
@@ -1173,7 +1174,7 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
         onSave({ proxima_reuniao: localDatetimeToISO(agData) });
       }
       setShowAgendarTarefa(false);
-      setAgTitulo(''); setAgData(''); setAgResponsavel('');
+      setAgTipo(null); setAgTitulo(''); setAgData(''); setAgResponsavel('');
       setTab('tarefas');
     } catch (err) { console.error('Failed to schedule task:', err); }
     setAgSaving(false);
@@ -1653,210 +1654,7 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
               />
             </div>
 
-            {/* Reunião Realizada (rm_marcada only) */}
-            {lead.etapa === 'rm_marcada' && !atividades.some(a => a.tipo === 'reuniao' && a.status_reuniao === 'Compareceu') && (
-              <div className="border-t border-white/5 pt-3 space-y-3">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input type="checkbox" checked={reuniaoRealizada} onChange={e => setReuniaoRealizada(e.target.checked)} className="w-4 h-4 accent-brand-primary" />
-                  <span className="text-[9px] font-bold uppercase tracking-widest text-brand-primary">Registrar Reunião Realizada</span>
-                </label>
-
-                {reuniaoRealizada && (
-                  <div className="space-y-3 bg-white/3 rounded-xl p-3 border border-white/5">
-                    {/* Print obrigatório */}
-                    <div>
-                      <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">Print da reunião *</label>
-                      <input type="file" accept="image/*" onChange={handleRrImageChange}
-                        className="w-full text-xs text-gray-400 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-white/10 file:text-gray-300 hover:file:bg-white/20 file:cursor-pointer file:transition-colors"
-                      />
-                      {rrImagePreview && (
-                        <div className="mt-2 relative">
-                          <img src={rrImagePreview} alt="Preview" className="w-full max-h-32 object-contain rounded-lg border border-white/10" />
-                          <button onClick={() => { setRrImageFile(null); setRrImagePreview(null); }}
-                            className="absolute top-1 right-1 p-1 rounded-full bg-black/60 text-gray-300 hover:text-white transition-colors"
-                          ><X size={12} /></button>
-                        </div>
-                      )}
-                      {rrImageError && <p className="text-[10px] text-red-400 mt-1">Print obrigatório</p>}
-                    </div>
-
-                    {/* Status */}
-                    <div className="flex gap-2">
-                      {(['Compareceu', 'Não compareceu'] as const).map(s => (
-                        <button key={s} onClick={() => setRrStatusReuniao(s)}
-                          className={`flex-1 py-1.5 rounded-lg text-xs font-bold border transition-all ${rrStatusReuniao === s ? (s === 'Compareceu' ? 'bg-brand-primary/20 border-brand-primary text-brand-primary' : 'bg-red-900/30 border-red-500 text-red-400') : 'bg-white/5 border-white/10 text-gray-500'}`}
-                        >{s}</button>
-                      ))}
-                    </div>
-
-                    {/* Programa Apresentado */}
-                    <div>
-                      <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">Programa Apresentado</label>
-                      <select value={programaApresentado} onChange={e => setProgramaApresentado(e.target.value)}
-                        className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-brand-primary appearance-none"
-                      >
-                        <option value="" className="bg-bg-main">Selecionar...</option>
-                        <option value="Basic" className="bg-bg-main">Basic</option>
-                        <option value="Lite" className="bg-bg-main">Lite</option>
-                        <option value="Pro" className="bg-bg-main">Pro</option>
-                      </select>
-                    </div>
-
-                    {/* Resultado */}
-                    <div>
-                      <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">Resultado</label>
-                      <select value={rrResultado} onChange={e => setRrResultado(e.target.value)}
-                        className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-1.5 text-sm text-white focus:outline-none focus:border-brand-primary appearance-none"
-                      >
-                        <option value="" className="bg-bg-main">Selecionar...</option>
-                        {['Venda', 'Marcou R2+', 'Reagendou', 'Perdido'].map(r => <option key={r} value={r} className="bg-bg-main">{r}</option>)}
-                      </select>
-                    </div>
-
-                    {/* Financeiros */}
-                    <div className="grid grid-cols-3 gap-2">
-                      <div>
-                        <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">Contrato (R$)</label>
-                        <input type="number" value={rrValorContrato} onChange={e => setRrValorContrato(e.target.value)}
-                          disabled={rrStatusReuniao !== 'Compareceu'}
-                          className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-1.5 text-sm text-white focus:outline-none focus:border-brand-primary disabled:opacity-40" placeholder="0"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">Cash Collect (R$)</label>
-                        <input type="number" value={rrValorCc} onChange={e => setRrValorCc(e.target.value)}
-                          disabled={rrStatusReuniao !== 'Compareceu'}
-                          className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-1.5 text-sm text-white focus:outline-none focus:border-brand-primary disabled:opacity-40" placeholder="0"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">Prazo (meses)</label>
-                        <input type="number" value={rrPrazoMeses} onChange={e => setRrPrazoMeses(e.target.value)}
-                          disabled={rrStatusReuniao !== 'Compareceu'}
-                          className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-1.5 text-sm text-white focus:outline-none focus:border-brand-primary disabled:opacity-40" placeholder="0"
-                        />
-                      </div>
-                    </div>
-                    {rrMrr != null && !isNaN(rrMrr) && (
-                      <div className="text-[10px] text-gray-400">MRR calculado: <span className="text-brand-primary font-bold">R$ {rrMrr.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>
-                    )}
-
-                    {/* Venda — dados do cliente */}
-                    {rrResultado === 'Venda' && (
-                      <div className="border-t border-white/5 pt-3 space-y-3">
-                        <p className="text-[9px] font-bold uppercase tracking-widest text-brand-primary">Dados do Cliente</p>
-                        <div className="grid grid-cols-2 gap-2">
-                          <div>
-                            <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">Razão Social</label>
-                            <input value={rrRazaoSocial} onChange={e => setRrRazaoSocial(e.target.value)}
-                              className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-1.5 text-sm text-white focus:outline-none focus:border-brand-primary"
-                            />
-                          </div>
-                          <div>
-                            <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">Tipo de Pessoa</label>
-                            <select value={rrTipoPessoa} onChange={e => setRrTipoPessoa(e.target.value as 'PF' | 'PJ')}
-                              className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-1.5 text-sm text-white focus:outline-none focus:border-brand-primary appearance-none"
-                            >
-                              <option value="PJ" className="bg-bg-main">Pessoa Jurídica (CNPJ)</option>
-                              <option value="PF" className="bg-bg-main">Pessoa Física (CPF)</option>
-                            </select>
-                          </div>
-                        </div>
-                        <div>
-                          <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">CPF / CNPJ</label>
-                          <input value={rrCpfCnpj} onChange={e => setRrCpfCnpj(e.target.value)}
-                            className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-1.5 text-sm text-white focus:outline-none focus:border-brand-primary"
-                            placeholder={rrTipoPessoa === 'PF' ? '000.000.000-00' : '00.000.000/0000-00'}
-                          />
-                        </div>
-                        <div>
-                          <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">Endereço Completo</label>
-                          <input value={rrEndereco} onChange={e => setRrEndereco(e.target.value)}
-                            className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-1.5 text-sm text-white focus:outline-none focus:border-brand-primary"
-                          />
-                        </div>
-                        <div className="grid grid-cols-2 gap-2">
-                          <div>
-                            <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">Email de Contato</label>
-                            <input type="email" value={rrEmailContato} onChange={e => setRrEmailContato(e.target.value)}
-                              className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-1.5 text-sm text-white focus:outline-none focus:border-brand-primary"
-                            />
-                          </div>
-                          <div>
-                            <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">Telefone</label>
-                            <input value={rrTelefoneContato} onChange={e => setRrTelefoneContato(e.target.value)}
-                              className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-1.5 text-sm text-white focus:outline-none focus:border-brand-primary"
-                            />
-                          </div>
-                        </div>
-                        <div>
-                          <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">Nome do Responsável</label>
-                          <input value={rrNomeResponsavel} onChange={e => setRrNomeResponsavel(e.target.value)}
-                            className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-1.5 text-sm text-white focus:outline-none focus:border-brand-primary"
-                          />
-                        </div>
-                        <div className="grid grid-cols-2 gap-2">
-                          <div>
-                            <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">Forma de Pagamento</label>
-                            <select value={rrFormaPagamento} onChange={e => setRrFormaPagamento(e.target.value)}
-                              className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-1.5 text-sm text-white focus:outline-none focus:border-brand-primary appearance-none"
-                            >
-                              <option value="" className="bg-bg-main">Selecionar...</option>
-                              {['À vista', '2x', '3x', '6x', '12x', 'Boleto mensal', 'Cartão recorrente'].map(f => <option key={f} value={f} className="bg-bg-main">{f}</option>)}
-                            </select>
-                          </div>
-                          <div>
-                            <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">Data do 1º Vencimento</label>
-                            <input type="date" value={rrDataPrimeiroVencimento} onChange={e => setRrDataPrimeiroVencimento(e.target.value)}
-                              className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-1.5 text-sm text-gray-300 focus:outline-none focus:border-brand-primary"
-                            />
-                          </div>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Perdido */}
-                    {rrResultado === 'Perdido' && (
-                      <div>
-                        <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">Motivo de perda <span className="text-red-400">*</span></label>
-                        <textarea value={rrMotivoPerda} onChange={e => { setRrMotivoPerda(e.target.value); setRrErroMotivo(false); }} rows={2}
-                          className={`w-full bg-white/5 border rounded-xl px-3 py-2 text-sm text-gray-300 focus:outline-none focus:border-brand-primary resize-none ${rrErroMotivo ? 'border-red-500' : 'border-white/10'}`}
-                        />
-                        {rrErroMotivo && <p className="text-[10px] text-red-400 mt-1">Motivo de perda obrigatório</p>}
-                      </div>
-                    )}
-
-                    {/* R2+ / Reagendou */}
-                    {(rrResultado === 'Marcou R2+' || rrResultado === 'Reagendou') && (
-                      <div>
-                        <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">Próxima reunião</label>
-                        <input type="datetime-local" value={rrProximaReuniao} onChange={e => setRrProximaReuniao(e.target.value)}
-                          className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-1.5 text-sm text-gray-300 focus:outline-none focus:border-brand-primary"
-                        />
-                      </div>
-                    )}
-
-                    {/* Resumo */}
-                    <div>
-                      <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">Resumo da reunião</label>
-                      <textarea value={rrResumo} onChange={e => setRrResumo(e.target.value)} rows={2}
-                        className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm text-gray-300 focus:outline-none focus:border-brand-primary resize-none"
-                        placeholder="O que foi discutido..."
-                      />
-                    </div>
-
-                    <button onClick={handleSaveReuniao} disabled={rrSaving}
-                      className="w-full py-2 rounded-xl bg-brand-primary text-black text-xs font-bold hover:bg-brand-primary/80 disabled:opacity-40 transition-colors flex items-center justify-center gap-2"
-                    >
-                      {rrSaving && <Loader2 size={12} className="animate-spin" />}
-                      Salvar Reunião
-                    </button>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Nova Atividade + Agendar Reunião + Agendar Tarefa inline */}
+            {/* Nova Atividade + Agendar Tarefa inline */}
             <div className="border-t border-white/5 pt-3">
               {showAtivForm ? (
                 <NovaAtividadeForm lead={lead} leadId={lead.id} leadName={lead.nome} userSession={userSession} teamMembers={teamMembers} onSaved={handleAtivSaved} onCancel={() => { setShowAtivForm(false); setAtivFormTipo(undefined); setConcluindoTarefaViaAtiv(null); }} onLeadUpdated={handleLeadUpdated} onClientCreated={onClientCreated} onTarefaCreated={onTarefaCreated} initialTipo={ativFormTipo} />
@@ -2083,11 +1881,21 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
               {showAgendarTarefa ? (
                 <div className="space-y-3 bg-white/[0.02] border border-white/10 rounded-xl p-4">
                   <p className="text-[9px] font-bold uppercase tracking-widest text-brand-primary">Agendar Próxima Atividade</p>
+                  {/* Tipo da atividade */}
+                  <div className="flex gap-2">
+                    <button onClick={() => setAgTipo('ligacao')}
+                      className={`flex-1 py-2 rounded-xl border text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer ${agTipo === 'ligacao' ? 'bg-brand-primary/20 border-brand-primary text-brand-primary' : 'bg-white/5 border-white/10 text-gray-500 hover:text-gray-300'}`}
+                    ><Phone size={14} /> Ligação</button>
+                    <button onClick={() => setAgTipo('reuniao')}
+                      className={`flex-1 py-2 rounded-xl border text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer ${agTipo === 'reuniao' ? 'bg-brand-primary/20 border-brand-primary text-brand-primary' : 'bg-white/5 border-white/10 text-gray-500 hover:text-gray-300'}`}
+                    ><Video size={14} /> Reunião</button>
+                  </div>
+                  {agTipo && (<>
                   <div>
                     <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">Título da tarefa <span className="text-red-400">*</span></label>
                     <input value={agTitulo} onChange={e => setAgTitulo(e.target.value)}
                       className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-1.5 text-sm text-white focus:outline-none focus:border-brand-primary"
-                      placeholder="Ex: Reunião de follow-up"
+                      placeholder={agTipo === 'reuniao' ? 'Ex: Reunião R1 - Nome do lead' : 'Ex: Ligação de follow-up'}
                     />
                   </div>
                   <div>
@@ -2108,16 +1916,17 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
                     </select>
                   </div>
                   <div className="flex gap-2">
-                    <button onClick={() => setShowAgendarTarefa(false)}
+                    <button onClick={() => { setShowAgendarTarefa(false); setAgTipo(null); }}
                       className="flex-1 py-1.5 rounded-xl bg-white/5 border border-white/10 text-xs text-gray-400 hover:text-white transition-colors cursor-pointer"
                     >Cancelar</button>
-                    <button onClick={handleAgendarTarefa} disabled={agSaving || !agTitulo.trim() || !agData}
+                    <button onClick={handleAgendarTarefa} disabled={agSaving || !agTitulo.trim() || !agData || !agTipo}
                       className="flex-1 py-1.5 rounded-xl bg-brand-primary text-black text-xs font-bold hover:bg-brand-primary/80 disabled:opacity-40 transition-colors flex items-center justify-center gap-2 cursor-pointer"
                     >
                       {agSaving && <Loader2 size={12} className="animate-spin" />}
                       Salvar
                     </button>
                   </div>
+                  </>)}
                 </div>
               ) : (
                 <button onClick={() => setShowAgendarTarefa(true)}
