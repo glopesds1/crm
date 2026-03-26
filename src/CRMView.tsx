@@ -2620,6 +2620,7 @@ export default function CRMView({ userSession, teamMembers, openLeadByName, onLe
       try {
         const webhookBase = import.meta.env.VITE_WEBHOOK_BASE?.replace('/webhook/dashboard', '')
           ?? 'https://webhook.m2black.com';
+        console.log('[criar-lead-manual] payload:', JSON.stringify({nome: lead.nome, telefone: lead.telefone, responsavel: lead.responsavel}));
         const res = await fetch(`${webhookBase}/webhook/criar-lead-manual`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -2634,6 +2635,7 @@ export default function CRMView({ userSession, teamMembers, openLeadByName, onLe
         });
         if (res.ok) {
           const json = await res.json();
+          console.log('[criar-lead-manual] resposta:', json);
           if (json.lead_externo_id) {
             await supabase
               .from('crm_leads')
