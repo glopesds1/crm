@@ -274,42 +274,11 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
     return digits;
   };
 
-  const captureScreenshot = async (): Promise<File | null> => {
-    try {
-      const stream = await navigator.mediaDevices.getDisplayMedia({ video: { displaySurface: 'monitor' } as any, preferCurrentTab: false } as any);
-      const track = stream.getVideoTracks()[0];
-      // @ts-ignore — ImageCapture is available in modern browsers
-      const capture = new ImageCapture(track);
-      const bitmap = await capture.grabFrame();
-      track.stop();
-      const canvas = document.createElement('canvas');
-      canvas.width = bitmap.width;
-      canvas.height = bitmap.height;
-      const ctx = canvas.getContext('2d')!;
-      ctx.drawImage(bitmap, 0, 0);
-      const blob = await new Promise<Blob | null>(r => canvas.toBlob(r, 'image/png'));
-      if (!blob) return null;
-      return new File([blob], `screenshot-${Date.now()}.png`, { type: 'image/png' });
-    } catch {
-      return null;
-    }
-  };
-
-  const handleSelectTipo = async (t: 'ligacao' | 'reuniao') => {
+  const handleSelectTipo = (t: 'ligacao' | 'reuniao') => {
     setTipo(t);
     if (t === 'ligacao' && leadObj?.telefone) {
       const waNumber = formatPhoneForWhatsApp(leadObj.telefone);
       if (waNumber) window.open(`whatsapp://send?phone=${waNumber}`, '_self');
-      // Wait for WhatsApp to open, then capture screen
-      await new Promise(r => setTimeout(r, 1500));
-      const file = await captureScreenshot();
-      if (file) {
-        setImageFile(file);
-        const reader = new FileReader();
-        reader.onloadend = () => setImagePreview(reader.result as string);
-        reader.readAsDataURL(file);
-        setImageError(false);
-      }
     }
   };
 
@@ -1541,11 +1510,14 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
               {[
                 { label: 'Telefone', value: lead.telefone },
                 { label: 'Empresa', value: lead.empresa },
-                { label: 'Origem', value: lead.anuncio ?? lead.origem },
+                { label: 'Origem', value: lead.anuncio ?? lead.origem, extra: lead.created_at ? fmtDateSP(lead.created_at, { year: true }) : undefined },
               ].filter(f => f.value).map(f => (
                 <div key={f.label}>
                   <p className="text-[9px] font-bold uppercase tracking-widest text-gray-600 mb-0.5">{f.label}</p>
-                  <p className="text-xs text-gray-300">{f.value}</p>
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-xs text-gray-300">{f.value}</p>
+                    {f.extra && <span className="text-[10px] text-gray-500">{f.extra}</span>}
+                  </div>
                 </div>
               ))}
             </div>
@@ -2040,7 +2012,6 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
                     >
                       <Plus size={13} /> Registrar atividade
                     </button>
-                    <p className="text-[9px] text-gray-700 text-center mt-1">Para atividades já realizadas</p>
                   </div>
                   <div className="flex-1">
                     <button onClick={() => { setShowAgendarTarefa(true); setTab('tarefas'); }}
@@ -2744,7 +2715,8 @@ export default function CRMView({ userSession, teamMembers, openLeadByName, onLe
 
   const filteredLeads = leads
     .filter(l => {
-      if (filtroResponsavel && l.responsavel !== filtroResponsavel) return false;
+      if (filtroResponsavel === '__sem__' && l.responsavel) return false;
+      if (filtroResponsavel && filtroResponsavel !== '__sem__' && l.responsavel !== filtroResponsavel) return false;
       if (filtroTag && !(l.tags ?? []).includes(filtroTag)) return false;
       if (!search) return true;
       const q = search.toLowerCase();
@@ -2798,6 +2770,7 @@ export default function CRMView({ userSession, teamMembers, openLeadByName, onLe
               className="bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs text-gray-400 focus:outline-none focus:border-brand-primary appearance-none"
             >
               <option value="" className="bg-bg-main">Todos os responsáveis</option>
+              <option value="__sem__" className="bg-bg-main">Sem responsável</option>
               {responsaveis.map(r => <option key={r} value={r} className="bg-bg-main">{r}</option>)}
             </select>
           )}
