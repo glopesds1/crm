@@ -204,7 +204,7 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
   onTarefaCreated?: (tarefa: CRMTarefa) => void; teamMembers?: TeamMember[];
 }) {
   const [responsavelAtividade, setResponsavelAtividade] = useState(leadObj?.responsavel ?? userSession?.name ?? '');
-  const [tipo, setTipo] = useState<'ligacao' | 'reuniao'>('ligacao');
+  const [tipo, setTipo] = useState<'ligacao' | 'reuniao' | null>(null);
   const [statusChamada, setStatusChamada] = useState<'Atendeu' | 'Não atendeu' | null>(null);
   const [touchpoint, setTouchpoint] = useState('');
   const [agendou, setAgendou] = useState(false);
@@ -263,6 +263,53 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
       reader.readAsDataURL(file);
     } else {
       setImagePreview(null);
+    }
+  };
+
+  const formatPhoneForWhatsApp = (phone?: string) => {
+    if (!phone) return '';
+    let digits = phone.replace(/\D/g, '');
+    if (digits.startsWith('0')) digits = digits.slice(1);
+    if (!digits.startsWith('55')) digits = '55' + digits;
+    return digits;
+  };
+
+  const captureScreenshot = async (): Promise<File | null> => {
+    try {
+      const stream = await navigator.mediaDevices.getDisplayMedia({ video: { displaySurface: 'monitor' } as any, preferCurrentTab: false } as any);
+      const track = stream.getVideoTracks()[0];
+      // @ts-ignore — ImageCapture is available in modern browsers
+      const capture = new ImageCapture(track);
+      const bitmap = await capture.grabFrame();
+      track.stop();
+      const canvas = document.createElement('canvas');
+      canvas.width = bitmap.width;
+      canvas.height = bitmap.height;
+      const ctx = canvas.getContext('2d')!;
+      ctx.drawImage(bitmap, 0, 0);
+      const blob = await new Promise<Blob | null>(r => canvas.toBlob(r, 'image/png'));
+      if (!blob) return null;
+      return new File([blob], `screenshot-${Date.now()}.png`, { type: 'image/png' });
+    } catch {
+      return null;
+    }
+  };
+
+  const handleSelectTipo = async (t: 'ligacao' | 'reuniao') => {
+    setTipo(t);
+    if (t === 'ligacao' && leadObj?.telefone) {
+      const waNumber = formatPhoneForWhatsApp(leadObj.telefone);
+      if (waNumber) window.open(`whatsapp://send?phone=${waNumber}`, '_self');
+      // Wait for WhatsApp to open, then capture screen
+      await new Promise(r => setTimeout(r, 1500));
+      const file = await captureScreenshot();
+      if (file) {
+        setImageFile(file);
+        const reader = new FileReader();
+        reader.onloadend = () => setImagePreview(reader.result as string);
+        reader.readAsDataURL(file);
+        setImageError(false);
+      }
     }
   };
 
@@ -570,7 +617,7 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
       {/* Tipo */}
       <div className="flex gap-2">
         {(['ligacao', 'reuniao'] as const).map(t => (
-          <button key={t} onClick={() => setTipo(t)}
+          <button key={t} onClick={() => handleSelectTipo(t)}
             className={`flex-1 py-2 rounded-xl text-xs font-bold transition-all ${tipo === t ? 'bg-brand-primary text-black' : 'bg-white/5 text-gray-400 hover:text-white'}`}
           >
             {t === 'ligacao' ? '📞 Ligação' : '🤝 Reunião'}
@@ -578,6 +625,13 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
         ))}
       </div>
 
+      {tipo === null && (
+        <div className="flex items-center justify-center h-16 text-gray-600 text-xs">
+          Selecione o tipo de atividade acima
+        </div>
+      )}
+
+      {tipo !== null && <>
       {/* Responsável pela atividade */}
       <div>
         <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">Responsável pela atividade <span className="text-red-400">*</span></label>
@@ -954,6 +1008,7 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
           Registrar
         </button>
       </div>
+      </>}
     </div>
   );
 }
@@ -2452,6 +2507,8 @@ export default function CRMView({ userSession, teamMembers, openLeadByName, onLe
   const [syncing, setSyncing] = useState(false);
   const [search, setSearch] = useState('');
   const [etapaSort, setEtapaSort] = useState<Record<string, 'newest' | 'oldest' | 'more_time' | 'less_time'>>({});
+  const LEADS_PER_PAGE = 20;
+  const [etapaVisible, setEtapaVisible] = useState<Record<string, number>>({});
   const [selectedLead, setSelectedLead] = useState<CRMLead | null>(null);
   const [showNewLead, setShowNewLead] = useState(false);
   const [filtroResponsavel, setFiltroResponsavel] = useState('');
@@ -2789,22 +2846,33 @@ export default function CRMView({ userSession, teamMembers, openLeadByName, onLe
                     </select>
                   </div>
                 </div>
-                <div className="min-h-[100px]">
-                  <AnimatePresence>
-                    {etapaLeads.map((lead, idx) => (
-                      <React.Fragment key={lead.id}>
-                        {idx > 0 && (
-                          <div className="flex justify-center py-1">
-                            <ChevronDown size={14} className="text-white/30" />
-                          </div>
+                <div className="space-y-2 min-h-[100px]">
+                  {(() => {
+                    const limit = etapaVisible[etapa.id] ?? LEADS_PER_PAGE;
+                    const visible = etapaLeads.slice(0, limit);
+                    const remaining = etapaLeads.length - limit;
+                    return (
+                      <>
+                        <AnimatePresence>
+                          {visible.map(lead => (
+                            <LeadCard key={lead.id} lead={lead}
+                              proximaTarefa={proximaTarefaByLead[lead.id] as CRMTarefa | undefined}
+                              onClick={() => setSelectedLead(lead)}
+                            />
+                          ))}
+                        </AnimatePresence>
+                        {remaining > 0 && (
+                          <button
+                            onClick={() => setEtapaVisible(prev => ({ ...prev, [etapa.id]: limit + LEADS_PER_PAGE }))}
+                            className="w-full flex items-center justify-center gap-1 py-2 rounded-xl bg-white/5 border border-white/10 text-[10px] text-gray-400 hover:text-white hover:border-white/20 transition-colors"
+                          >
+                            <ChevronDown size={12} />
+                            Ver mais {Math.min(remaining, LEADS_PER_PAGE)} de {remaining}
+                          </button>
                         )}
-                        <LeadCard lead={lead}
-                          proximaTarefa={proximaTarefaByLead[lead.id] as CRMTarefa | undefined}
-                          onClick={() => setSelectedLead(lead)}
-                        />
-                      </React.Fragment>
-                    ))}
-                  </AnimatePresence>
+                      </>
+                    );
+                  })()}
                   {etapaLeads.length === 0 && (
                     <div className="h-16 border border-dashed border-white/5 rounded-xl flex items-center justify-center">
                       <span className="text-[10px] text-gray-700">Vazio</span>
