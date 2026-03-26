@@ -371,3 +371,137 @@ export async function deleteDemand(id: string): Promise<void> {
   const { error } = await supabase.from('demands').delete().eq('id', id);
   if (error) throw error;
 }
+
+// ── CRM Clientes (multi-tenant) ──────────────────────────
+
+import type { CrmClientTenant, CrmClientPipeline, CrmClientStage, CrmClientLead, CrmClientLeadActivity, CrmClientTag } from '../types';
+
+// Mappers
+function dbToTenant(d: Record<string, unknown>): CrmClientTenant {
+  return { id: d.id as string, clientId: d.client_id as string, slug: d.slug as string, ativo: d.ativo as boolean, criadoEm: d.criado_em as string };
+}
+function dbToPipeline(d: Record<string, unknown>): CrmClientPipeline {
+  return { id: d.id as string, tenantId: d.tenant_id as string, nome: d.nome as string, criadoEm: d.criado_em as string };
+}
+function dbToStage(d: Record<string, unknown>): CrmClientStage {
+  return { id: d.id as string, pipelineId: d.pipeline_id as string, tenantId: d.tenant_id as string, nome: d.nome as string, ordem: d.ordem as number, cor: d.cor as string };
+}
+function dbToClientLead(d: Record<string, unknown>): CrmClientLead {
+  return {
+    id: d.id as string, tenantId: d.tenant_id as string, stageId: d.stage_id as string,
+    nome: d.nome as string, telefone: (d.telefone ?? '') as string, email: (d.email ?? '') as string,
+    segmento: (d.segmento ?? '') as string, ticketEstimado: +(d.ticket_estimado ?? 0),
+    responsavel: (d.responsavel ?? '') as string,
+    etiquetas: Array.isArray(d.etiquetas) ? d.etiquetas as string[] : [],
+    observacoes: (d.observacoes ?? '') as string,
+    criadoEm: d.criado_em as string, atualizadoEm: d.atualizado_em as string,
+  };
+}
+function clientLeadToDb(l: CrmClientLead): Record<string, unknown> {
+  return {
+    id: l.id, tenant_id: l.tenantId, stage_id: l.stageId, nome: l.nome,
+    telefone: l.telefone, email: l.email, segmento: l.segmento,
+    ticket_estimado: l.ticketEstimado, responsavel: l.responsavel,
+    etiquetas: l.etiquetas, observacoes: l.observacoes, atualizado_em: new Date().toISOString(),
+  };
+}
+function dbToActivity(d: Record<string, unknown>): CrmClientLeadActivity {
+  return { id: d.id as string, leadId: d.lead_id as string, tenantId: d.tenant_id as string, tipo: d.tipo as string, conteudo: d.conteudo as string, autor: d.autor as string, criadoEm: d.criado_em as string };
+}
+function dbToTag(d: Record<string, unknown>): CrmClientTag {
+  return { id: d.id as string, tenantId: d.tenant_id as string, nome: d.nome as string, cor: d.cor as string };
+}
+
+// ── Tenant ──
+export async function getTenantByClientId(clientId: string): Promise<CrmClientTenant | null> {
+  const { data, error } = await supabase.from('crm_client_tenants').select('*').eq('client_id', clientId).maybeSingle();
+  if (error) throw error;
+  return data ? dbToTenant(data as Record<string, unknown>) : null;
+}
+export async function getAllTenants(): Promise<CrmClientTenant[]> {
+  const { data, error } = await supabase.from('crm_client_tenants').select('*').eq('ativo', true).order('criado_em', { ascending: false });
+  if (error) throw error;
+  return (data ?? []).map((r) => dbToTenant(r as Record<string, unknown>));
+}
+
+// ── Ativar CRM (cria tenant + pipeline + stages padrão) ──
+const DEFAULT_STAGES = [
+  { nome: 'Novo', ordem: 0, cor: '#00FF88' },
+  { nome: 'Contato', ordem: 1, cor: '#3B82F6' },
+  { nome: 'Qualificado', ordem: 2, cor: '#8B5CF6' },
+  { nome: 'Proposta', ordem: 3, cor: '#F59E0B' },
+  { nome: 'Negociação', ordem: 4, cor: '#EC4899' },
+  { nome: 'Fechado', ordem: 5, cor: '#10B981' },
+  { nome: 'Perdido', ordem: 6, cor: '#EF4444' },
+];
+
+export async function activateCrmForClient(clientId: string, clientName: string): Promise<CrmClientTenant> {
+  const slug = clientName.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/-+$/, '');
+  // 1. Criar tenant
+  const { data: tenant, error: e1 } = await supabase.from('crm_client_tenants').insert({ client_id: clientId, slug }).select().single();
+  if (e1) throw e1;
+  const tenantId = tenant.id;
+  // 2. Criar pipeline
+  const { data: pipeline, error: e2 } = await supabase.from('crm_client_pipelines').insert({ tenant_id: tenantId, nome: 'Pipeline Principal' }).select().single();
+  if (e2) throw e2;
+  // 3. Criar stages padrão
+  const stagesData = DEFAULT_STAGES.map(s => ({ ...s, pipeline_id: pipeline.id, tenant_id: tenantId }));
+  const { error: e3 } = await supabase.from('crm_client_stages').insert(stagesData);
+  if (e3) throw e3;
+  return dbToTenant(tenant as Record<string, unknown>);
+}
+
+// ── Pipeline & Stages ──
+export async function getStagesByTenant(tenantId: string): Promise<CrmClientStage[]> {
+  const { data, error } = await supabase.from('crm_client_stages').select('*').eq('tenant_id', tenantId).order('ordem');
+  if (error) throw error;
+  return (data ?? []).map((r) => dbToStage(r as Record<string, unknown>));
+}
+
+// ── Leads ──
+export async function getClientLeads(tenantId: string): Promise<CrmClientLead[]> {
+  const { data, error } = await supabase.from('crm_client_leads').select('*').eq('tenant_id', tenantId).order('criado_em', { ascending: false });
+  if (error) throw error;
+  return (data ?? []).map((r) => dbToClientLead(r as Record<string, unknown>));
+}
+export async function createClientLead(lead: Omit<CrmClientLead, 'id' | 'criadoEm' | 'atualizadoEm'>): Promise<CrmClientLead> {
+  const { data, error } = await supabase.from('crm_client_leads').insert({
+    tenant_id: lead.tenantId, stage_id: lead.stageId, nome: lead.nome,
+    telefone: lead.telefone, email: lead.email, segmento: lead.segmento,
+    ticket_estimado: lead.ticketEstimado, responsavel: lead.responsavel,
+    etiquetas: lead.etiquetas, observacoes: lead.observacoes,
+  }).select().single();
+  if (error) throw error;
+  return dbToClientLead(data as Record<string, unknown>);
+}
+export async function updateClientLead(lead: CrmClientLead): Promise<CrmClientLead> {
+  const { id, ...dbData } = clientLeadToDb(lead);
+  const { data, error } = await supabase.from('crm_client_leads').update(dbData).eq('id', lead.id).select().single();
+  if (error) throw error;
+  return dbToClientLead(data as Record<string, unknown>);
+}
+export async function deleteClientLead(id: string): Promise<void> {
+  const { error } = await supabase.from('crm_client_leads').delete().eq('id', id);
+  if (error) throw error;
+}
+
+// ── Activities ──
+export async function getLeadActivities(leadId: string): Promise<CrmClientLeadActivity[]> {
+  const { data, error } = await supabase.from('crm_client_lead_activities').select('*').eq('lead_id', leadId).order('criado_em', { ascending: false });
+  if (error) throw error;
+  return (data ?? []).map((r) => dbToActivity(r as Record<string, unknown>));
+}
+export async function createLeadActivity(a: Omit<CrmClientLeadActivity, 'id' | 'criadoEm'>): Promise<CrmClientLeadActivity> {
+  const { data, error } = await supabase.from('crm_client_lead_activities').insert({
+    lead_id: a.leadId, tenant_id: a.tenantId, tipo: a.tipo, conteudo: a.conteudo, autor: a.autor,
+  }).select().single();
+  if (error) throw error;
+  return dbToActivity(data as Record<string, unknown>);
+}
+
+// ── Tags ──
+export async function getClientCrmTags(tenantId: string): Promise<CrmClientTag[]> {
+  const { data, error } = await supabase.from('crm_client_tags').select('*').eq('tenant_id', tenantId);
+  if (error) throw error;
+  return (data ?? []).map((r) => dbToTag(r as Record<string, unknown>));
+}

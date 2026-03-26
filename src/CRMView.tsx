@@ -57,6 +57,7 @@ interface CRMLead {
   lead_externo_id?: string;
   nome: string;
   telefone?: string;
+  email?: string;
   empresa?: string;
   faturamento?: string;
   area?: string;
@@ -328,7 +329,7 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
       if ((resultado === 'Marcou R2+' || resultado === 'Reagendou') && !proximaReuniao) { setValidationMsg('Preencha a data da próxima reunião'); return; }
     }
 
-    if (!descricao.trim()) { setValidationMsg('Preencha as observações sobre a atividade'); return; }
+    if (tipo !== 'reuniao' && !(tipo === 'ligacao' && agendou) && !descricao.trim()) { setValidationMsg('Preencha as observações sobre a atividade'); return; }
 
     setSaving(true);
     const now = new Date().toISOString();
@@ -428,6 +429,7 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
             },
           };
           const webhookBase = import.meta.env.VITE_WEBHOOK_BASE?.replace('/webhook/dashboard', '') ?? 'https://webhook.m2black.com';
+          console.log('[BANT webhook] lead_externo_id:', leadObj?.lead_externo_id, 'lead.id:', leadId);
           fetch(`${webhookBase}/webhook/agendar-reuniao`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -547,6 +549,27 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
               }),
             }).catch(e => console.warn('Webhook venda-fechada (CORS em dev):', e.message));
           } catch (e) { console.warn('Webhook venda-fechada:', e); }
+
+          // Sync financeiro venda → Railway (fire-and-forget)
+          if (leadObj?.lead_externo_id) {
+            try {
+              const webhookBase = import.meta.env.VITE_WEBHOOK_BASE?.replace('/webhook/dashboard', '') ?? 'https://webhook.m2black.com';
+              fetch(`${webhookBase}/webhook/sync-financeiro-crm`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  lead_id: leadObj.lead_externo_id,
+                  Data_Venda: new Date().toISOString().split('T')[0],
+                  Data_Reuniao_Realizada: new Date().toISOString().split('T')[0],
+                  programa: leadObj.programa_apresentado || null,
+                  rs_contrato: valorContrato ? parseFloat(valorContrato) : null,
+                  rs_cc: valorCc ? parseFloat(valorCc) : null,
+                  mrr_adicionado: prazoMeses && valorContrato ? parseFloat(valorContrato) / parseInt(prazoMeses) : null,
+                  closer: responsavelAtividade || leadObj.responsavel || null,
+                }),
+              }).catch(() => {});
+            } catch { /* silent */ }
+          }
         } else if (resultado === 'Perdido') {
           await supabase.from('crm_leads').update({
             etapa: 'perdido', status: 'perdido',
@@ -986,10 +1009,12 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
         </>
       )}
 
-      <textarea value={descricao} onChange={e => setDescricao(e.target.value)} rows={2}
-        placeholder="Observações sobre a atividade..."
-        className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm text-gray-300 focus:outline-none focus:border-brand-primary resize-none"
-      />
+      {tipo !== 'reuniao' && !(tipo === 'ligacao' && agendou) && (
+        <textarea value={descricao} onChange={e => setDescricao(e.target.value)} rows={2}
+          placeholder="Observações sobre a atividade..."
+          className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm text-gray-300 focus:outline-none focus:border-brand-primary resize-none"
+        />
+      )}
 
       {/* Upload de print */}
       <div>
@@ -1079,12 +1104,14 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
   const [arSuccess, setArSuccess] = useState(false);
 
   const handleAgendarReuniao = async () => {
+    console.log('[handleAgendarReuniao] lead.lead_externo_id:', lead.lead_externo_id);
     if (!arDataHora || !arCloser) return;
     setArSaving(true);
     try {
       const payload = {
         lead_nome: lead.nome,
         lead_telefone: lead.telefone ?? '',
+        lead_externo_id: lead.lead_externo_id ?? lead.id,
         closer: arCloser,
         tipo_reuniao: arTipo,
         data_hora: new Date(arDataHora).toISOString(),
@@ -1097,7 +1124,7 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
           autoridade: arAutoridade,
           necessidade: arNecessidade,
           timing: arTiming,
-          sdr: arSdr,
+          sdr: arSdr || lead.responsavel || '',
           observacoes: arObs,
         },
       };
@@ -1184,6 +1211,49 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
     };
     if (etapa !== lead.etapa) upd.etapa_desde = new Date().toISOString();
     await onSave(upd);
+
+    // Sync financeiro → Railway via n8n (fire-and-forget)
+    const finChanged = (valorContrato !== '' && valorContrato !== (lead.valor_contrato ?? ''))
+      || (valorCc !== '' && valorCc !== (lead.valor_cc ?? ''))
+      || (valorMrr !== '' && valorMrr !== (lead.valor_mrr ?? ''))
+      || (programaApresentado && programaApresentado !== (lead.programa_apresentado ?? ''));
+    if (lead.lead_externo_id && finChanged) {
+      try {
+        const webhookBase = import.meta.env.VITE_WEBHOOK_BASE?.replace('/webhook/dashboard', '') ?? 'https://webhook.m2black.com';
+        fetch(`${webhookBase}/webhook/sync-financeiro-crm`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            lead_id: lead.lead_externo_id,
+            Data_Reuniao_Marcada: lead.proxima_reuniao ?? null,
+            Data_Venda: null,
+            programa: programaApresentado || null,
+            rs_contrato: valorContrato !== '' ? valorContrato : null,
+            rs_cc: valorCc !== '' ? valorCc : null,
+            tempo_contrato: valorMrr && valorContrato ? (Number(valorContrato) / Number(valorMrr)).toFixed(0) : null,
+            mrr_adicionado: valorMrr !== '' ? valorMrr : null,
+            closer: responsavel || null,
+            sdr: null,
+          }),
+        }).catch(() => {});
+      } catch { /* silent */ }
+    }
+
+    // Sync mudança de etapa → Railway via n8n (fire-and-forget)
+    if (lead.lead_externo_id && etapa !== lead.etapa) {
+      try {
+        const webhookBase = import.meta.env.VITE_WEBHOOK_BASE?.replace('/webhook/dashboard', '') ?? 'https://webhook.m2black.com';
+        const etapaPayload: Record<string, any> = { lead_id: lead.lead_externo_id, closer: responsavel || null };
+        if (etapa === 'rm_marcada') etapaPayload.Data_Reuniao_Marcada = new Date().toISOString().split('T')[0];
+        if (etapa === 'rm_realizada') etapaPayload.Data_Reuniao_Realizada = new Date().toISOString().split('T')[0];
+        fetch(`${webhookBase}/webhook/sync-financeiro-crm`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(etapaPayload),
+        }).catch(() => {});
+      } catch { /* silent */ }
+    }
+
     setSaving(false);
   };
 
@@ -1394,6 +1464,29 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
     if (leadUpd.valor_contrato != null) setValorContrato(leadUpd.valor_contrato);
     if (leadUpd.valor_cc != null) setValorCc(leadUpd.valor_cc);
     if (leadUpd.valor_mrr != null) setValorMrr(leadUpd.valor_mrr);
+
+    // 6. Sync financeiro → Railway (fire-and-forget)
+    if (lead.lead_externo_id) {
+      try {
+        const webhookBase = import.meta.env.VITE_WEBHOOK_BASE?.replace('/webhook/dashboard', '') ?? 'https://webhook.m2black.com';
+        fetch(`${webhookBase}/webhook/sync-financeiro-crm`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            lead_id: lead.lead_externo_id,
+            Data_Reuniao_Realizada: rrStatusReuniao === 'Compareceu' ? new Date().toISOString().split('T')[0] : null,
+            Status_TP: rrStatusReuniao === 'Não compareceu' ? 'No-show' : null,
+            Data_TP: rrStatusReuniao === 'Compareceu' ? new Date().toISOString().split('T')[0] : null,
+            programa: programaApresentado || null,
+            rs_contrato: rrValorContrato || null,
+            rs_cc: rrValorCc || null,
+            mrr_adicionado: computedMrr || null,
+            closer: responsavel || null,
+          }),
+        }).catch(() => {});
+      } catch { /* silent */ }
+    }
+
     setReuniaoRealizada(false);
     setRrSaving(false);
     setTab('timeline');
@@ -2516,9 +2609,49 @@ export default function CRMView({ userSession, teamMembers, openLeadByName, onLe
   };
 
   const handleNewLead = async (lead: Partial<CRMLead>) => {
-    const { data, error } = await supabase.from('crm_leads').insert({ ...lead, created_at: new Date().toISOString(), updated_at: new Date().toISOString() }).select().single();
+    const { data, error } = await supabase
+      .from('crm_leads')
+      .insert({ ...lead, created_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+      .select()
+      .single();
     if (error) { console.error(error); return; }
-    if (data) setLeads(prev => [data, ...prev]);
+
+    // Registra lead no Railway e obtém lead_externo_id
+    let leadFinal = data;
+    if (data) {
+      try {
+        const webhookBase = import.meta.env.VITE_WEBHOOK_BASE?.replace('/webhook/dashboard', '')
+          ?? 'https://webhook.m2black.com';
+        console.log('[criar-lead-manual] payload:', JSON.stringify({nome: lead.nome, telefone: lead.telefone, responsavel: lead.responsavel}));
+        const res = await fetch(`${webhookBase}/webhook/criar-lead-manual`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            nome: lead.nome,
+            email: lead.email ?? '',
+            telefone: lead.telefone ?? '',
+            area: lead.area ?? '',
+            faturamento: lead.faturamento ?? '',
+            responsavel: lead.responsavel ?? '',
+          }),
+        });
+        if (res.ok) {
+          const json = await res.json();
+          console.log('[criar-lead-manual] resposta:', json);
+          if (json.lead_externo_id) {
+            await supabase
+              .from('crm_leads')
+              .update({ lead_externo_id: String(json.lead_externo_id) })
+              .eq('id', data.id);
+            leadFinal = { ...data, lead_externo_id: String(json.lead_externo_id) };
+          }
+        }
+      } catch (e) {
+        console.warn('Não foi possível registrar lead no Railway:', e);
+      }
+      setLeads(prev => [leadFinal, ...prev]);
+      console.log('[handleNewLead] leadFinal.lead_externo_id:', leadFinal.lead_externo_id);
+    }
   };
 
   const proximaTarefaByLead = Object.fromEntries(

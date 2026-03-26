@@ -157,6 +157,65 @@ export type ComercialTask = {
   createdAt: string;
 };
 
+// ── CRM Clientes (multi-tenant) ──────────────────────────
+
+export type CrmClientTenant = {
+  id: string;
+  clientId: string;
+  slug: string;
+  ativo: boolean;
+  criadoEm: string;
+};
+
+export type CrmClientPipeline = {
+  id: string;
+  tenantId: string;
+  nome: string;
+  criadoEm: string;
+};
+
+export type CrmClientStage = {
+  id: string;
+  pipelineId: string;
+  tenantId: string;
+  nome: string;
+  ordem: number;
+  cor: string;
+};
+
+export type CrmClientLead = {
+  id: string;
+  tenantId: string;
+  stageId: string;
+  nome: string;
+  telefone: string;
+  email: string;
+  segmento: string;
+  ticketEstimado: number;
+  responsavel: string;
+  etiquetas: string[];
+  observacoes: string;
+  criadoEm: string;
+  atualizadoEm: string;
+};
+
+export type CrmClientLeadActivity = {
+  id: string;
+  leadId: string;
+  tenantId: string;
+  tipo: string;
+  conteudo: string;
+  autor: string;
+  criadoEm: string;
+};
+
+export type CrmClientTag = {
+  id: string;
+  tenantId: string;
+  nome: string;
+  cor: string;
+};
+
 export type Demand = {
   id: string;
   clientId: string;
