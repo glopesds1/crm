@@ -1103,6 +1103,7 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
   const [arSuccess, setArSuccess] = useState(false);
 
   const handleAgendarReuniao = async () => {
+    console.log('[handleAgendarReuniao] lead.lead_externo_id:', lead.lead_externo_id);
     if (!arDataHora || !arCloser) return;
     setArSaving(true);
     try {
@@ -2648,6 +2649,7 @@ export default function CRMView({ userSession, teamMembers, openLeadByName, onLe
         console.warn('Não foi possível registrar lead no Railway:', e);
       }
       setLeads(prev => [leadFinal, ...prev]);
+      console.log('[handleNewLead] leadFinal.lead_externo_id:', leadFinal.lead_externo_id);
     }
   };
 
