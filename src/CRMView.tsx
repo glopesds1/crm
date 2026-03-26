@@ -2606,9 +2606,46 @@ export default function CRMView({ userSession, teamMembers, openLeadByName, onLe
   };
 
   const handleNewLead = async (lead: Partial<CRMLead>) => {
-    const { data, error } = await supabase.from('crm_leads').insert({ ...lead, created_at: new Date().toISOString(), updated_at: new Date().toISOString() }).select().single();
+    const { data, error } = await supabase
+      .from('crm_leads')
+      .insert({ ...lead, created_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+      .select()
+      .single();
     if (error) { console.error(error); return; }
-    if (data) setLeads(prev => [data, ...prev]);
+
+    // Registra lead no Railway e obtém lead_externo_id
+    let leadFinal = data;
+    if (data) {
+      try {
+        const webhookBase = import.meta.env.VITE_WEBHOOK_BASE?.replace('/webhook/dashboard', '')
+          ?? 'https://webhook.m2black.com';
+        const res = await fetch(`${webhookBase}/webhook/criar-lead-manual`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            nome: lead.nome,
+            email: (lead as any).email ?? '',
+            telefone: lead.telefone ?? '',
+            area: lead.area ?? '',
+            faturamento: lead.faturamento ?? '',
+            responsavel: lead.responsavel ?? '',
+          }),
+        });
+        if (res.ok) {
+          const json = await res.json();
+          if (json.lead_externo_id) {
+            await supabase
+              .from('crm_leads')
+              .update({ lead_externo_id: json.lead_externo_id })
+              .eq('id', data.id);
+            leadFinal = { ...data, lead_externo_id: json.lead_externo_id };
+          }
+        }
+      } catch (e) {
+        console.warn('Não foi possível registrar lead no Railway:', e);
+      }
+      setLeads(prev => [leadFinal, ...prev]);
+    }
   };
 
   const proximaTarefaByLead = Object.fromEntries(
