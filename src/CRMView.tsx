@@ -277,12 +277,41 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
     }
   };
 
+  const [validationMsg, setValidationMsg] = useState('');
+
   const handleSave = async () => {
-    if (resultado === 'Perdido' && !motivoPerda.trim()) { setErroMotivo(true); return; }
+    setValidationMsg('');
     // Print obrigatório para todas as atividades
     if (!imageFile) { setImageError(true); return; }
-    // Validar campos obrigatórios do agendamento BANT
-    if (tipo === 'ligacao' && statusChamada === 'Atendeu' && agendou && (!bantDataHora || !bantCloser || !bantSdr)) return;
+    if (!responsavelAtividade) { setValidationMsg('Selecione o responsável pela atividade'); return; }
+
+    if (tipo === 'ligacao') {
+      if (!statusChamada) { setValidationMsg('Selecione se atendeu ou não'); return; }
+      if (statusChamada === 'Atendeu') {
+        if (!touchpoint) { setValidationMsg('Preencha o touchpoint'); return; }
+        if (agendou) {
+          if (!bantDataHora) { setValidationMsg('Preencha a data/hora da reunião'); return; }
+          if (!bantCloser) { setValidationMsg('Selecione o closer responsável'); return; }
+          if (!bantSdr) { setValidationMsg('Selecione o SDR responsável'); return; }
+          if (!bantFaturamento) { setValidationMsg('Preencha o faturamento (BANT)'); return; }
+          if (!bantBudget) { setValidationMsg('Preencha o budget (BANT)'); return; }
+          if (!bantMomento) { setValidationMsg('Selecione o momento do negócio (BANT)'); return; }
+          if (!bantCaptacao) { setValidationMsg('Selecione como capta clientes (BANT)'); return; }
+          if (!bantAutoridade) { setValidationMsg('Selecione a autoridade (BANT)'); return; }
+          if (!bantNecessidade) { setValidationMsg('Selecione a necessidade/dor (BANT)'); return; }
+          if (!bantTiming) { setValidationMsg('Selecione o timing/urgência (BANT)'); return; }
+        }
+      }
+      if (statusChamada === 'Não atendeu' && !motivoNaoAtendeu) { setValidationMsg('Selecione o motivo'); return; }
+    }
+
+    if (tipo === 'reuniao') {
+      if (!statusReuniao) { setValidationMsg('Selecione se compareceu ou não'); return; }
+      if (!resultado) { setValidationMsg('Selecione o resultado da reunião'); return; }
+      if (resultado === 'Perdido' && !motivoPerda.trim()) { setErroMotivo(true); return; }
+      if ((resultado === 'Marcou R2+' || resultado === 'Reagendou') && !proximaReuniao) { setValidationMsg('Preencha a data da próxima reunião'); return; }
+    }
+
     setSaving(true);
     const now = new Date().toISOString();
 
@@ -963,6 +992,7 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
         )}
       </div>
 
+      {validationMsg && <p className="text-[10px] text-red-400 text-center">{validationMsg}</p>}
       <div className="flex gap-2">
         <button onClick={onCancel} className="flex-1 py-2 rounded-xl bg-white/5 text-xs text-gray-400 hover:text-white transition-colors">Cancelar</button>
         <button onClick={handleSave} disabled={saving}
@@ -1907,7 +1937,7 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
                     />
                   </div>
                   <div>
-                    <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">Responsável</label>
+                    <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">Responsável <span className="text-red-400">*</span></label>
                     <select value={agResponsavel} onChange={e => setAgResponsavel(e.target.value)}
                       className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-1.5 text-sm text-white focus:outline-none focus:border-brand-primary appearance-none"
                     >
@@ -1921,7 +1951,7 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
                     <button onClick={() => { setShowAgendarTarefa(false); setAgTipo(null); }}
                       className="flex-1 py-1.5 rounded-xl bg-white/5 border border-white/10 text-xs text-gray-400 hover:text-white transition-colors cursor-pointer"
                     >Cancelar</button>
-                    <button onClick={handleAgendarTarefa} disabled={agSaving || !agTitulo.trim() || !agData || !agTipo}
+                    <button onClick={handleAgendarTarefa} disabled={agSaving || !agTitulo.trim() || !agData || !agTipo || !agResponsavel}
                       className="flex-1 py-1.5 rounded-xl bg-brand-primary text-black text-xs font-bold hover:bg-brand-primary/80 disabled:opacity-40 transition-colors flex items-center justify-center gap-2 cursor-pointer"
                     >
                       {agSaving && <Loader2 size={12} className="animate-spin" />}
