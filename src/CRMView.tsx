@@ -57,6 +57,7 @@ interface CRMLead {
   lead_externo_id?: string;
   nome: string;
   telefone?: string;
+  email?: string;
   empresa?: string;
   faturamento?: string;
   area?: string;
@@ -2624,7 +2625,7 @@ export default function CRMView({ userSession, teamMembers, openLeadByName, onLe
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             nome: lead.nome,
-            email: (lead as any).email ?? '',
+            email: lead.email ?? '',
             telefone: lead.telefone ?? '',
             area: lead.area ?? '',
             faturamento: lead.faturamento ?? '',
@@ -2636,9 +2637,9 @@ export default function CRMView({ userSession, teamMembers, openLeadByName, onLe
           if (json.lead_externo_id) {
             await supabase
               .from('crm_leads')
-              .update({ lead_externo_id: json.lead_externo_id })
+              .update({ lead_externo_id: String(json.lead_externo_id) })
               .eq('id', data.id);
-            leadFinal = { ...data, lead_externo_id: json.lead_externo_id };
+            leadFinal = { ...data, lead_externo_id: String(json.lead_externo_id) };
           }
         }
       } catch (e) {
