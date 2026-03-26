@@ -193,12 +193,12 @@ function LeadCard({ lead, proximaTarefa, onClick }: { key?: React.Key; lead: CRM
 }
 
 // ── Nova Atividade Form ────────────────────────────────────────
-function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSaved, onCancel, onLeadUpdated, onClientCreated, onTarefaCreated, teamMembers = [] }: {
+function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSaved, onCancel, onLeadUpdated, onClientCreated, onTarefaCreated, teamMembers = [], initialTipo }: {
   lead?: CRMLead; leadId: string; leadName: string; userSession: any; onSaved: (a: CRMAtividade) => void; onCancel: () => void; onLeadUpdated?: (upd: Partial<CRMLead>) => void; onClientCreated?: () => void;
-  onTarefaCreated?: (tarefa: CRMTarefa) => void; teamMembers?: TeamMember[];
+  onTarefaCreated?: (tarefa: CRMTarefa) => void; teamMembers?: TeamMember[]; initialTipo?: 'ligacao' | 'reuniao';
 }) {
   const [responsavelAtividade, setResponsavelAtividade] = useState(leadObj?.responsavel ?? userSession?.name ?? '');
-  const [tipo, setTipo] = useState<'ligacao' | 'reuniao' | null>(null);
+  const [tipo, setTipo] = useState<'ligacao' | 'reuniao' | null>(initialTipo ?? null);
   const [statusChamada, setStatusChamada] = useState<'Atendeu' | 'Não atendeu' | null>(null);
   const [touchpoint, setTouchpoint] = useState('');
   const [agendou, setAgendou] = useState(false);
@@ -1000,6 +1000,8 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
   const [atividades, setAtividades] = useState<CRMAtividade[]>([]);
   const [tarefas, setTarefas] = useState<CRMTarefa[]>([]);
   const [showAtivForm, setShowAtivForm] = useState(false);
+  const [ativFormTipo, setAtivFormTipo] = useState<'ligacao' | 'reuniao' | undefined>(undefined);
+  const [concluindoTarefaViaAtiv, setConcluindoTarefaViaAtiv] = useState<string | null>(null);
   const [showAgendarTarefa, setShowAgendarTarefa] = useState(false);
   const [agTitulo, setAgTitulo] = useState('');
   const [agData, setAgData] = useState('');
@@ -1133,9 +1135,15 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
     setSaving(false);
   };
 
-  const handleAtivSaved = (a: CRMAtividade) => {
+  const handleAtivSaved = async (a: CRMAtividade) => {
     setAtividades(prev => [a, ...prev]);
+    if (concluindoTarefaViaAtiv) {
+      await supabase.from('crm_tarefas').update({ concluida: true }).eq('id', concluindoTarefaViaAtiv);
+      setTarefas(prev => prev.map(t => t.id === concluindoTarefaViaAtiv ? { ...t, concluida: true } : t));
+      setConcluindoTarefaViaAtiv(null);
+    }
     setShowAtivForm(false);
+    setAtivFormTipo(undefined);
     setTab('timeline');
   };
 
@@ -1851,7 +1859,7 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
             {/* Nova Atividade + Agendar Reunião + Agendar Tarefa inline */}
             <div className="border-t border-white/5 pt-3">
               {showAtivForm ? (
-                <NovaAtividadeForm lead={lead} leadId={lead.id} leadName={lead.nome} userSession={userSession} teamMembers={teamMembers} onSaved={handleAtivSaved} onCancel={() => setShowAtivForm(false)} onLeadUpdated={handleLeadUpdated} onClientCreated={onClientCreated} onTarefaCreated={onTarefaCreated} />
+                <NovaAtividadeForm lead={lead} leadId={lead.id} leadName={lead.nome} userSession={userSession} teamMembers={teamMembers} onSaved={handleAtivSaved} onCancel={() => { setShowAtivForm(false); setAtivFormTipo(undefined); setConcluindoTarefaViaAtiv(null); }} onLeadUpdated={handleLeadUpdated} onClientCreated={onClientCreated} onTarefaCreated={onTarefaCreated} initialTipo={ativFormTipo} />
               ) : showAgendarReuniao ? (
                 <div className="space-y-3 bg-white/[0.02] border border-yellow-500/20 rounded-xl p-4">
                   <p className="text-[9px] font-bold uppercase tracking-widest text-yellow-400">Agendar Reunião</p>
@@ -2001,7 +2009,7 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
               ) : (
                 <div className="flex gap-2">
                   <div className="flex-1">
-                    <button onClick={() => { setShowAtivForm(true); setTab('timeline'); }}
+                    <button onClick={() => { setShowAtivForm(true); setAtivFormTipo(undefined); setConcluindoTarefaViaAtiv(null); setTab('timeline'); }}
                       className="w-full py-2 rounded-xl border border-dashed border-white/15 text-xs text-gray-500 hover:text-brand-primary hover:border-brand-primary/40 transition-all flex items-center justify-center gap-2"
                     >
                       <Plus size={13} /> Registrar atividade
@@ -2031,12 +2039,12 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
           {/* ── TAB: TIMELINE ─────────────── */}
           {tab === 'timeline' && (
             <div className="space-y-3">
-              <button onClick={() => setShowAtivForm(!showAtivForm)}
+              <button onClick={() => { setShowAtivForm(!showAtivForm); if (!showAtivForm) { setAtivFormTipo(undefined); setConcluindoTarefaViaAtiv(null); } }}
                 className="w-full py-2 rounded-xl bg-brand-primary/10 border border-brand-primary/30 text-xs text-brand-primary hover:bg-brand-primary/20 transition-all flex items-center justify-center gap-2"
               >
                 <Plus size={13} /> Registrar atividade
               </button>
-              {showAtivForm && <NovaAtividadeForm lead={lead} leadId={lead.id} leadName={lead.nome} userSession={userSession} teamMembers={teamMembers} onSaved={handleAtivSaved} onCancel={() => setShowAtivForm(false)} onLeadUpdated={handleLeadUpdated} onClientCreated={onClientCreated} onTarefaCreated={onTarefaCreated} />}
+              {showAtivForm && <NovaAtividadeForm lead={lead} leadId={lead.id} leadName={lead.nome} userSession={userSession} teamMembers={teamMembers} onSaved={handleAtivSaved} onCancel={() => { setShowAtivForm(false); setAtivFormTipo(undefined); setConcluindoTarefaViaAtiv(null); }} onLeadUpdated={handleLeadUpdated} onClientCreated={onClientCreated} onTarefaCreated={onTarefaCreated} initialTipo={ativFormTipo} />}
               {atividades.length === 0 && !showAtivForm && (
                 <div className="py-12 text-center text-xs text-gray-600">Nenhuma atividade registrada ainda.</div>
               )}
@@ -2130,12 +2138,19 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
                       {t.data_agendada && <p className="text-[10px] text-gray-500 mt-0.5">{fmtDateSP(t.data_agendada, { year: true })}</p>}
                       {t.responsavel && <p className="text-[9px] text-gray-700">{t.responsavel}</p>}
                     </div>
-                    {!t.concluida && concluindoTarefa !== t.id && reagendandoTarefa !== t.id && (
+                    {!t.concluida && reagendandoTarefa !== t.id && (
                       <div className="flex items-center gap-2">
                         <button onClick={() => { setReagendandoTarefa(t.id); setReagendarData(''); setConcluindoTarefa(null); }}
                           className="text-[10px] font-bold text-yellow-400 hover:text-white transition-colors cursor-pointer whitespace-nowrap"
                         >Reagendar</button>
-                        <button onClick={() => { setConcluindoTarefa(t.id); setTarefaImageFile(null); setTarefaImagePreview(null); setReagendandoTarefa(null); }}
+                        <button onClick={() => {
+                          const isReuniao = t.titulo.startsWith('R1') || t.titulo.startsWith('R2') || t.titulo.toLowerCase().includes('reunião');
+                          setConcluindoTarefaViaAtiv(t.id);
+                          setAtivFormTipo(isReuniao ? 'reuniao' : 'ligacao');
+                          setShowAtivForm(true);
+                          setTab('timeline');
+                          setReagendandoTarefa(null);
+                        }}
                           className="text-[10px] font-bold text-brand-primary hover:text-white transition-colors cursor-pointer whitespace-nowrap"
                         >Concluir</button>
                       </div>
@@ -2155,35 +2170,6 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
                           {reagendarSaving ? <Loader2 size={12} className="animate-spin" /> : <Calendar size={12} />} Confirmar
                         </button>
                         <button onClick={() => { setReagendandoTarefa(null); setReagendarData(''); }}
-                          className="py-2 px-3 rounded-lg bg-white/5 border border-white/10 text-[11px] font-bold text-gray-400 hover:text-white transition-colors cursor-pointer"
-                        >Cancelar</button>
-                      </div>
-                    </div>
-                  )}
-                  {/* Painel de conclusão com upload de print */}
-                  {concluindoTarefa === t.id && !t.concluida && (
-                    <div className="px-3 pb-3 space-y-2 border-t border-white/5 pt-2 mx-3">
-                      {!tarefaImagePreview ? (
-                        <button onClick={() => tarefaFileRef.current?.click()}
-                          className="w-full py-2 rounded-lg border border-dashed border-brand-primary/30 text-[11px] font-bold text-brand-primary hover:bg-brand-primary/5 transition-colors flex items-center justify-center gap-2 cursor-pointer"
-                        >
-                          <Plus size={12} /> Anexar print da tarefa
-                        </button>
-                      ) : (
-                        <div className="relative">
-                          <img src={tarefaImagePreview} alt="Print" className="w-full max-h-28 object-cover rounded-lg border border-white/10" />
-                          <button onClick={() => { setTarefaImageFile(null); setTarefaImagePreview(null); if (tarefaFileRef.current) tarefaFileRef.current.value = ''; }}
-                            className="absolute top-1 right-1 p-0.5 rounded-full bg-black/70 text-white hover:bg-red-500/80 transition-colors cursor-pointer"
-                          ><X size={10} /></button>
-                        </div>
-                      )}
-                      <div className="flex gap-2">
-                        <button onClick={() => concluirTarefa(t)} disabled={!tarefaImageFile || tarefaUploading}
-                          className={`flex-1 py-2 rounded-lg text-[11px] font-bold transition-colors flex items-center justify-center gap-1.5 ${tarefaImageFile ? 'bg-green-500/10 border border-green-500/30 text-green-400 hover:bg-green-500/20 cursor-pointer' : 'bg-white/3 border border-white/10 text-gray-600 cursor-not-allowed'}`}
-                        >
-                          {tarefaUploading ? <Loader2 size={12} className="animate-spin" /> : <CheckCircle2 size={12} />} Confirmar
-                        </button>
-                        <button onClick={() => { setConcluindoTarefa(null); setTarefaImageFile(null); setTarefaImagePreview(null); }}
                           className="py-2 px-3 rounded-lg bg-white/5 border border-white/10 text-[11px] font-bold text-gray-400 hover:text-white transition-colors cursor-pointer"
                         >Cancelar</button>
                       </div>
