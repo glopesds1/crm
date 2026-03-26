@@ -547,6 +547,27 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
               }),
             }).catch(e => console.warn('Webhook venda-fechada (CORS em dev):', e.message));
           } catch (e) { console.warn('Webhook venda-fechada:', e); }
+
+          // Sync financeiro venda → Railway (fire-and-forget)
+          if (leadObj?.lead_externo_id) {
+            try {
+              const webhookBase = import.meta.env.VITE_WEBHOOK_BASE?.replace('/webhook/dashboard', '') ?? 'https://webhook.m2black.com';
+              fetch(`${webhookBase}/webhook/sync-financeiro-crm`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  lead_id: leadObj.lead_externo_id,
+                  Data_Venda: new Date().toISOString().split('T')[0],
+                  Data_Reuniao_Realizada: new Date().toISOString().split('T')[0],
+                  programa: leadObj.programa_apresentado || null,
+                  rs_contrato: valorContrato ? parseFloat(valorContrato) : null,
+                  rs_cc: valorCc ? parseFloat(valorCc) : null,
+                  mrr_adicionado: prazoMeses && valorContrato ? parseFloat(valorContrato) / parseInt(prazoMeses) : null,
+                  closer: responsavelAtividade || leadObj.responsavel || null,
+                }),
+              }).catch(() => {});
+            } catch { /* silent */ }
+          }
         } else if (resultado === 'Perdido') {
           await supabase.from('crm_leads').update({
             etapa: 'perdido', status: 'perdido',
@@ -1215,6 +1236,21 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
       } catch { /* silent */ }
     }
 
+    // Sync mudança de etapa → Railway via n8n (fire-and-forget)
+    if (lead.lead_externo_id && etapa !== lead.etapa) {
+      try {
+        const webhookBase = import.meta.env.VITE_WEBHOOK_BASE?.replace('/webhook/dashboard', '') ?? 'https://webhook.m2black.com';
+        const etapaPayload: Record<string, any> = { lead_id: lead.lead_externo_id, closer: responsavel || null };
+        if (etapa === 'rm_marcada') etapaPayload.Data_Reuniao_Marcada = new Date().toISOString().split('T')[0];
+        if (etapa === 'rm_realizada') etapaPayload.Data_Reuniao_Realizada = new Date().toISOString().split('T')[0];
+        fetch(`${webhookBase}/webhook/sync-financeiro-crm`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(etapaPayload),
+        }).catch(() => {});
+      } catch { /* silent */ }
+    }
+
     setSaving(false);
   };
 
@@ -1427,24 +1463,26 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
     if (leadUpd.valor_mrr != null) setValorMrr(leadUpd.valor_mrr);
 
     // 6. Sync financeiro → Railway (fire-and-forget)
-    try {
-      const webhookBase = import.meta.env.VITE_WEBHOOK_BASE?.replace('/webhook/dashboard', '') ?? 'https://webhook.m2black.com';
-      fetch(`${webhookBase}/webhook/sync-financeiro-crm`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          lead_id: lead.lead_externo_id ?? lead.id,
-          Data_Reuniao_Realizada: rrStatusReuniao === 'Compareceu' ? new Date().toISOString().split('T')[0] : null,
-          Status_TP: rrStatusReuniao === 'Não compareceu' ? 'No-show' : null,
-          Data_TP: rrStatusReuniao === 'Compareceu' ? new Date().toISOString().split('T')[0] : null,
-          programa: programaApresentado || null,
-          rs_contrato: rrValorContrato || null,
-          rs_cc: rrValorCc || null,
-          mrr_adicionado: computedMrr || null,
-          closer: responsavel || null,
-        }),
-      }).catch(() => {});
-    } catch { /* silent */ }
+    if (lead.lead_externo_id) {
+      try {
+        const webhookBase = import.meta.env.VITE_WEBHOOK_BASE?.replace('/webhook/dashboard', '') ?? 'https://webhook.m2black.com';
+        fetch(`${webhookBase}/webhook/sync-financeiro-crm`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            lead_id: lead.lead_externo_id,
+            Data_Reuniao_Realizada: rrStatusReuniao === 'Compareceu' ? new Date().toISOString().split('T')[0] : null,
+            Status_TP: rrStatusReuniao === 'Não compareceu' ? 'No-show' : null,
+            Data_TP: rrStatusReuniao === 'Compareceu' ? new Date().toISOString().split('T')[0] : null,
+            programa: programaApresentado || null,
+            rs_contrato: rrValorContrato || null,
+            rs_cc: rrValorCc || null,
+            mrr_adicionado: computedMrr || null,
+            closer: responsavel || null,
+          }),
+        }).catch(() => {});
+      } catch { /* silent */ }
+    }
 
     setReuniaoRealizada(false);
     setRrSaving(false);
