@@ -1541,11 +1541,14 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
               {[
                 { label: 'Telefone', value: lead.telefone },
                 { label: 'Empresa', value: lead.empresa },
-                { label: 'Origem', value: lead.anuncio ?? lead.origem },
+                { label: 'Origem', value: lead.anuncio ?? lead.origem, extra: lead.created_at ? fmtDateSP(lead.created_at, { year: true }) : undefined },
               ].filter(f => f.value).map(f => (
                 <div key={f.label}>
                   <p className="text-[9px] font-bold uppercase tracking-widest text-gray-600 mb-0.5">{f.label}</p>
-                  <p className="text-xs text-gray-300">{f.value}</p>
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-xs text-gray-300">{f.value}</p>
+                    {f.extra && <span className="text-[10px] text-gray-500">{f.extra}</span>}
+                  </div>
                 </div>
               ))}
             </div>
