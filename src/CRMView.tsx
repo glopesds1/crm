@@ -100,6 +100,7 @@ interface CRMTarefa {
   id: string;
   lead_id: string;
   titulo: string;
+  tipo?: 'ligacao' | 'reuniao';
   data_agendada?: string;
   responsavel?: string;
   concluida: boolean;
@@ -1161,6 +1162,7 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
       const { data } = await supabase.from('crm_tarefas').insert({
         lead_id: lead.id,
         titulo: agTitulo.trim(),
+        tipo: agTipo,
         data_agendada: localDatetimeToISO(agData),
         responsavel: agResponsavel || (userSession?.name ?? ''),
         concluida: false,
@@ -1954,7 +1956,7 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
                         >Reagendar</button>
                         <button onClick={() => {
                           setConcluindoTarefaViaAtiv(t.id);
-                          setAtivFormTipo(undefined);
+                          setAtivFormTipo(t.tipo ?? undefined);
                           setShowAtivForm(true);
                           setTab('timeline');
                           setReagendandoTarefa(null);
