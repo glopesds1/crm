@@ -1953,9 +1953,8 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
                           className="text-[10px] font-bold text-yellow-400 hover:text-white transition-colors cursor-pointer whitespace-nowrap"
                         >Reagendar</button>
                         <button onClick={() => {
-                          const isReuniao = t.titulo.startsWith('R1') || t.titulo.startsWith('R2') || t.titulo.toLowerCase().includes('reunião');
                           setConcluindoTarefaViaAtiv(t.id);
-                          setAtivFormTipo(isReuniao ? 'reuniao' : 'ligacao');
+                          setAtivFormTipo(undefined);
                           setShowAtivForm(true);
                           setTab('timeline');
                           setReagendandoTarefa(null);
