@@ -67,8 +67,8 @@ import DashboardView from './DashboardView';
 import CRMView from './CRMView';
 import PlaybooksView from './PlaybooksView';
 import ClientCRMView from './ClientCRMView';
-import { getTenantByClientId, activateCrmForClient } from './lib/database';
-import type { CrmClientTenant } from './types';
+import { getTenantByClientId, activateCrmForClient, authenticateCrmUser, getCrmUsersByTenant, createCrmUser, updateCrmUser, deleteCrmUser, authenticateUser, signOut, resetPassword, updatePassword, getAuthSession } from './lib/database';
+import type { CrmClientTenant, CrmClientUser } from './types';
 import { ptBR } from 'date-fns/locale';
 
 import { 
@@ -883,7 +883,7 @@ const MeetingsSection = ({
       onUpdateActionItems(meeting.id, [...existing, ...actionItems], result.resumo);
       setExpandedMeeting(meeting.id);
     } catch (err) {
-      alert('Erro ao gerar ações: ' + (err instanceof Error ? err.message : 'Erro desconhecido'));
+      alert('Erro ao gerar ações. Tente novamente.');
     } finally {
       setAiLoading(null);
     }
@@ -1188,31 +1188,60 @@ const MeetingsSection = ({
   );
 };
 
-const LoginScreen = ({ onLogin, teamMembers, agencyConfig }: { onLogin: (user: UserSession) => void, teamMembers: TeamMember[], agencyConfig: AgencyConfig }) => {
+const LoginScreen = ({ onLogin, onCrmLogin, teamMembers, agencyConfig }: { onLogin: (user: UserSession) => void, onCrmLogin: (user: CrmClientUser, tenant: CrmClientTenant) => void, teamMembers: TeamMember[], agencyConfig: AgencyConfig }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const member = teamMembers.find(m => m.email === email);
-    if (member) {
-      // In a real app, we would validate password here
-      // For now, we'll just check if the member exists and is active
-      if (member.status === 'Inativo') {
-        setError('Esta conta está inativa. Contate o administrador.');
+    setError('');
+    setLoading(true);
+    try {
+      // 1. Tenta como equipe M2 (via Supabase Auth)
+      const member = await authenticateUser(email, password);
+      if (member) {
+        if (member.status === 'Inativo') {
+          setError('Esta conta está inativa. Contate o administrador.');
+          setLoading(false);
+          return;
+        }
+        onLogin({
+          userId: member.id,
+          name: member.name,
+          email: member.email,
+          role: member.role,
+          color: member.color
+        });
+        setLoading(false);
         return;
       }
-      
-      onLogin({
-        userId: member.id,
-        name: member.name,
-        email: member.email,
-        role: member.role,
-        color: member.color
-      });
+      // 2. Tenta como usuário CRM (cliente) (via Supabase Auth)
+      const crmResult = await authenticateCrmUser(email, password);
+      if (crmResult) {
+        onCrmLogin(crmResult.user, crmResult.tenant);
+        setLoading(false);
+        return;
+      }
+      setError('E-mail ou senha incorretos.');
+    } catch {
+      setError('Erro ao conectar. Tente novamente.');
+    }
+    setLoading(false);
+  };
+
+  const [showReset, setShowReset] = useState(false);
+  const [resetEmail, setResetEmail] = useState('');
+  const [resetMsg, setResetMsg] = useState('');
+
+  const handleResetPassword = async () => {
+    if (!resetEmail.trim()) return;
+    const { error: err } = await resetPassword(resetEmail);
+    if (err) {
+      setResetMsg('Erro ao enviar. Verifique o e-mail.');
     } else {
-      setError('Credenciais inválidas. Tente novamente.');
+      setResetMsg('Link de redefinição enviado para o e-mail!');
     }
   };
 
@@ -1282,13 +1311,38 @@ const LoginScreen = ({ onLogin, teamMembers, agencyConfig }: { onLogin: (user: U
 
           {error && <p className="text-red-400 text-xs font-medium text-center">{error}</p>}
 
-          <button 
+          <button
             type="submit"
-            className="w-full py-4 bg-brand-primary text-bg-main font-bold rounded-xl shadow-glow hover:scale-[1.02] active:scale-[0.98] transition-all"
+            disabled={loading}
+            className="w-full py-4 bg-brand-primary text-bg-main font-bold rounded-xl shadow-glow hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-50"
           >
-            ENTRAR NO SISTEMA
+            {loading ? 'ENTRANDO...' : 'ENTRAR NO SISTEMA'}
+          </button>
+
+          <button type="button" onClick={() => setShowReset(true)} className="text-xs text-gray-500 hover:text-brand-primary transition-colors mt-2">
+            Esqueceu a senha?
           </button>
         </form>
+
+        {/* Modal de redefinição de senha */}
+        {showReset && (
+          <div className="mt-6 p-4 bg-white/5 rounded-xl border border-white/10 space-y-3">
+            <h3 className="text-sm font-bold text-white">Redefinir Senha</h3>
+            <p className="text-xs text-gray-400">Informe seu e-mail e enviaremos um link para redefinir.</p>
+            <input
+              type="email"
+              value={resetEmail}
+              onChange={e => setResetEmail(e.target.value)}
+              className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-brand-primary transition-all"
+              placeholder="seu@email.com"
+            />
+            {resetMsg && <p className={`text-xs ${resetMsg.includes('Erro') ? 'text-red-400' : 'text-green-400'}`}>{resetMsg}</p>}
+            <div className="flex gap-2">
+              <button onClick={handleResetPassword} className="flex-1 py-2 bg-brand-primary text-bg-main font-bold rounded-lg text-sm">Enviar Link</button>
+              <button onClick={() => { setShowReset(false); setResetMsg(''); }} className="py-2 px-4 bg-white/5 text-gray-400 rounded-lg text-sm">Cancelar</button>
+            </div>
+          </div>
+        )}
 
         <div className="mt-8 pt-8 border-t border-white/5 text-center">
           <p className="text-[10px] text-gray-600 uppercase tracking-widest font-bold">{agencyConfig.name} © {new Date().getFullYear()}</p>
@@ -3263,6 +3317,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('Dashboard');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [selectedCrmTenantId, setSelectedCrmTenantId] = useState<string | null>(null);
+  const [cookiesAccepted, setCookiesAccepted] = useState(() => localStorage.getItem('cookies_accepted') === 'true');
 
   // Role-based permission helper
   const canSee = (tab: string): boolean => {
@@ -3282,6 +3337,7 @@ export default function App() {
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>(INITIAL_TEAM_MEMBERS);
   const [agencyConfig, setAgencyConfig] = useState<AgencyConfig>(INITIAL_AGENCY_CONFIG);
   const [userSession, setUserSession] = useState<UserSession | null>(null);
+  const [crmClientSession, setCrmClientSession] = useState<{ user: CrmClientUser; tenant: CrmClientTenant } | null>(null);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [demands, setDemands] = useState<Demand[]>([]);
   const [demandFilter, setDemandFilter] = useState<'todos' | 'pendente' | 'concluido'>('pendente');
@@ -3344,10 +3400,14 @@ export default function App() {
         }
 
         // Restore session if not already set
-        if (!userSession) {
+        if (!userSession && !crmClientSession) {
           const savedSession = localStorage.getItem('hubm2black_session');
           if (savedSession) {
             setUserSession(JSON.parse(savedSession));
+          }
+          const savedCrmSession = localStorage.getItem('crmClientSession');
+          if (savedCrmSession) {
+            setCrmClientSession(JSON.parse(savedCrmSession));
           }
         }
       } catch (error) {
@@ -3609,10 +3669,47 @@ export default function App() {
     }
   };
 
-  if (isLoading) return <LoadingScreen />;
+  if (isLoading && !crmClientSession) return <LoadingScreen />;
 
-  if (!userSession) {
-    return <LoginScreen onLogin={setUserSession} teamMembers={teamMembers} agencyConfig={agencyConfig} />;
+  if (!userSession && !crmClientSession) {
+    return <LoginScreen
+      onLogin={(u) => { setUserSession(u); localStorage.setItem('hubm2black_session', JSON.stringify(u)); }}
+      onCrmLogin={(user, tenant) => {
+        setCrmClientSession({ user, tenant });
+        setIsLoading(false);
+        localStorage.setItem('crmClientSession', JSON.stringify({ user, tenant }));
+      }}
+      teamMembers={teamMembers}
+      agencyConfig={agencyConfig}
+    />;
+  }
+
+  // Se é um cliente CRM, mostra apenas o CRM dele
+  if (crmClientSession) {
+    return (
+      <div className="min-h-screen bg-bg-main">
+        {/* Header simples para cliente */}
+        <div className="h-16 border-b border-white/10 flex items-center justify-between px-6">
+          <div className="flex items-center gap-3">
+            {agencyConfig.logoUrl && (
+              <img src={agencyConfig.logoUrl} alt="" className="w-8 h-8 rounded-lg" referrerPolicy="no-referrer" />
+            )}
+            <span className="text-white font-bold">{agencyConfig.name}</span>
+            <span className="text-gray-500 text-sm">• CRM</span>
+          </div>
+          <div className="flex items-center gap-4">
+            <span className="text-sm text-gray-400">{crmClientSession.user.nome}</span>
+            <button
+              onClick={() => { signOut(); setCrmClientSession(null); localStorage.removeItem('crmClientSession'); }}
+              className="text-sm text-red-400 hover:text-red-300 flex items-center gap-1"
+            >
+              <LogOut size={14} /> Sair
+            </button>
+          </div>
+        </div>
+        <ClientCRMView tenantId={crmClientSession.tenant.id} userName={crmClientSession.user.nome} />
+      </div>
+    );
   }
 
   const renderDemandas = () => {
@@ -4133,7 +4230,7 @@ export default function App() {
               isOpen={isUserMenuOpen}
               onClose={() => setIsUserMenuOpen(false)}
               user={userSession}
-              onLogout={() => { setUserSession(null); setActiveTab('Dashboard'); }}
+              onLogout={() => { signOut(); setUserSession(null); localStorage.removeItem('hubm2black_session'); setActiveTab('Dashboard'); }}
             />
           </div>
         </div>
@@ -4386,6 +4483,36 @@ export default function App() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Banner LGPD / Cookies */}
+      {!cookiesAccepted && (
+        <div className="fixed bottom-0 left-0 right-0 z-[300] bg-[#0d1117] border-t border-white/10 px-6 py-4">
+          <div className="max-w-4xl mx-auto flex items-center justify-between gap-4 flex-wrap">
+            <div className="flex-1 min-w-[200px]">
+              <p className="text-sm text-gray-300">
+                Este site utiliza cookies essenciais para o funcionamento da plataforma.
+                Ao continuar navegando, você concorda com a nossa{' '}
+                <span className="text-brand-primary">Política de Privacidade</span> e com o
+                tratamento dos seus dados conforme a LGPD (Lei 13.709/2018).
+              </p>
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={() => { setCookiesAccepted(true); localStorage.setItem('cookies_accepted', 'true'); }}
+                className="px-6 py-2 bg-brand-primary text-bg-main font-bold rounded-lg text-sm hover:scale-105 transition-transform"
+              >
+                Aceitar
+              </button>
+              <button
+                onClick={() => { setCookiesAccepted(true); localStorage.setItem('cookies_accepted', 'true'); }}
+                className="px-4 py-2 bg-white/5 text-gray-400 rounded-lg text-sm hover:bg-white/10 transition-colors"
+              >
+                Apenas essenciais
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -180,14 +180,41 @@ export async function authenticateUser(
   email: string,
   password: string
 ): Promise<TeamMember | null> {
-  const { data, error } = await supabase
+  // Login via Supabase Auth primeiro
+  const { data: authData, error: authError } = await supabase.auth.signInWithPassword({ email, password });
+  if (authError || !authData.user) return null;
+
+  // Verificar se é team member (agora autenticado, RLS permite)
+  const { data: memberData } = await supabase
     .from('team_members')
     .select('*')
     .eq('email', email)
-    .eq('password', password)
-    .single();
-  if (error || !data) return null;
-  return dbToMember(data as Record<string, unknown>);
+    .maybeSingle();
+
+  if (!memberData) return null; // Não é team member, mas NÃO faz signOut (pode ser CRM user)
+
+  return dbToMember(memberData as Record<string, unknown>);
+}
+
+export async function signOut(): Promise<void> {
+  await supabase.auth.signOut();
+}
+
+export async function resetPassword(email: string): Promise<{ error: string | null }> {
+  const { error } = await supabase.auth.resetPasswordForEmail(email, {
+    redirectTo: window.location.origin + '/?reset=true',
+  });
+  return { error: error?.message ?? null };
+}
+
+export async function updatePassword(newPassword: string): Promise<{ error: string | null }> {
+  const { error } = await supabase.auth.updateUser({ password: newPassword });
+  return { error: error?.message ?? null };
+}
+
+export async function getAuthSession() {
+  const { data } = await supabase.auth.getSession();
+  return data.session;
 }
 
 // --- TAGS ---
@@ -374,7 +401,7 @@ export async function deleteDemand(id: string): Promise<void> {
 
 // ── CRM Clientes (multi-tenant) ──────────────────────────
 
-import type { CrmClientTenant, CrmClientPipeline, CrmClientStage, CrmClientLead, CrmClientLeadActivity, CrmClientTag } from '../types';
+import type { CrmClientTenant, CrmClientPipeline, CrmClientStage, CrmClientLead, CrmClientLeadActivity, CrmClientTag, CrmClientUser } from '../types';
 
 // Mappers
 function dbToTenant(d: Record<string, unknown>): CrmClientTenant {
@@ -504,4 +531,72 @@ export async function getClientCrmTags(tenantId: string): Promise<CrmClientTag[]
   const { data, error } = await supabase.from('crm_client_tags').select('*').eq('tenant_id', tenantId);
   if (error) throw error;
   return (data ?? []).map((r) => dbToTag(r as Record<string, unknown>));
+}
+
+// ── CRM Client Users ──────────────────────────
+function dbToCrmUser(d: Record<string, unknown>): CrmClientUser {
+  return {
+    id: d.id as string,
+    tenantId: d.tenant_id as string,
+    nome: d.nome as string,
+    email: d.email as string,
+    senha: d.senha as string,
+    role: d.role as CrmClientUser['role'],
+    ativo: d.ativo as boolean,
+    criadoEm: d.criado_em as string,
+  };
+}
+
+export async function getCrmUsersByTenant(tenantId: string): Promise<CrmClientUser[]> {
+  const { data, error } = await supabase.from('crm_client_users').select('*').eq('tenant_id', tenantId).order('criado_em');
+  if (error) throw error;
+  return (data ?? []).map((r) => dbToCrmUser(r as Record<string, unknown>));
+}
+
+export async function createCrmUser(user: Omit<CrmClientUser, 'id' | 'criadoEm'>): Promise<CrmClientUser> {
+  const { data, error } = await supabase.from('crm_client_users').insert({
+    tenant_id: user.tenantId, nome: user.nome, email: user.email,
+    senha: user.senha, role: user.role, ativo: user.ativo,
+  }).select().single();
+  if (error) throw error;
+  return dbToCrmUser(data as Record<string, unknown>);
+}
+
+export async function updateCrmUser(user: CrmClientUser): Promise<CrmClientUser> {
+  const { data, error } = await supabase.from('crm_client_users')
+    .update({ nome: user.nome, email: user.email, senha: user.senha, role: user.role, ativo: user.ativo })
+    .eq('id', user.id).select().single();
+  if (error) throw error;
+  return dbToCrmUser(data as Record<string, unknown>);
+}
+
+export async function deleteCrmUser(id: string): Promise<void> {
+  const { error } = await supabase.from('crm_client_users').delete().eq('id', id);
+  if (error) throw error;
+}
+
+export async function authenticateCrmUser(email: string, senha: string): Promise<{ user: CrmClientUser; tenant: CrmClientTenant } | null> {
+  // Se o auth já foi feito pelo authenticateUser, reusar a sessão
+  let session = await getAuthSession();
+  if (!session) {
+    // Se não tem sessão, tentar auth
+    const { error: authError } = await supabase.auth.signInWithPassword({ email, password: senha });
+    if (authError) return null;
+  }
+
+  // Agora autenticado — buscar CRM user (RLS permite)
+  const { data: crmData } = await supabase.from('crm_client_users').select('*').eq('email', email).eq('ativo', true).maybeSingle();
+  if (!crmData) {
+    await supabase.auth.signOut();
+    return null;
+  }
+
+  const user = dbToCrmUser(crmData as Record<string, unknown>);
+  const { data: tenantData } = await supabase.from('crm_client_tenants').select('*').eq('id', user.tenantId).single();
+  if (!tenantData) {
+    await supabase.auth.signOut();
+    return null;
+  }
+  const tenant = dbToTenant(tenantData as Record<string, unknown>);
+  return { user, tenant };
 }
