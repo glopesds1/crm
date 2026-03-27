@@ -571,6 +571,7 @@ function PageMetas({ data, userSession, range }: { data: any; userSession: any; 
   const m       = Array.isArray(data?.metas)   ? data.metas[0]   : data?.metas;
   const closers: any[] = Array.isArray(data?.closers) ? data.closers : data?.closers ? [data.closers] : [];
   const sdrs:    any[] = Array.isArray(data?.sdrs)    ? data.sdrs    : data?.sdrs    ? [data.sdrs]    : [];
+  const vendasLista: any[] = Array.isArray(data?.vendas_lista) ? data.vendas_lista : data?.vendas_lista ? [data.vendas_lista] : [];
 
   const [metasEdit, setMetasEdit] = useState({ meta_contrato: 0, meta_cc: 0, meta_rm: 0, meta_rr: 0, meta_vendas: 0 });
   const [editKey, setEditKey] = useState<string | null>(null);
@@ -804,6 +805,34 @@ function PageMetas({ data, userSession, range }: { data: any; userSession: any; 
           </div>
         )}
       </div>
+
+      {/* Vendas do Mês */}
+      {vendasLista.length > 0 && (
+        <div className="glass-card p-6">
+          <h3 className="text-sm font-bold uppercase tracking-widest text-brand-primary mb-4">
+            Vendas do Mês ({vendasLista.length})
+          </h3>
+          <Table
+            cols={['Data', 'Lead', 'Closer', 'Programa', 'Contrato', 'CC', 'Etapa']}
+            rows={vendasLista.map(v => {
+              const d = v.data_venda ? (() => { const p = v.data_venda.split('-'); return `${p[2]}/${p[1]}`; })() : '—';
+              return [
+                d,
+                v.nome ?? '—',
+                v.closer ?? '—',
+                v.programa ?? '—',
+                v.rs_contrato ? fmtBRL(v.rs_contrato) : '—',
+                v.rs_cc ? fmtBRL(v.rs_cc) : '—',
+                v.etapa ? <span className="inline-block bg-brand-primary/20 text-brand-primary text-[10px] font-bold px-2 py-0.5 rounded-full">{v.etapa}</span> : '—',
+              ] as any;
+            })}
+          />
+          <div className="flex justify-end gap-6 mt-3 pt-3 border-t border-white/10">
+            <span className="text-xs text-gray-400">Total: <span className="text-white font-bold">{fmtBRL(vendasLista.reduce((s, v) => s + (parseFloat(v.rs_contrato) || 0), 0))}</span> em contrato</span>
+            <span className="text-xs text-gray-400"><span className="text-white font-bold">{fmtBRL(vendasLista.reduce((s, v) => s + (parseFloat(v.rs_cc) || 0), 0))}</span> em CC</span>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
