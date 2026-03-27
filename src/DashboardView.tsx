@@ -979,13 +979,13 @@ function PageReunioes({ data }: { data: any }) {
   const STATUS_LABEL: Record<string, string> = {
     'rm_marcada': 'Reunião Marcada',
     'rm_realizada': 'Reunião Realizada',
+    'No-show': 'No-show',
+    'Venda': 'Venda',
+    'Em negociação': 'Em negociação',
+    'Reagendado': 'Reagendado',
+    'Perdido': 'Perdido',
     'fup_ativa': 'FUP Ativa',
     'fechado': 'Fechado',
-    'perdido': 'Perdido',
-    'congelado': 'Congelado',
-    'base': 'Base',
-    'triagem': 'Triagem',
-    'desqualificado': 'Desqualificado',
   };
 
   return (
@@ -1001,9 +1001,11 @@ function PageReunioes({ data }: { data: any }) {
               r.vendedor,
               r.lead,
               r.telefone ?? '—',
-              (r.status === 'Pendente' || r.status === 'rm_realizada' || STATUS_LABEL[r.status] === 'Pendente')
-                ? <span className="text-gray-500">—</span>
-                : <span className={statusColor[STATUS_LABEL[r.status] ?? r.status] ?? 'text-gray-300'}>{STATUS_LABEL[r.status] ?? r.status}</span>,
+              (() => {
+                const label = STATUS_LABEL[r.status] ?? r.status;
+                if (!label || label === 'Pendente' || r.status === 'rm_realizada') return <span className="text-gray-500">—</span>;
+                return <span className={statusColor[label] ?? 'text-gray-300'}>{label}</span>;
+              })(),
               r.sdr ?? '—',
             ] as any)}
           />
