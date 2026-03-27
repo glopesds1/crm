@@ -604,7 +604,7 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
             }
           } else if (statusReuniao === 'Não compareceu') {
             syncPayload.Data_Reuniao_Realizada = null;
-            syncPayload.Status_TP = null;
+            syncPayload.Status_TP = 'No-show';
             syncPayload.Data_TP = null;
             syncPayload.closer = responsavelAtividade || leadObj.responsavel || null;
           }
@@ -1555,7 +1555,7 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
           }
         } else if (rrStatusReuniao === 'Não compareceu') {
           syncPayload.Data_Reuniao_Realizada = null;
-          syncPayload.Status_TP = null;
+          syncPayload.Status_TP = 'No-show';
           syncPayload.Data_TP = null;
           syncPayload.closer = responsavel || null;
         }
