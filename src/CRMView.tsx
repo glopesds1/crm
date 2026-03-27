@@ -587,16 +587,16 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
           if (statusReuniao === 'Compareceu') {
             syncPayload.Data_Reuniao_Realizada = hoje;
             syncPayload.closer = responsavelAtividade || leadObj.responsavel || null;
-            if (resultado === 'Marcou R2+') {
+            if (resultado === 'Marcou R2+' || resultado === 'Reagendou') {
               syncPayload.Data_TP = proximaReuniao ? new Date(proximaReuniao).toISOString().split('T')[0] : hoje;
               syncPayload.Status_TP = 'Pendente';
               syncPayload.TP = 'R2';
             } else if (resultado === 'Venda') {
               syncPayload.Data_Venda = hoje;
-              if (leadObj.programa_apresentado) syncPayload.programa = leadObj.programa_apresentado;
-              if (valorContrato) syncPayload.rs_contrato = parseFloat(valorContrato);
-              if (valorCc) syncPayload.rs_cc = parseFloat(valorCc);
-              if (prazoMeses && valorContrato) syncPayload.mrr_adicionado = parseFloat(valorContrato) / parseInt(prazoMeses);
+              syncPayload.programa = leadObj.programa_apresentado || null;
+              syncPayload.rs_contrato = valorContrato || null;
+              syncPayload.rs_cc = valorCc || null;
+              syncPayload.mrr_adicionado = prazoMeses && valorContrato ? parseFloat(valorContrato) / parseInt(prazoMeses) : null;
             }
           } else if (statusReuniao === 'Não compareceu') {
             syncPayload.Data_Reuniao_Realizada = null;
@@ -1537,16 +1537,16 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
         if (rrStatusReuniao === 'Compareceu') {
           syncPayload.Data_Reuniao_Realizada = hoje;
           syncPayload.closer = responsavel || null;
-          if (rrResultado === 'Marcou R2+') {
+          if (rrResultado === 'Marcou R2+' || rrResultado === 'Reagendou') {
             syncPayload.Data_TP = rrProximaReuniao ? new Date(rrProximaReuniao).toISOString().split('T')[0] : hoje;
             syncPayload.Status_TP = 'Pendente';
             syncPayload.TP = 'R2';
           } else if (rrResultado === 'Venda') {
             syncPayload.Data_Venda = hoje;
-            if (programaApresentado) syncPayload.programa = programaApresentado;
-            if (rrValorContrato) syncPayload.rs_contrato = rrValorContrato;
-            if (rrValorCc) syncPayload.rs_cc = rrValorCc;
-            if (computedMrr) syncPayload.mrr_adicionado = computedMrr;
+            syncPayload.programa = programaApresentado || null;
+            syncPayload.rs_contrato = rrValorContrato || null;
+            syncPayload.rs_cc = rrValorCc || null;
+            syncPayload.mrr_adicionado = computedMrr || null;
           }
         } else if (rrStatusReuniao === 'Não compareceu') {
           syncPayload.Data_Reuniao_Realizada = null;
