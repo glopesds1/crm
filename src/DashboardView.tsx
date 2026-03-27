@@ -974,7 +974,7 @@ function PageReunioes({ data }: { data: any }) {
     'Reunião Marcada': 'Reunião Marcada',
     'No-show': 'No-show',
     'Reunião Realizada': 'Reunião Realizada',
-    'Pendente': 'Em negociação',
+    'Pendente': 'Reunião Marcada',
     'Venda': 'Venda',
     'Perdido': 'Perdido',
     'Reagendado': 'Reagendado',
