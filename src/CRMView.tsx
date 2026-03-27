@@ -581,12 +581,6 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
       // Sync financeiro reunião → Railway (fire-and-forget)
       if (leadObj?.lead_externo_id) {
         try {
-          const STATUS_TP_MAP: Record<string, string> = {
-            'Venda': 'Venda', 'Marcou R2+': 'Reunião Realizada', 'Reagendou': 'Reagendado', 'Perdido': 'Perdido', 'Pendente': 'Pendente',
-          };
-          const TP_MAP: Record<string, string> = {
-            'Venda': 'Sim', 'Marcou R2+': 'Sim', 'Reagendou': 'Sim', 'Perdido': 'Não', 'Pendente': 'Sim',
-          };
           const webhookBase = import.meta.env.VITE_WEBHOOK_BASE?.replace('/webhook/dashboard', '') ?? 'https://webhook.m2black.com';
           fetch(`${webhookBase}/webhook/sync-financeiro-crm`, {
             method: 'POST',
@@ -595,9 +589,9 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
               lead_id: leadObj.lead_externo_id,
               Data_Reuniao_Realizada: statusReuniao === 'Compareceu' ? new Date().toISOString().split('T')[0] : null,
               Data_Venda: resultado === 'Venda' ? new Date().toISOString().split('T')[0] : null,
-              Status_TP: statusReuniao === 'Não compareceu' ? 'No-show' : (STATUS_TP_MAP[resultado] ?? 'Pendente'),
-              TP: statusReuniao === 'Não compareceu' ? 'Não' : (TP_MAP[resultado] ?? 'Sim'),
-              Data_TP: statusReuniao === 'Não compareceu' ? null : new Date().toISOString().split('T')[0],
+              Status_TP: statusReuniao === 'Não compareceu' ? 'Não compareceu' : statusReuniao === 'Compareceu' ? 'Compareceu' : 'Pendente',
+              TP: statusReuniao === 'Compareceu' ? 'Sim' : 'Não',
+              Data_TP: statusReuniao === 'Compareceu' ? new Date().toISOString().split('T')[0] : null,
               programa: leadObj.programa_apresentado || null,
               rs_contrato: valorContrato ? parseFloat(valorContrato) : null,
               rs_cc: valorCc ? parseFloat(valorCc) : null,
@@ -1519,12 +1513,6 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
     // 6. Sync financeiro → Railway (fire-and-forget)
     if (lead.lead_externo_id) {
       try {
-        const STATUS_TP_MAP: Record<string, string> = {
-          'Venda': 'Venda', 'Marcou R2+': 'Reunião Realizada', 'Reagendou': 'Reagendado', 'Perdido': 'Perdido', 'Pendente': 'Pendente',
-        };
-        const TP_MAP: Record<string, string> = {
-          'Venda': 'Sim', 'Marcou R2+': 'Sim', 'Reagendou': 'Sim', 'Perdido': 'Não', 'Pendente': 'Sim',
-        };
         const webhookBase = import.meta.env.VITE_WEBHOOK_BASE?.replace('/webhook/dashboard', '') ?? 'https://webhook.m2black.com';
         fetch(`${webhookBase}/webhook/sync-financeiro-crm`, {
           method: 'POST',
@@ -1533,9 +1521,9 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
             lead_id: lead.lead_externo_id,
             Data_Reuniao_Realizada: rrStatusReuniao === 'Compareceu' ? new Date().toISOString().split('T')[0] : null,
             Data_Venda: rrResultado === 'Venda' ? new Date().toISOString().split('T')[0] : null,
-            Status_TP: rrStatusReuniao === 'Não compareceu' ? 'No-show' : (STATUS_TP_MAP[rrResultado] ?? 'Pendente'),
-            TP: rrStatusReuniao === 'Não compareceu' ? 'Não' : (TP_MAP[rrResultado] ?? 'Sim'),
-            Data_TP: rrStatusReuniao === 'Não compareceu' ? null : new Date().toISOString().split('T')[0],
+            Status_TP: rrStatusReuniao === 'Não compareceu' ? 'Não compareceu' : rrStatusReuniao === 'Compareceu' ? 'Compareceu' : 'Pendente',
+            TP: rrStatusReuniao === 'Compareceu' ? 'Sim' : 'Não',
+            Data_TP: rrStatusReuniao === 'Compareceu' ? new Date().toISOString().split('T')[0] : null,
             programa: programaApresentado || null,
             rs_contrato: rrValorContrato || null,
             rs_cc: rrValorCc || null,
