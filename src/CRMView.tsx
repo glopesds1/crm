@@ -611,7 +611,7 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
               const dataR2 = proximaReuniao ? new Date(proximaReuniao).toISOString().split('T')[0] : hoje;
               syncPayload.Data_Reuniao_Marcada = dataR2;
               syncPayload.Data_TP = dataR2;
-              syncPayload.Status_TP = 'Pendente';
+              syncPayload.Status_TP = 'Reunião Marcada';
               syncPayload.TP = 'R2';
             } else if (resultado === 'Venda') {
               syncPayload.Data_Venda = hoje;
@@ -619,6 +619,9 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
               syncPayload.rs_contrato = valorContrato || null;
               syncPayload.rs_cc = valorCc || null;
               syncPayload.mrr_adicionado = prazoMeses && valorContrato ? parseFloat(valorContrato) / parseInt(prazoMeses) : null;
+              syncPayload.Status_TP = 'Venda';
+            } else {
+              syncPayload.Status_TP = resultado === 'Perdido' ? 'Perdido' : 'Reunião Realizada';
             }
           } else if (statusReuniao === 'Não compareceu') {
             syncPayload.Data_Reuniao_Realizada = null;
@@ -1314,8 +1317,20 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
       try {
         const webhookBase = import.meta.env.VITE_WEBHOOK_BASE?.replace('/webhook/dashboard', '') ?? 'https://webhook.m2black.com';
         const etapaPayload: Record<string, any> = { lead_id: lead.lead_externo_id, closer: responsavel || null };
-        if (etapa === 'rm_marcada') etapaPayload.Data_Reuniao_Marcada = new Date().toISOString().split('T')[0];
-        if (etapa === 'rm_realizada') etapaPayload.Data_Reuniao_Realizada = new Date().toISOString().split('T')[0];
+        if (etapa === 'rm_marcada') {
+          etapaPayload.Data_Reuniao_Marcada = new Date().toISOString().split('T')[0];
+          etapaPayload.Status_TP = 'Reunião Marcada';
+        }
+        if (etapa === 'rm_realizada') {
+          etapaPayload.Data_Reuniao_Realizada = new Date().toISOString().split('T')[0];
+          etapaPayload.Status_TP = 'Reunião Realizada';
+        }
+        if (etapa === 'fechado') {
+          etapaPayload.Status_TP = 'Venda';
+        }
+        if (etapa === 'perdido') {
+          etapaPayload.Status_TP = 'Perdido';
+        }
         fetch(`${webhookBase}/webhook/sync-financeiro-crm`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -1402,6 +1417,22 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
             }).catch(() => {});
           } catch { /* silent */ }
         } catch (err) { console.error('[agendar-reuniao] Failed:', err); }
+        // Sync Status_TP = Reunião Marcada → Railway (fire-and-forget)
+        if (lead.lead_externo_id) {
+          try {
+            const syncBase = import.meta.env.VITE_WEBHOOK_BASE?.replace('/webhook/dashboard', '') ?? 'https://webhook.m2black.com';
+            fetch(`${syncBase}/webhook/sync-financeiro-crm`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                lead_id: lead.lead_externo_id,
+                Data_Reuniao_Marcada: new Date(agData).toISOString().split('T')[0],
+                Status_TP: 'Reunião Marcada',
+                closer: lead.responsavel || null,
+              }),
+            }).catch(() => {});
+          } catch { /* silent */ }
+        }
       }
       setShowAgendarTarefa(false);
       setAgTipo(null); setAgTitulo(''); setAgData(''); setAgResponsavel('');
@@ -1622,7 +1653,7 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
             const dataR2 = rrProximaReuniao ? new Date(rrProximaReuniao).toISOString().split('T')[0] : hoje;
             syncPayload.Data_Reuniao_Marcada = dataR2;
             syncPayload.Data_TP = dataR2;
-            syncPayload.Status_TP = 'Pendente';
+            syncPayload.Status_TP = 'Reunião Marcada';
             syncPayload.TP = 'R2';
           } else if (rrResultado === 'Venda') {
             syncPayload.Data_Venda = hoje;
@@ -1630,6 +1661,9 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
             syncPayload.rs_contrato = rrValorContrato || null;
             syncPayload.rs_cc = rrValorCc || null;
             syncPayload.mrr_adicionado = computedMrr || null;
+            syncPayload.Status_TP = 'Venda';
+          } else {
+            syncPayload.Status_TP = rrResultado === 'Perdido' ? 'Perdido' : 'Reunião Realizada';
           }
         } else if (rrStatusReuniao === 'Não compareceu') {
           syncPayload.Data_Reuniao_Realizada = null;
@@ -1698,6 +1732,15 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
         await supabase.from('crm_leads').update({ proxima_reuniao: novaData, updated_at: new Date().toISOString() }).eq('id', lead.id);
         onSave({ proxima_reuniao: novaData });
       }
+      // Cancelar touchpoints anteriores antes de reagendar
+      try {
+        const webhookBase0 = import.meta.env.VITE_WEBHOOK_BASE?.replace('/webhook/dashboard', '') ?? 'https://webhook.m2black.com';
+        fetch(`${webhookBase0}/webhook/cancelar-touchpoints`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ lead_id: lead.lead_externo_id ?? lead.id }),
+        }).catch(() => {});
+      } catch { /* silent */ }
       // Enviar para webhook agendar-reuniao (atualizar Google Agenda)
       try {
         const webhookBase = import.meta.env.VITE_WEBHOOK_BASE?.replace('/webhook/dashboard', '') ?? 'https://webhook.m2black.com';
