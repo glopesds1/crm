@@ -589,20 +589,32 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
             syncPayload.TP = 'Sim';
             syncPayload.Data_TP = new Date().toISOString().split('T')[0];
           } else if (statusReuniao === 'Não compareceu') {
-            syncPayload.Status_TP = 'Não compareceu';
-            syncPayload.TP = 'Não';
+            syncPayload.closer = responsavelAtividade || leadObj.responsavel || null;
           }
-          if (resultado === 'Venda') syncPayload.Data_Venda = new Date().toISOString().split('T')[0];
-          if (leadObj.programa_apresentado) syncPayload.programa = leadObj.programa_apresentado;
-          if (valorContrato) syncPayload.rs_contrato = parseFloat(valorContrato);
-          if (valorCc) syncPayload.rs_cc = parseFloat(valorCc);
-          if (prazoMeses && valorContrato) syncPayload.mrr_adicionado = parseFloat(valorContrato) / parseInt(prazoMeses);
-          if (responsavelAtividade || leadObj.responsavel) syncPayload.closer = responsavelAtividade || leadObj.responsavel;
+          if (statusReuniao === 'Compareceu') {
+            if (resultado === 'Venda') syncPayload.Data_Venda = new Date().toISOString().split('T')[0];
+            if (leadObj.programa_apresentado) syncPayload.programa = leadObj.programa_apresentado;
+            if (valorContrato) syncPayload.rs_contrato = parseFloat(valorContrato);
+            if (valorCc) syncPayload.rs_cc = parseFloat(valorCc);
+            if (prazoMeses && valorContrato) syncPayload.mrr_adicionado = parseFloat(valorContrato) / parseInt(prazoMeses);
+            if (responsavelAtividade || leadObj.responsavel) syncPayload.closer = responsavelAtividade || leadObj.responsavel;
+          }
           fetch(`${webhookBase}/webhook/sync-financeiro-crm`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(syncPayload),
           }).catch(() => {});
+        } catch { /* silent */ }
+      }
+
+      // Add No-show tag when lead didn't show up
+      if (statusReuniao === 'Não compareceu') {
+        try {
+          const currentTags: string[] = leadObj?.tags ?? [];
+          if (!currentTags.includes('No-show')) {
+            await supabase.from('crm_leads').update({ tags: [...currentTags, 'No-show'] }).eq('id', leadId);
+            onLeadUpdated?.({ tags: [...currentTags, 'No-show'] });
+          }
         } catch { /* silent */ }
       }
     }
@@ -1522,20 +1534,34 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
           syncPayload.TP = 'Sim';
           syncPayload.Data_TP = new Date().toISOString().split('T')[0];
         } else if (rrStatusReuniao === 'Não compareceu') {
-          syncPayload.Status_TP = 'Não compareceu';
-          syncPayload.TP = 'Não';
+          if (responsavel) syncPayload.closer = responsavel;
         }
-        if (rrResultado === 'Venda') syncPayload.Data_Venda = new Date().toISOString().split('T')[0];
-        if (programaApresentado) syncPayload.programa = programaApresentado;
-        if (rrValorContrato) syncPayload.rs_contrato = rrValorContrato;
-        if (rrValorCc) syncPayload.rs_cc = rrValorCc;
-        if (computedMrr) syncPayload.mrr_adicionado = computedMrr;
-        if (responsavel) syncPayload.closer = responsavel;
+        if (rrStatusReuniao === 'Compareceu') {
+          if (rrResultado === 'Venda') syncPayload.Data_Venda = new Date().toISOString().split('T')[0];
+          if (programaApresentado) syncPayload.programa = programaApresentado;
+          if (rrValorContrato) syncPayload.rs_contrato = rrValorContrato;
+          if (rrValorCc) syncPayload.rs_cc = rrValorCc;
+          if (computedMrr) syncPayload.mrr_adicionado = computedMrr;
+          if (responsavel) syncPayload.closer = responsavel;
+        }
         fetch(`${webhookBase}/webhook/sync-financeiro-crm`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(syncPayload),
         }).catch(() => {});
+      } catch { /* silent */ }
+    }
+
+    // Add No-show tag when lead didn't show up
+    if (rrStatusReuniao === 'Não compareceu') {
+      try {
+        const currentTags: string[] = lead.tags ?? [];
+        if (!currentTags.includes('No-show')) {
+          const updatedTags = [...currentTags, 'No-show'];
+          await supabase.from('crm_leads').update({ tags: updatedTags }).eq('id', lead.id);
+          onSave({ tags: updatedTags });
+          setLocalTags(updatedTags);
+        }
       } catch { /* silent */ }
     }
 
