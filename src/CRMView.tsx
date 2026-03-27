@@ -582,22 +582,26 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
       if (leadObj?.lead_externo_id) {
         try {
           const webhookBase = import.meta.env.VITE_WEBHOOK_BASE?.replace('/webhook/dashboard', '') ?? 'https://webhook.m2black.com';
+          const syncPayload: Record<string, any> = { lead_id: leadObj.lead_externo_id };
+          if (statusReuniao === 'Compareceu') {
+            syncPayload.Data_Reuniao_Realizada = new Date().toISOString().split('T')[0];
+            syncPayload.Status_TP = 'Compareceu';
+            syncPayload.TP = 'Sim';
+            syncPayload.Data_TP = new Date().toISOString().split('T')[0];
+          } else if (statusReuniao === 'Não compareceu') {
+            syncPayload.Status_TP = 'Não compareceu';
+            syncPayload.TP = 'Não';
+          }
+          if (resultado === 'Venda') syncPayload.Data_Venda = new Date().toISOString().split('T')[0];
+          if (leadObj.programa_apresentado) syncPayload.programa = leadObj.programa_apresentado;
+          if (valorContrato) syncPayload.rs_contrato = parseFloat(valorContrato);
+          if (valorCc) syncPayload.rs_cc = parseFloat(valorCc);
+          if (prazoMeses && valorContrato) syncPayload.mrr_adicionado = parseFloat(valorContrato) / parseInt(prazoMeses);
+          if (responsavelAtividade || leadObj.responsavel) syncPayload.closer = responsavelAtividade || leadObj.responsavel;
           fetch(`${webhookBase}/webhook/sync-financeiro-crm`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              lead_id: leadObj.lead_externo_id,
-              Data_Reuniao_Realizada: statusReuniao === 'Compareceu' ? new Date().toISOString().split('T')[0] : null,
-              Data_Venda: resultado === 'Venda' ? new Date().toISOString().split('T')[0] : null,
-              Status_TP: statusReuniao === 'Não compareceu' ? 'Não compareceu' : statusReuniao === 'Compareceu' ? 'Compareceu' : 'Pendente',
-              TP: statusReuniao === 'Compareceu' ? 'Sim' : 'Não',
-              Data_TP: statusReuniao === 'Compareceu' ? new Date().toISOString().split('T')[0] : null,
-              programa: leadObj.programa_apresentado || null,
-              rs_contrato: valorContrato ? parseFloat(valorContrato) : null,
-              rs_cc: valorCc ? parseFloat(valorCc) : null,
-              mrr_adicionado: prazoMeses && valorContrato ? parseFloat(valorContrato) / parseInt(prazoMeses) : null,
-              closer: responsavelAtividade || leadObj.responsavel || null,
-            }),
+            body: JSON.stringify(syncPayload),
           }).catch(() => {});
         } catch { /* silent */ }
       }
@@ -1224,21 +1228,18 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
     if (lead.lead_externo_id && finChanged) {
       try {
         const webhookBase = import.meta.env.VITE_WEBHOOK_BASE?.replace('/webhook/dashboard', '') ?? 'https://webhook.m2black.com';
+        const infoPayload: Record<string, any> = { lead_id: lead.lead_externo_id };
+        if (lead.proxima_reuniao) infoPayload.Data_Reuniao_Marcada = lead.proxima_reuniao;
+        if (programaApresentado) infoPayload.programa = programaApresentado;
+        if (valorContrato !== '') infoPayload.rs_contrato = valorContrato;
+        if (valorCc !== '') infoPayload.rs_cc = valorCc;
+        if (valorMrr && valorContrato) infoPayload.tempo_contrato = (Number(valorContrato) / Number(valorMrr)).toFixed(0);
+        if (valorMrr !== '') infoPayload.mrr_adicionado = valorMrr;
+        if (responsavel) infoPayload.closer = responsavel;
         fetch(`${webhookBase}/webhook/sync-financeiro-crm`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            lead_id: lead.lead_externo_id,
-            Data_Reuniao_Marcada: lead.proxima_reuniao ?? null,
-            Data_Venda: null,
-            programa: programaApresentado || null,
-            rs_contrato: valorContrato !== '' ? valorContrato : null,
-            rs_cc: valorCc !== '' ? valorCc : null,
-            tempo_contrato: valorMrr && valorContrato ? (Number(valorContrato) / Number(valorMrr)).toFixed(0) : null,
-            mrr_adicionado: valorMrr !== '' ? valorMrr : null,
-            closer: responsavel || null,
-            sdr: null,
-          }),
+          body: JSON.stringify(infoPayload),
         }).catch(() => {});
       } catch { /* silent */ }
     }
@@ -1514,22 +1515,26 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
     if (lead.lead_externo_id) {
       try {
         const webhookBase = import.meta.env.VITE_WEBHOOK_BASE?.replace('/webhook/dashboard', '') ?? 'https://webhook.m2black.com';
+        const syncPayload: Record<string, any> = { lead_id: lead.lead_externo_id };
+        if (rrStatusReuniao === 'Compareceu') {
+          syncPayload.Data_Reuniao_Realizada = new Date().toISOString().split('T')[0];
+          syncPayload.Status_TP = 'Compareceu';
+          syncPayload.TP = 'Sim';
+          syncPayload.Data_TP = new Date().toISOString().split('T')[0];
+        } else if (rrStatusReuniao === 'Não compareceu') {
+          syncPayload.Status_TP = 'Não compareceu';
+          syncPayload.TP = 'Não';
+        }
+        if (rrResultado === 'Venda') syncPayload.Data_Venda = new Date().toISOString().split('T')[0];
+        if (programaApresentado) syncPayload.programa = programaApresentado;
+        if (rrValorContrato) syncPayload.rs_contrato = rrValorContrato;
+        if (rrValorCc) syncPayload.rs_cc = rrValorCc;
+        if (computedMrr) syncPayload.mrr_adicionado = computedMrr;
+        if (responsavel) syncPayload.closer = responsavel;
         fetch(`${webhookBase}/webhook/sync-financeiro-crm`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            lead_id: lead.lead_externo_id,
-            Data_Reuniao_Realizada: rrStatusReuniao === 'Compareceu' ? new Date().toISOString().split('T')[0] : null,
-            Data_Venda: rrResultado === 'Venda' ? new Date().toISOString().split('T')[0] : null,
-            Status_TP: rrStatusReuniao === 'Não compareceu' ? 'Não compareceu' : rrStatusReuniao === 'Compareceu' ? 'Compareceu' : 'Pendente',
-            TP: rrStatusReuniao === 'Compareceu' ? 'Sim' : 'Não',
-            Data_TP: rrStatusReuniao === 'Compareceu' ? new Date().toISOString().split('T')[0] : null,
-            programa: programaApresentado || null,
-            rs_contrato: rrValorContrato || null,
-            rs_cc: rrValorCc || null,
-            mrr_adicionado: computedMrr || null,
-            closer: responsavel || null,
-          }),
+          body: JSON.stringify(syncPayload),
         }).catch(() => {});
       } catch { /* silent */ }
     }
