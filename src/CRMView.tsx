@@ -1295,6 +1295,25 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
         await supabase.from('crm_leads').update({ proxima_reuniao: localDatetimeToISO(agData) }).eq('id', lead.id);
         onSave({ proxima_reuniao: localDatetimeToISO(agData) });
       }
+      // Send agendar-reuniao webhook when scheduling a meeting task
+      if (agTipo === 'reuniao') {
+        try {
+          const webhookBase = import.meta.env.VITE_WEBHOOK_BASE?.replace('/webhook/dashboard', '') ?? 'https://webhook.m2black.com';
+          fetch(`${webhookBase}/webhook/agendar-reuniao`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              lead_nome: lead.nome,
+              lead_telefone: lead.telefone ?? '',
+              lead_externo_id: lead.lead_externo_id ?? lead.id,
+              closer: agResponsavel || lead.responsavel || '',
+              tipo_reuniao: agTitulo.includes('R2') ? 'R2' : 'R1',
+              data_hora: new Date(agData).toISOString(),
+              duracao_min: 60,
+            }),
+          }).catch(e => console.warn('Webhook agendar-reuniao (CORS em dev):', e.message));
+        } catch (err) { console.error('Failed to send agendar-reuniao webhook:', err); }
+      }
       setShowAgendarTarefa(false);
       setAgTipo(null); setAgTitulo(''); setAgData(''); setAgResponsavel('');
       setTab('tarefas');
@@ -1456,6 +1475,25 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
         }).select().single();
         if (rrTask) onTarefaCreated?.(rrTask);
       } catch (err) { console.error('R2+ task failed:', err); }
+
+      // Send agendar-reuniao webhook for R2+ / Reagendou
+      try {
+        const webhookBase = import.meta.env.VITE_WEBHOOK_BASE?.replace('/webhook/dashboard', '') ?? 'https://webhook.m2black.com';
+        fetch(`${webhookBase}/webhook/agendar-reuniao`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            lead_nome: lead.nome,
+            lead_telefone: lead.telefone ?? '',
+            lead_externo_id: lead.lead_externo_id ?? lead.id,
+            closer: responsavel || userSession?.name || '',
+            tipo_reuniao: 'R2',
+            data_hora: new Date(rrProximaReuniao).toISOString(),
+            duracao_min: 60,
+            reagendamento: rrResultado === 'Reagendou',
+          }),
+        }).catch(e => console.warn('Webhook agendar-reuniao (CORS em dev):', e.message));
+      } catch (err) { console.error('Failed to send agendar-reuniao webhook:', err); }
     }
 
     // 5. Update local state
