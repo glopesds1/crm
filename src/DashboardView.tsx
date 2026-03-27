@@ -963,30 +963,21 @@ function PageSemanal({ data, userSession }: { data: any; userSession: any }) {
 // ── PAGE: Reuniões ────────────────────────────────────────────
 function PageReunioes({ data }: { data: any }) {
   const dia: any[] = Array.isArray(data?.dia) ? data.dia : data?.dia ? [data.dia] : [];
-  const negociacao: any[] = Array.isArray(data?.negociacao) ? data.negociacao : data?.negociacao ? [data.negociacao] : [];
 
   const statusColor: Record<string, string> = {
-    'Reunião Marcada': 'text-blue-400',
-    'Reunião Realizada': 'text-brand-primary',
+    'Reunião Marcada': 'text-yellow-400',
     'No-show': 'text-red-400',
-    'Pendente': 'text-yellow-400',
-    'Não compareceu': 'text-red-400',
-    'Compareceu': 'text-brand-primary',
     'Venda': 'text-brand-primary',
-    'Perdido': 'text-red-400',
   };
 
   const STATUS_LABEL: Record<string, string> = {
-    'rm_marcada': 'Reunião Marcada',
-    'rm_realizada': 'Reunião Realizada',
+    'Reunião Marcada': 'Reunião Marcada',
     'No-show': 'No-show',
+    'Reunião Realizada': 'Reunião Realizada',
+    'Pendente': 'Em negociação',
     'Venda': 'Venda',
-    'Em negociação': 'Em negociação',
-    'Reagendado': 'Reagendado',
     'Perdido': 'Perdido',
-    'Pendente': 'Pendente',
-    'fup_ativa': 'FUP Ativa',
-    'fechado': 'Fechado',
+    'Reagendado': 'Reagendado',
   };
 
   return (
@@ -997,41 +988,18 @@ function PageReunioes({ data }: { data: any }) {
         </h3>
         {dia.length === 0 ? <Empty msg="Nenhuma reunião hoje." /> : (
           <Table
-            cols={['Vendedor', 'Lead', 'Telefone', 'Status', 'SDR']}
-            rows={dia.map(r => [
-              r.vendedor,
-              r.lead,
-              r.telefone ?? '—',
-              (() => {
-                const label = STATUS_LABEL[r.status] ?? r.status;
-                if (!label || r.status === 'rm_realizada') return <span className="text-gray-500">—</span>;
-                return <span className={statusColor[label] ?? 'text-gray-300'}>{label}</span>;
-              })(),
-              r.sdr ?? '—',
-            ] as any)}
-          />
-        )}
-      </div>
-
-      <div className="glass-card p-6">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-[10px] font-bold uppercase tracking-widest text-brand-primary">
-            Reuniões de Negociação ({negociacao.length})
-          </h3>
-          <div className="text-xs text-gray-500">
-            Pipeline: <span className="text-yellow-400 font-bold">
-              {fmtBRL(negociacao.filter(r => r.status === 'Pendente').reduce((s, r) => s + parseFloat(r.contrato ?? 0), 0))}
-            </span>
-          </div>
-        </div>
-        {negociacao.length === 0 ? <Empty /> : (
-          <Table
-            cols={['Vendedor', 'Lead', 'TP', 'Status', 'Contrato', 'CC']}
-            rows={negociacao.map(r => [
-              r.vendedor, r.lead, r.tp,
-              <span className={statusColor[r.status] ?? 'text-gray-300'}>{r.status}</span>,
-              fmtBRL(r.contrato), fmtBRL(r.cc)
-            ] as any)}
+            cols={['Lead', 'Telefone', 'Status', 'TP', 'Vendedor', 'SDR']}
+            rows={dia.map(r => {
+              const label = STATUS_LABEL[r.status] ?? r.status;
+              return [
+                r.lead,
+                r.telefone ?? '—',
+                <span className={statusColor[label] ?? 'text-gray-400'}>{label}</span>,
+                r.tp ?? '—',
+                r.vendedor ?? '—',
+                r.sdr ?? '—',
+              ] as any;
+            })}
           />
         )}
       </div>
