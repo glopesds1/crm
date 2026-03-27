@@ -43,7 +43,9 @@ import {
   AtSign,
   HelpCircle,
   Send,
-  Building2
+  Building2,
+  Shield,
+  QrCode
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -67,7 +69,7 @@ import DashboardView from './DashboardView';
 import CRMView from './CRMView';
 import PlaybooksView from './PlaybooksView';
 import ClientCRMView from './ClientCRMView';
-import { getTenantByClientId, activateCrmForClient, authenticateCrmUser, getCrmUsersByTenant, createCrmUser, updateCrmUser, deleteCrmUser, authenticateUser, signOut, resetPassword, updatePassword, getAuthSession } from './lib/database';
+import { getTenantByClientId, activateCrmForClient, authenticateCrmUser, getCrmUsersByTenant, createCrmUser, updateCrmUser, deleteCrmUser, authenticateUser, signOut, resetPassword, updatePassword, getAuthSession, mfaListFactors, mfaChallenge, mfaVerify, mfaEnrollTotp, mfaUnenroll, mfaGetAuthenticatorLevel } from './lib/database';
 import type { CrmClientTenant, CrmClientUser } from './types';
 import { ptBR } from 'date-fns/locale';
 
@@ -1188,11 +1190,171 @@ const MeetingsSection = ({
   );
 };
 
+// --- Two Factor Panel (Configurações) ---
+const TwoFactorPanel = () => {
+  const [factors, setFactors] = useState<{ id: string; friendlyName?: string }[]>([]);
+  const [enrolling, setEnrolling] = useState(false);
+  const [qrCode, setQrCode] = useState('');
+  const [secret, setSecret] = useState('');
+  const [enrollFactorId, setEnrollFactorId] = useState('');
+  const [verifyCode, setVerifyCode] = useState('');
+  const [status, setStatus] = useState('');
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    loadFactors();
+  }, []);
+
+  const loadFactors = async () => {
+    setLoading(true);
+    const data = await mfaListFactors();
+    setFactors(data.totp?.map((f: { id: string; friendly_name?: string }) => ({ id: f.id, friendlyName: f.friendly_name })) ?? []);
+    setLoading(false);
+  };
+
+  const handleEnroll = async () => {
+    try {
+      const data = await mfaEnrollTotp('Authenticator');
+      setQrCode(data.totp.qr_code);
+      setSecret(data.totp.secret);
+      setEnrollFactorId(data.id);
+      setEnrolling(true);
+      setStatus('');
+    } catch {
+      setStatus('Erro ao gerar QR Code.');
+    }
+  };
+
+  const handleVerifyEnroll = async () => {
+    try {
+      const challenge = await mfaChallenge(enrollFactorId);
+      const result = await mfaVerify(enrollFactorId, challenge.id, verifyCode);
+      if (result.error) {
+        setStatus('Código inválido. Tente novamente.');
+        setVerifyCode('');
+        return;
+      }
+      setEnrolling(false);
+      setVerifyCode('');
+      setQrCode('');
+      setSecret('');
+      setStatus('2FA ativado com sucesso!');
+      loadFactors();
+    } catch {
+      setStatus('Erro ao verificar código.');
+    }
+  };
+
+  const handleRemove = async (factorId: string) => {
+    if (!confirm('Desativar autenticação em 2 fatores?')) return;
+    try {
+      await mfaUnenroll(factorId);
+      setStatus('2FA desativado.');
+      loadFactors();
+    } catch {
+      setStatus('Erro ao desativar 2FA.');
+    }
+  };
+
+  if (loading) return null;
+
+  return (
+    <div className="glass-card p-8 space-y-6">
+      <h3 className="text-sm font-bold uppercase tracking-widest text-brand-primary flex items-center gap-2">
+        <Shield size={16} /> Autenticação em 2 Fatores (2FA)
+      </h3>
+
+      {factors.length > 0 ? (
+        <div className="space-y-3">
+          <div className="flex items-center gap-3 p-4 rounded-xl bg-green-500/10 border border-green-500/20">
+            <Shield size={20} className="text-green-400" />
+            <div className="flex-1">
+              <p className="text-sm font-medium text-green-400">2FA Ativo</p>
+              <p className="text-xs text-gray-500">Seu login está protegido com autenticação em 2 fatores.</p>
+            </div>
+            <button onClick={() => handleRemove(factors[0].id)}
+              className="text-xs text-red-400 hover:text-red-300 transition-colors px-3 py-1.5 rounded-lg hover:bg-red-500/10">
+              Desativar
+            </button>
+          </div>
+        </div>
+      ) : enrolling ? (
+        <div className="space-y-4">
+          <p className="text-sm text-gray-400">Escaneie o QR Code abaixo no seu app autenticador (Google Authenticator, Authy, etc.):</p>
+          <div className="flex justify-center">
+            <img src={qrCode} alt="QR Code 2FA" className="w-48 h-48 rounded-xl" />
+          </div>
+          <div className="text-center">
+            <p className="text-[10px] text-gray-600 uppercase tracking-widest mb-1">Chave manual</p>
+            <code className="text-xs text-gray-400 bg-white/5 px-3 py-1.5 rounded-lg">{secret}</code>
+          </div>
+          <div>
+            <label className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-2 block">Código de verificação</label>
+            <input type="text" inputMode="numeric" maxLength={6} value={verifyCode}
+              onChange={e => setVerifyCode(e.target.value.replace(/\D/g, ''))}
+              onKeyDown={e => { if (e.key === 'Enter' && verifyCode.length === 6) handleVerifyEnroll(); }}
+              className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-center tracking-[0.3em] font-mono focus:outline-none focus:border-brand-primary"
+              placeholder="000000"
+            />
+          </div>
+          {status && <p className="text-xs text-red-400 text-center">{status}</p>}
+          <div className="flex gap-3">
+            <button onClick={() => { setEnrolling(false); setQrCode(''); mfaUnenroll(enrollFactorId).catch(() => {}); }}
+              className="flex-1 bg-white/5 text-gray-400 py-2.5 rounded-xl text-sm hover:bg-white/10 transition-colors">
+              Cancelar
+            </button>
+            <button onClick={handleVerifyEnroll} disabled={verifyCode.length !== 6}
+              className="flex-1 bg-brand-primary text-bg-main font-bold py-2.5 rounded-xl text-sm hover:opacity-90 disabled:opacity-50 transition-opacity">
+              Ativar 2FA
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          <p className="text-sm text-gray-400">Adicione uma camada extra de segurança ao seu login usando um aplicativo autenticador.</p>
+          <button onClick={handleEnroll}
+            className="flex items-center gap-2 bg-brand-primary/10 text-brand-primary px-4 py-2.5 rounded-xl text-sm font-medium hover:bg-brand-primary/20 transition-colors">
+            <QrCode size={16} /> Configurar 2FA
+          </button>
+        </div>
+      )}
+
+      {status && !enrolling && <p className="text-xs text-brand-primary">{status}</p>}
+    </div>
+  );
+};
+
 const LoginScreen = ({ onLogin, onCrmLogin, teamMembers, agencyConfig }: { onLogin: (user: UserSession) => void, onCrmLogin: (user: CrmClientUser, tenant: CrmClientTenant) => void, teamMembers: TeamMember[], agencyConfig: AgencyConfig }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+
+  // MFA state
+  const [mfaPending, setMfaPending] = useState(false);
+  const [mfaFactorId, setMfaFactorId] = useState('');
+  const [mfaChallengeId, setMfaChallengeId] = useState('');
+  const [mfaCode, setMfaCode] = useState('');
+  const [pendingMember, setPendingMember] = useState<TeamMember | null>(null);
+  const [pendingCrmResult, setPendingCrmResult] = useState<{ user: CrmClientUser; tenant: CrmClientTenant } | null>(null);
+
+  const completeMfaLogin = async () => {
+    setError('');
+    setLoading(true);
+    const result = await mfaVerify(mfaFactorId, mfaChallengeId, mfaCode);
+    if (result.error) {
+      setError('Código inválido. Tente novamente.');
+      setMfaCode('');
+      setLoading(false);
+      return;
+    }
+    if (pendingMember) {
+      onLogin({ userId: pendingMember.id, name: pendingMember.name, email: pendingMember.email, role: pendingMember.role, color: pendingMember.color });
+    } else if (pendingCrmResult) {
+      onCrmLogin(pendingCrmResult.user, pendingCrmResult.tenant);
+    }
+    setLoading(false);
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1207,19 +1369,43 @@ const LoginScreen = ({ onLogin, onCrmLogin, teamMembers, agencyConfig }: { onLog
           setLoading(false);
           return;
         }
-        onLogin({
-          userId: member.id,
-          name: member.name,
-          email: member.email,
-          role: member.role,
-          color: member.color
-        });
+        // Verificar se tem 2FA ativo
+        const aal = await mfaGetAuthenticatorLevel();
+        if (aal.nextLevel === 'aal2' && aal.currentLevel === 'aal1') {
+          const factors = await mfaListFactors();
+          const totp = factors.totp?.[0];
+          if (totp) {
+            const challenge = await mfaChallenge(totp.id);
+            setMfaFactorId(totp.id);
+            setMfaChallengeId(challenge.id);
+            setPendingMember(member);
+            setMfaPending(true);
+            setLoading(false);
+            return;
+          }
+        }
+        onLogin({ userId: member.id, name: member.name, email: member.email, role: member.role, color: member.color });
         setLoading(false);
         return;
       }
       // 2. Tenta como usuário CRM (cliente) (via Supabase Auth)
       const crmResult = await authenticateCrmUser(email, password);
       if (crmResult) {
+        // Verificar 2FA para CRM users também
+        const aal = await mfaGetAuthenticatorLevel();
+        if (aal.nextLevel === 'aal2' && aal.currentLevel === 'aal1') {
+          const factors = await mfaListFactors();
+          const totp = factors.totp?.[0];
+          if (totp) {
+            const challenge = await mfaChallenge(totp.id);
+            setMfaFactorId(totp.id);
+            setMfaChallengeId(challenge.id);
+            setPendingCrmResult(crmResult);
+            setMfaPending(true);
+            setLoading(false);
+            return;
+          }
+        }
         onCrmLogin(crmResult.user, crmResult.tenant);
         setLoading(false);
         return;
@@ -1245,6 +1431,45 @@ const LoginScreen = ({ onLogin, onCrmLogin, teamMembers, agencyConfig }: { onLog
     }
   };
 
+  // Tela de verificação 2FA
+  if (mfaPending) {
+    return (
+      <div className="fixed inset-0 z-[200] bg-bg-main flex items-center justify-center p-4 overflow-hidden">
+        <div className="absolute inset-0 overflow-hidden pointer-events-none">
+          <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-brand-primary/10 blur-[120px] rounded-full" />
+          <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-brand-secondary/10 blur-[120px] rounded-full" />
+        </div>
+        <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
+          className="relative w-full max-w-sm bg-bg-card border border-white/5 rounded-2xl shadow-2xl p-8 z-10">
+          <div className="text-center space-y-4">
+            <div className="w-16 h-16 bg-brand-primary/10 rounded-2xl flex items-center justify-center mx-auto">
+              <Shield size={32} className="text-brand-primary" />
+            </div>
+            <h2 className="text-xl font-bold">Verificação em 2 Etapas</h2>
+            <p className="text-sm text-gray-400">Digite o código do seu aplicativo autenticador</p>
+          </div>
+          <div className="mt-6 space-y-4">
+            <input type="text" inputMode="numeric" maxLength={6} autoFocus
+              value={mfaCode} onChange={e => setMfaCode(e.target.value.replace(/\D/g, ''))}
+              onKeyDown={e => { if (e.key === 'Enter' && mfaCode.length === 6) completeMfaLogin(); }}
+              className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-center text-2xl tracking-[0.5em] font-mono focus:outline-none focus:border-brand-primary transition-all"
+              placeholder="000000"
+            />
+            {error && <p className="text-red-400 text-xs text-center">{error}</p>}
+            <button onClick={completeMfaLogin} disabled={loading || mfaCode.length !== 6}
+              className="w-full bg-brand-primary text-bg-main font-bold py-3 rounded-xl hover:opacity-90 transition-opacity disabled:opacity-50 uppercase tracking-wider text-sm">
+              {loading ? 'Verificando...' : 'Verificar'}
+            </button>
+            <button onClick={() => { setMfaPending(false); setMfaCode(''); setPendingMember(null); setPendingCrmResult(null); signOut(); }}
+              className="w-full text-gray-500 text-xs hover:text-gray-300 transition-colors">
+              ← Voltar para o login
+            </button>
+          </div>
+        </motion.div>
+      </div>
+    );
+  }
+
   return (
     <div className="fixed inset-0 z-[200] bg-bg-main flex items-center justify-center p-4 overflow-hidden">
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
@@ -1252,7 +1477,7 @@ const LoginScreen = ({ onLogin, onCrmLogin, teamMembers, agencyConfig }: { onLog
         <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-brand-secondary/10 blur-[120px] rounded-full" />
       </div>
 
-      <motion.div 
+      <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         className="w-full max-w-md glass-card p-10 relative z-10 border border-white/10"
@@ -1667,6 +1892,9 @@ const SettingsView = ({ config, onSave, allTags, onSaveTag, onDeleteTag }: {
           </div>
         </div>
       </div>
+
+      {/* Painel 2FA */}
+      <TwoFactorPanel />
 
       <div className="glass-card p-8 space-y-6">
         <h3 className="text-sm font-bold uppercase tracking-widest text-brand-primary flex items-center gap-2">

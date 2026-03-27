@@ -217,6 +217,42 @@ export async function getAuthSession() {
   return data.session;
 }
 
+// --- MFA (2FA) ---
+export async function mfaListFactors() {
+  const { data, error } = await supabase.auth.mfa.listFactors();
+  if (error) return { totp: [], all: [] };
+  return data;
+}
+
+export async function mfaEnrollTotp(friendlyName = 'Authenticator') {
+  const { data, error } = await supabase.auth.mfa.enroll({ factorType: 'totp', friendlyName });
+  if (error) throw error;
+  return data; // { id, type, totp: { qr_code, secret, uri } }
+}
+
+export async function mfaChallenge(factorId: string) {
+  const { data, error } = await supabase.auth.mfa.challenge({ factorId });
+  if (error) throw error;
+  return data; // { id (challengeId) }
+}
+
+export async function mfaVerify(factorId: string, challengeId: string, code: string) {
+  const { data, error } = await supabase.auth.mfa.verify({ factorId, challengeId, code });
+  if (error) return { error: error.message };
+  return { data, error: null };
+}
+
+export async function mfaUnenroll(factorId: string) {
+  const { error } = await supabase.auth.mfa.unenroll({ factorId });
+  if (error) throw error;
+}
+
+export async function mfaGetAuthenticatorLevel() {
+  const { data, error } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+  if (error) return { currentLevel: 'aal1', nextLevel: 'aal1' };
+  return data; // { currentLevel: 'aal1'|'aal2', nextLevel: 'aal1'|'aal2' }
+}
+
 // --- TAGS ---
 // Tags table: id (text), label (text), color (text), created_at
 export async function getTags(): Promise<Tag[]> {
