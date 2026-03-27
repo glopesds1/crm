@@ -599,6 +599,9 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
               if (prazoMeses && valorContrato) syncPayload.mrr_adicionado = parseFloat(valorContrato) / parseInt(prazoMeses);
             }
           } else if (statusReuniao === 'Não compareceu') {
+            syncPayload.Data_Reuniao_Realizada = null;
+            syncPayload.Status_TP = null;
+            syncPayload.Data_TP = null;
             syncPayload.closer = responsavelAtividade || leadObj.responsavel || null;
           }
           fetch(`${webhookBase}/webhook/sync-financeiro-crm`, {
@@ -612,10 +615,10 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
       // Add No-show tag when lead didn't show up
       if (statusReuniao === 'Não compareceu') {
         try {
-          const currentTags: string[] = leadObj?.tags ?? [];
-          if (!currentTags.includes('No-show')) {
-            await supabase.from('crm_leads').update({ tags: [...currentTags, 'No-show'] }).eq('id', leadId);
-            onLeadUpdated?.({ tags: [...currentTags, 'No-show'] });
+          const tagsAtuais: string[] = leadObj?.tags ?? [];
+          if (!tagsAtuais.includes('No-show')) {
+            await supabase.from('crm_leads').update({ tags: [...tagsAtuais, 'No-show'] }).eq('id', leadId);
+            onLeadUpdated?.({ tags: [...tagsAtuais, 'No-show'] });
           }
         } catch { /* silent */ }
       }
@@ -1546,7 +1549,10 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
             if (computedMrr) syncPayload.mrr_adicionado = computedMrr;
           }
         } else if (rrStatusReuniao === 'Não compareceu') {
-          if (responsavel) syncPayload.closer = responsavel;
+          syncPayload.Data_Reuniao_Realizada = null;
+          syncPayload.Status_TP = null;
+          syncPayload.Data_TP = null;
+          syncPayload.closer = responsavel || null;
         }
         fetch(`${webhookBase}/webhook/sync-financeiro-crm`, {
           method: 'POST',
@@ -1559,9 +1565,9 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
     // Add No-show tag when lead didn't show up
     if (rrStatusReuniao === 'Não compareceu') {
       try {
-        const currentTags: string[] = lead.tags ?? [];
-        if (!currentTags.includes('No-show')) {
-          const updatedTags = [...currentTags, 'No-show'];
+        const tagsAtuais: string[] = lead.tags ?? [];
+        if (!tagsAtuais.includes('No-show')) {
+          const updatedTags = [...tagsAtuais, 'No-show'];
           await supabase.from('crm_leads').update({ tags: updatedTags }).eq('id', lead.id);
           onSave({ tags: updatedTags });
           setLocalTags(updatedTags);
