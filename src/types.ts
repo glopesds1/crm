@@ -216,6 +216,17 @@ export type CrmClientTag = {
   cor: string;
 };
 
+export type CrmClientUser = {
+  id: string;
+  tenantId: string;
+  nome: string;
+  email: string;
+  senha: string;
+  role: 'admin' | 'member';
+  ativo: boolean;
+  criadoEm: string;
+};
+
 export type Demand = {
   id: string;
   clientId: string;

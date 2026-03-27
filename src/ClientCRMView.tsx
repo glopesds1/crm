@@ -31,16 +31,20 @@ const PLAN_COLORS: Record<string, string> = {
 // ── Props ───────────────────────────────────────────────────
 
 type Props = {
-  clients: Client[];
+  clients?: Client[];
   selectedTenantId?: string | null;
   onBack?: () => void;
+  // Quando é um cliente logado diretamente
+  tenantId?: string;
+  userName?: string;
 };
 
 // ── Main Component ──────────────────────────────────────────
 
-export default function ClientCRMView({ clients, selectedTenantId, onBack }: Props) {
+export default function ClientCRMView({ clients, selectedTenantId, onBack, tenantId, userName }: Props) {
+  const isClientView = !!tenantId;
   const [tenants, setTenants] = useState<CrmClientTenant[]>([]);
-  const [activeTenantId, setActiveTenantId] = useState<string | null>(selectedTenantId ?? null);
+  const [activeTenantId, setActiveTenantId] = useState<string | null>(tenantId ?? selectedTenantId ?? null);
   const [stages, setStages] = useState<CrmClientStage[]>([]);
   const [leads, setLeads] = useState<CrmClientLead[]>([]);
   const [loading, setLoading] = useState(true);
@@ -50,16 +54,16 @@ export default function ClientCRMView({ clients, selectedTenantId, onBack }: Pro
   const [selectedLead, setSelectedLead] = useState<CrmClientLead | null>(null);
   const [showNewLeadModal, setShowNewLeadModal] = useState(false);
 
-  // ── Load tenants ──────────────────────────────────────────
+  // ── Load tenants (só para admin M2, não para cliente) ─────
   useEffect(() => {
-    if (!activeTenantId) {
+    if (!activeTenantId && !isClientView) {
       setLoading(true);
       getAllTenants()
         .then(setTenants)
         .catch(console.error)
         .finally(() => setLoading(false));
     }
-  }, [activeTenantId]);
+  }, [activeTenantId, isClientView]);
 
   // ── Load stages + leads for active tenant ─────────────────
   useEffect(() => {
@@ -77,7 +81,7 @@ export default function ClientCRMView({ clients, selectedTenantId, onBack }: Pro
   // ── Client lookup ─────────────────────────────────────────
   const clientMap = useMemo(() => {
     const m = new Map<string, Client>();
-    clients.forEach((c) => m.set(c.id, c));
+    (clients ?? []).forEach((c) => m.set(c.id, c));
     return m;
   }, [clients]);
 
@@ -238,12 +242,14 @@ export default function ClientCRMView({ clients, selectedTenantId, onBack }: Pro
     <div className="flex flex-col h-full">
       {/* Header */}
       <div className="flex items-center gap-4 px-6 py-4 border-b border-white/5">
-        <button
-          onClick={handleBackToList}
-          className="p-2 rounded-lg hover:bg-white/5 transition-colors"
-        >
-          <ArrowLeft className="w-5 h-5 text-white/60" />
-        </button>
+        {!isClientView && (
+          <button
+            onClick={handleBackToList}
+            className="p-2 rounded-lg hover:bg-white/5 transition-colors"
+          >
+            <ArrowLeft className="w-5 h-5 text-white/60" />
+          </button>
+        )}
 
         <h1 className="text-xl font-bold text-white truncate">
           {activeClient?.name ?? 'CRM'}
