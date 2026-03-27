@@ -550,26 +550,6 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
             }).catch(e => console.warn('Webhook venda-fechada (CORS em dev):', e.message));
           } catch (e) { console.warn('Webhook venda-fechada:', e); }
 
-          // Sync financeiro venda → Railway (fire-and-forget)
-          if (leadObj?.lead_externo_id) {
-            try {
-              const webhookBase = import.meta.env.VITE_WEBHOOK_BASE?.replace('/webhook/dashboard', '') ?? 'https://webhook.m2black.com';
-              fetch(`${webhookBase}/webhook/sync-financeiro-crm`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  lead_id: leadObj.lead_externo_id,
-                  Data_Venda: new Date().toISOString().split('T')[0],
-                  Data_Reuniao_Realizada: new Date().toISOString().split('T')[0],
-                  programa: leadObj.programa_apresentado || null,
-                  rs_contrato: valorContrato ? parseFloat(valorContrato) : null,
-                  rs_cc: valorCc ? parseFloat(valorCc) : null,
-                  mrr_adicionado: prazoMeses && valorContrato ? parseFloat(valorContrato) / parseInt(prazoMeses) : null,
-                  closer: responsavelAtividade || leadObj.responsavel || null,
-                }),
-              }).catch(() => {});
-            } catch { /* silent */ }
-          }
         } else if (resultado === 'Perdido') {
           await supabase.from('crm_leads').update({
             etapa: 'perdido', status: 'perdido',
@@ -596,6 +576,36 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
         } catch (err) {
           console.error('Failed to create R2+ task:', err);
         }
+      }
+
+      // Sync financeiro reunião → Railway (fire-and-forget)
+      if (leadObj?.lead_externo_id) {
+        try {
+          const STATUS_TP_MAP: Record<string, string> = {
+            'Venda': 'Venda', 'Marcou R2+': 'Em negociação', 'Reagendou': 'Reagendado', 'Perdido': 'Perdido', 'Pendente': 'Pendente',
+          };
+          const TP_MAP: Record<string, string> = {
+            'Venda': 'Sim', 'Marcou R2+': 'Sim', 'Reagendou': 'Sim', 'Perdido': 'Não', 'Pendente': 'Sim',
+          };
+          const webhookBase = import.meta.env.VITE_WEBHOOK_BASE?.replace('/webhook/dashboard', '') ?? 'https://webhook.m2black.com';
+          fetch(`${webhookBase}/webhook/sync-financeiro-crm`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              lead_id: leadObj.lead_externo_id,
+              Data_Reuniao_Realizada: statusReuniao === 'Compareceu' ? new Date().toISOString().split('T')[0] : null,
+              Data_Venda: resultado === 'Venda' ? new Date().toISOString().split('T')[0] : null,
+              Status_TP: statusReuniao === 'Não compareceu' ? 'No-show' : (STATUS_TP_MAP[resultado] ?? 'Pendente'),
+              TP: statusReuniao === 'Não compareceu' ? 'Não' : (TP_MAP[resultado] ?? 'Sim'),
+              Data_TP: statusReuniao === 'Não compareceu' ? null : new Date().toISOString().split('T')[0],
+              programa: leadObj.programa_apresentado || null,
+              rs_contrato: valorContrato ? parseFloat(valorContrato) : null,
+              rs_cc: valorCc ? parseFloat(valorCc) : null,
+              mrr_adicionado: prazoMeses && valorContrato ? parseFloat(valorContrato) / parseInt(prazoMeses) : null,
+              closer: responsavelAtividade || leadObj.responsavel || null,
+            }),
+          }).catch(() => {});
+        } catch { /* silent */ }
       }
     }
 
@@ -1509,6 +1519,12 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
     // 6. Sync financeiro → Railway (fire-and-forget)
     if (lead.lead_externo_id) {
       try {
+        const STATUS_TP_MAP: Record<string, string> = {
+          'Venda': 'Venda', 'Marcou R2+': 'Em negociação', 'Reagendou': 'Reagendado', 'Perdido': 'Perdido', 'Pendente': 'Pendente',
+        };
+        const TP_MAP: Record<string, string> = {
+          'Venda': 'Sim', 'Marcou R2+': 'Sim', 'Reagendou': 'Sim', 'Perdido': 'Não', 'Pendente': 'Sim',
+        };
         const webhookBase = import.meta.env.VITE_WEBHOOK_BASE?.replace('/webhook/dashboard', '') ?? 'https://webhook.m2black.com';
         fetch(`${webhookBase}/webhook/sync-financeiro-crm`, {
           method: 'POST',
@@ -1516,8 +1532,10 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
           body: JSON.stringify({
             lead_id: lead.lead_externo_id,
             Data_Reuniao_Realizada: rrStatusReuniao === 'Compareceu' ? new Date().toISOString().split('T')[0] : null,
-            Status_TP: rrStatusReuniao === 'Não compareceu' ? 'No-show' : null,
-            Data_TP: rrStatusReuniao === 'Compareceu' ? new Date().toISOString().split('T')[0] : null,
+            Data_Venda: rrResultado === 'Venda' ? new Date().toISOString().split('T')[0] : null,
+            Status_TP: rrStatusReuniao === 'Não compareceu' ? 'No-show' : (STATUS_TP_MAP[rrResultado] ?? 'Pendente'),
+            TP: rrStatusReuniao === 'Não compareceu' ? 'Não' : (TP_MAP[rrResultado] ?? 'Sim'),
+            Data_TP: rrStatusReuniao === 'Não compareceu' ? null : new Date().toISOString().split('T')[0],
             programa: programaApresentado || null,
             rs_contrato: rrValorContrato || null,
             rs_cc: rrValorCc || null,
