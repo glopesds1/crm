@@ -592,7 +592,9 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
             syncPayload.Data_Reuniao_Realizada = hoje;
             syncPayload.closer = responsavelAtividade || leadObj.responsavel || null;
             if (resultado === 'Marcou R2+' || resultado === 'Reagendou') {
-              syncPayload.Data_TP = proximaReuniao ? new Date(proximaReuniao).toISOString().split('T')[0] : hoje;
+              const dataR2 = proximaReuniao ? new Date(proximaReuniao).toISOString().split('T')[0] : hoje;
+              syncPayload.Data_Reuniao_Marcada = dataR2;
+              syncPayload.Data_TP = dataR2;
               syncPayload.Status_TP = 'Pendente';
               syncPayload.TP = 'R2';
             } else if (resultado === 'Venda') {
@@ -1543,7 +1545,9 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
           syncPayload.Data_Reuniao_Realizada = hoje;
           syncPayload.closer = responsavel || null;
           if (rrResultado === 'Marcou R2+' || rrResultado === 'Reagendou') {
-            syncPayload.Data_TP = rrProximaReuniao ? new Date(rrProximaReuniao).toISOString().split('T')[0] : hoje;
+            const dataR2 = rrProximaReuniao ? new Date(rrProximaReuniao).toISOString().split('T')[0] : hoje;
+            syncPayload.Data_Reuniao_Marcada = dataR2;
+            syncPayload.Data_TP = dataR2;
             syncPayload.Status_TP = 'Pendente';
             syncPayload.TP = 'R2';
           } else if (rrResultado === 'Venda') {
