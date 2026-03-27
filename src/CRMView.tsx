@@ -582,7 +582,7 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
       if (leadObj?.lead_externo_id) {
         try {
           const STATUS_TP_MAP: Record<string, string> = {
-            'Venda': 'Venda', 'Marcou R2+': 'Em negociação', 'Reagendou': 'Reagendado', 'Perdido': 'Perdido', 'Pendente': 'Pendente',
+            'Venda': 'Venda', 'Marcou R2+': 'Reunião Realizada', 'Reagendou': 'Reagendado', 'Perdido': 'Perdido', 'Pendente': 'Pendente',
           };
           const TP_MAP: Record<string, string> = {
             'Venda': 'Sim', 'Marcou R2+': 'Sim', 'Reagendou': 'Sim', 'Perdido': 'Não', 'Pendente': 'Sim',
@@ -1520,7 +1520,7 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
     if (lead.lead_externo_id) {
       try {
         const STATUS_TP_MAP: Record<string, string> = {
-          'Venda': 'Venda', 'Marcou R2+': 'Em negociação', 'Reagendou': 'Reagendado', 'Perdido': 'Perdido', 'Pendente': 'Pendente',
+          'Venda': 'Venda', 'Marcou R2+': 'Reunião Realizada', 'Reagendou': 'Reagendado', 'Perdido': 'Perdido', 'Pendente': 'Pendente',
         };
         const TP_MAP: Record<string, string> = {
           'Venda': 'Sim', 'Marcou R2+': 'Sim', 'Reagendou': 'Sim', 'Perdido': 'Não', 'Pendente': 'Sim',
