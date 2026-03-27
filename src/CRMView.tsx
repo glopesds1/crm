@@ -1299,20 +1299,23 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
       if (agTipo === 'reuniao') {
         try {
           const webhookBase = import.meta.env.VITE_WEBHOOK_BASE?.replace('/webhook/dashboard', '') ?? 'https://webhook.m2black.com';
-          fetch(`${webhookBase}/webhook/agendar-reuniao`, {
+          const agPayload = {
+            lead_nome: lead.nome,
+            lead_telefone: lead.telefone ?? '',
+            lead_externo_id: lead.lead_externo_id ?? lead.id,
+            closer: agResponsavel || lead.responsavel || '',
+            tipo_reuniao: agTitulo.includes('R2') ? 'R2' : 'R1',
+            data_hora: new Date(agData).toISOString(),
+            duracao_min: 60,
+          };
+          console.log('[agendar-reuniao] Tarefa tipo reuniao — enviando webhook:', JSON.stringify(agPayload, null, 2));
+          await fetch(`${webhookBase}/webhook/agendar-reuniao`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              lead_nome: lead.nome,
-              lead_telefone: lead.telefone ?? '',
-              lead_externo_id: lead.lead_externo_id ?? lead.id,
-              closer: agResponsavel || lead.responsavel || '',
-              tipo_reuniao: agTitulo.includes('R2') ? 'R2' : 'R1',
-              data_hora: new Date(agData).toISOString(),
-              duracao_min: 60,
-            }),
-          }).catch(e => console.warn('Webhook agendar-reuniao (CORS em dev):', e.message));
-        } catch (err) { console.error('Failed to send agendar-reuniao webhook:', err); }
+            body: JSON.stringify(agPayload),
+          }).then(r => console.log('[agendar-reuniao] Response:', r.status))
+            .catch(e => console.warn('[agendar-reuniao] Fetch error:', e.message));
+        } catch (err) { console.error('[agendar-reuniao] Failed:', err); }
       }
       setShowAgendarTarefa(false);
       setAgTipo(null); setAgTitulo(''); setAgData(''); setAgResponsavel('');
