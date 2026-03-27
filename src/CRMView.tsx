@@ -434,11 +434,27 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
           };
           const webhookBase = import.meta.env.VITE_WEBHOOK_BASE?.replace('/webhook/dashboard', '') ?? 'https://webhook.m2black.com';
           console.log('[BANT webhook] lead_externo_id:', leadObj?.lead_externo_id, 'lead.id:', leadId);
-          fetch(`${webhookBase}/webhook/agendar-reuniao`, {
+          const bantResp = await fetch(`${webhookBase}/webhook/agendar-reuniao`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(bantPayload),
-          }).catch(e => console.warn('Webhook agendar-reuniao (CORS em dev):', e.message));
+          }).catch(e => { console.warn('Webhook agendar-reuniao (CORS em dev):', e.message); return null; });
+          // Fire-and-forget: agendar touchpoints
+          try {
+            let meetLink = '';
+            try { if (bantResp?.ok) { const rj = await bantResp.json(); meetLink = rj.meet_link ?? ''; } } catch { /* no json */ }
+            fetch(`${webhookBase}/webhook/agendar-touchpoints`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                lead_id: leadObj?.lead_externo_id ?? leadId,
+                lead_nome: leadName,
+                lead_telefone: leadObj?.telefone ?? '',
+                data_hora: new Date(bantDataHora).toISOString(),
+                meet_link: meetLink,
+              }),
+            }).catch(() => {});
+          } catch { /* silent */ }
         } catch (err) {
           console.error('Failed to send BANT webhook:', err);
         }
@@ -615,6 +631,16 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(syncPayload),
           }).catch(() => {});
+          // Cancelar touchpoints pendentes quando No-show
+          if (statusReuniao === 'Não compareceu') {
+            try {
+              fetch(`${webhookBase}/webhook/cancelar-touchpoints`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ lead_id: leadObj?.lead_externo_id ?? leadId }),
+              }).catch(() => {});
+            } catch { /* silent */ }
+          }
         } catch { /* silent */ }
       }
 
@@ -1160,11 +1186,27 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
         },
       };
       const webhookBase = import.meta.env.VITE_WEBHOOK_BASE?.replace('/webhook/dashboard', '') ?? 'https://webhook.m2black.com';
-      await fetch(`${webhookBase}/webhook/agendar-reuniao`, {
+      const arResp = await fetch(`${webhookBase}/webhook/agendar-reuniao`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
+      // Fire-and-forget: agendar touchpoints
+      try {
+        let meetLink = '';
+        try { if (arResp?.ok) { const rj = await arResp.json(); meetLink = rj.meet_link ?? ''; } } catch { /* no json */ }
+        fetch(`${webhookBase}/webhook/agendar-touchpoints`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            lead_id: lead.lead_externo_id ?? lead.id,
+            lead_nome: lead.nome,
+            lead_telefone: lead.telefone ?? '',
+            data_hora: new Date(arDataHora).toISOString(),
+            meet_link: meetLink,
+          }),
+        }).catch(() => {});
+      } catch { /* silent */ }
       const upd: Partial<CRMLead> = {
         etapa: 'rm_marcada',
         proxima_reuniao: new Date(arDataHora).toISOString(),
@@ -1337,12 +1379,28 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
             duracao_min: 60,
           };
           console.log('[agendar-reuniao] Tarefa tipo reuniao — enviando webhook:', JSON.stringify(agPayload, null, 2));
-          await fetch(`${webhookBase}/webhook/agendar-reuniao`, {
+          const agResp = await fetch(`${webhookBase}/webhook/agendar-reuniao`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(agPayload),
-          }).then(r => console.log('[agendar-reuniao] Response:', r.status))
-            .catch(e => console.warn('[agendar-reuniao] Fetch error:', e.message));
+          }).then(r => { console.log('[agendar-reuniao] Response:', r.status); return r; })
+            .catch(e => { console.warn('[agendar-reuniao] Fetch error:', e.message); return null; });
+          // Fire-and-forget: agendar touchpoints
+          try {
+            let meetLink = '';
+            try { if (agResp?.ok) { const rj = await agResp.json(); meetLink = rj.meet_link ?? ''; } } catch { /* no json */ }
+            fetch(`${webhookBase}/webhook/agendar-touchpoints`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                lead_id: lead.lead_externo_id ?? lead.id,
+                lead_nome: lead.nome,
+                lead_telefone: lead.telefone ?? '',
+                data_hora: new Date(agData).toISOString(),
+                meet_link: meetLink,
+              }),
+            }).catch(() => {});
+          } catch { /* silent */ }
         } catch (err) { console.error('[agendar-reuniao] Failed:', err); }
       }
       setShowAgendarTarefa(false);
@@ -1511,7 +1569,7 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
       // Send agendar-reuniao webhook for R2+ / Reagendou
       try {
         const webhookBase = import.meta.env.VITE_WEBHOOK_BASE?.replace('/webhook/dashboard', '') ?? 'https://webhook.m2black.com';
-        fetch(`${webhookBase}/webhook/agendar-reuniao`, {
+        const rrResp = await fetch(`${webhookBase}/webhook/agendar-reuniao`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -1524,7 +1582,23 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
             duracao_min: 60,
             reagendamento: rrResultado === 'Reagendou',
           }),
-        }).catch(e => console.warn('Webhook agendar-reuniao (CORS em dev):', e.message));
+        }).catch(e => { console.warn('Webhook agendar-reuniao (CORS em dev):', e.message); return null; });
+        // Fire-and-forget: agendar touchpoints
+        try {
+          let meetLink = '';
+          try { if (rrResp?.ok) { const rj = await rrResp.json(); meetLink = rj.meet_link ?? ''; } } catch { /* no json */ }
+          fetch(`${webhookBase}/webhook/agendar-touchpoints`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              lead_id: lead.lead_externo_id ?? lead.id,
+              lead_nome: lead.nome,
+              lead_telefone: lead.telefone ?? '',
+              data_hora: new Date(rrProximaReuniao).toISOString(),
+              meet_link: meetLink,
+            }),
+          }).catch(() => {});
+        } catch { /* silent */ }
       } catch (err) { console.error('Failed to send agendar-reuniao webhook:', err); }
     }
 
@@ -1568,6 +1642,16 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(syncPayload),
         }).catch(() => {});
+        // Cancelar touchpoints pendentes quando No-show
+        if (rrStatusReuniao === 'Não compareceu') {
+          try {
+            fetch(`${webhookBase}/webhook/cancelar-touchpoints`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ lead_id: lead.lead_externo_id ?? lead.id }),
+            }).catch(() => {});
+          } catch { /* silent */ }
+        }
       } catch { /* silent */ }
     }
 
@@ -1617,7 +1701,7 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
       // Enviar para webhook agendar-reuniao (atualizar Google Agenda)
       try {
         const webhookBase = import.meta.env.VITE_WEBHOOK_BASE?.replace('/webhook/dashboard', '') ?? 'https://webhook.m2black.com';
-        fetch(`${webhookBase}/webhook/agendar-reuniao`, {
+        const reagResp = await fetch(`${webhookBase}/webhook/agendar-reuniao`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -1629,7 +1713,23 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
             duracao_min: 60,
             reagendamento: true,
           }),
-        });
+        }).catch(() => null);
+        // Fire-and-forget: agendar touchpoints
+        try {
+          let meetLink = '';
+          try { if (reagResp?.ok) { const rj = await reagResp.json(); meetLink = rj.meet_link ?? ''; } } catch { /* no json */ }
+          fetch(`${webhookBase}/webhook/agendar-touchpoints`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              lead_id: lead.lead_externo_id ?? lead.id,
+              lead_nome: lead.nome,
+              lead_telefone: lead.telefone ?? '',
+              data_hora: new Date(reagendarData).toISOString(),
+              meet_link: meetLink,
+            }),
+          }).catch(() => {});
+        } catch { /* silent */ }
       } catch { /* fire-and-forget */ }
       setReagendandoTarefa(null);
       setReagendarData('');
@@ -2576,7 +2676,7 @@ export default function CRMView({ userSession, teamMembers, openLeadByName, onLe
     // Enviar para webhook agendar-reuniao (atualizar Google Agenda)
     try {
       const webhookBase = import.meta.env.VITE_WEBHOOK_BASE?.replace('/webhook/dashboard', '') ?? 'https://webhook.m2black.com';
-      fetch(`${webhookBase}/webhook/agendar-reuniao`, {
+      const kanbanResp = await fetch(`${webhookBase}/webhook/agendar-reuniao`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -2588,7 +2688,23 @@ export default function CRMView({ userSession, teamMembers, openLeadByName, onLe
           duracao_min: 60,
           reagendamento: true,
         }),
-      });
+      }).catch(() => null);
+      // Fire-and-forget: agendar touchpoints
+      try {
+        let meetLink = '';
+        try { if (kanbanResp?.ok) { const rj = await kanbanResp.json(); meetLink = rj.meet_link ?? ''; } } catch { /* no json */ }
+        fetch(`${webhookBase}/webhook/agendar-touchpoints`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            lead_id: lead?.lead_externo_id ?? lead?.id ?? '',
+            lead_nome: lead?.nome ?? '',
+            lead_telefone: lead?.telefone ?? '',
+            data_hora: new Date(novaData).toISOString(),
+            meet_link: meetLink,
+          }),
+        }).catch(() => {});
+      } catch { /* silent */ }
     } catch { /* fire-and-forget */ }
   };
 
