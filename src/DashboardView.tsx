@@ -152,7 +152,9 @@ export default function DashboardView({ userSession }: { userSession: any }) {
     try {
       const di = r.inicio;
       const df = r.fim;
-      const url = `${WEBHOOK_BASE}?page=${p}&data_inicio=${di}&data_fim=${df}`;
+      const isComercial = (userSession?.role ?? '').toLowerCase() === 'comercial';
+      const closerParam = isComercial && userSession?.name ? `&closer=${encodeURIComponent(userSession.name)}` : '';
+      const url = `${WEBHOOK_BASE}?page=${p}&data_inicio=${di}&data_fim=${df}${closerParam}`;
       const res = await fetch(url);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const text = await res.text();
@@ -988,12 +990,13 @@ function PageReunioes({ data }: { data: any }) {
         </h3>
         {dia.length === 0 ? <Empty msg="Nenhuma reunião hoje." /> : (
           <Table
-            cols={['Lead', 'Telefone', 'Status', 'TP', 'Vendedor', 'SDR']}
+            cols={['Lead', 'Telefone', 'Horário', 'Status', 'TP', 'Vendedor', 'SDR']}
             rows={dia.map(r => {
               const label = STATUS_LABEL[r.status] ?? r.status;
               return [
                 r.lead,
                 r.telefone ?? '—',
+                r.horario ?? '—',
                 <span className={statusColor[label] ?? 'text-gray-400'}>{label}</span>,
                 r.tp ?? '—',
                 r.vendedor ?? '—',

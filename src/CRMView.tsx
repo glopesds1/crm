@@ -480,9 +480,11 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
           const currentTP = (leadObj as any)?.tp || (leadObj as any)?.TP || '';
           const tpMap: Record<string, string> = {'': 'R1', 'R1': 'R2', 'R2': 'R3', 'R3': 'R4+'};
           const agendamentoTP = tpMap[currentTP] || 'R4+';
+          const horaBANT = new Date(bantDataHora).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'America/Sao_Paulo' });
           syncPostgres(leadObj?.lead_externo_id, {
             reuniao_tp: agendamentoTP,
             Data_Reuniao_Marcada: new Date(bantDataHora).toISOString().split('T')[0],
+            hora_marcada: horaBANT,
             TP: agendamentoTP,
             closer: bantCloser || null,
           });
@@ -1232,9 +1234,11 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
         const currentTP = (lead as any).tp || (lead as any).TP || '';
         const tpMap: Record<string, string> = {'': 'R1', 'R1': 'R2', 'R2': 'R3', 'R3': 'R4+'};
         const agendamentoTP = tpMap[currentTP] || 'R4+';
+        const horaAR = new Date(arDataHora).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'America/Sao_Paulo' });
         syncPostgres(lead.lead_externo_id, {
           reuniao_tp: agendamentoTP,
           Data_Reuniao_Marcada: new Date(arDataHora).toISOString().split('T')[0],
+          hora_marcada: horaAR,
           TP: agendamentoTP,
           closer: arCloser || null,
         });
@@ -1422,9 +1426,11 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
           const currentTP = (lead as any).tp || (lead as any).TP || '';
           const tpMap: Record<string, string> = {'': 'R1', 'R1': 'R2', 'R2': 'R3', 'R3': 'R4+'};
           const agendamentoTP = tpMap[currentTP] || 'R4+';
+          const horaAG = new Date(agData).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'America/Sao_Paulo' });
           syncPostgres(lead.lead_externo_id, {
             reuniao_tp: agendamentoTP,
             Data_Reuniao_Marcada: new Date(agData).toISOString().split('T')[0],
+            hora_marcada: horaAG,
             TP: agendamentoTP,
             closer: lead.responsavel || null,
           });
@@ -1763,9 +1769,11 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
         const currentTP = (lead as any).tp || (lead as any).TP || '';
         const tpMap: Record<string, string> = {'': 'R1', 'R1': 'R2', 'R2': 'R3', 'R3': 'R4+'};
         const agendamentoTP = tpMap[currentTP] || 'R4+';
+        const horaReag = new Date(reagendarData).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'America/Sao_Paulo' });
         syncPostgres(lead.lead_externo_id, {
           reuniao_tp: agendamentoTP,
           Data_Reuniao_Marcada: new Date(reagendarData).toISOString().split('T')[0],
+          hora_marcada: horaReag,
           TP: agendamentoTP,
           closer: t.responsavel || lead.responsavel || null,
         });
@@ -2751,9 +2759,11 @@ export default function CRMView({ userSession, teamMembers, openLeadByName, onLe
       const currentTP = (lead as any).tp || (lead as any).TP || '';
       const tpMap: Record<string, string> = {'': 'R1', 'R1': 'R2', 'R2': 'R3', 'R3': 'R4+'};
       const agendamentoTP = tpMap[currentTP] || 'R4+';
+      const horaKanban = new Date(novaData).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'America/Sao_Paulo' });
       syncPostgres(lead.lead_externo_id, {
         reuniao_tp: agendamentoTP,
         Data_Reuniao_Marcada: new Date(novaData).toISOString().split('T')[0],
+        hora_marcada: horaKanban,
         TP: agendamentoTP,
         closer: tarefa.responsavel || lead.responsavel || null,
       });
