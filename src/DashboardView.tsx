@@ -1001,7 +1001,9 @@ function PageReunioes({ data }: { data: any }) {
               r.vendedor,
               r.lead,
               r.telefone ?? '—',
-              <span className={statusColor[STATUS_LABEL[r.status] ?? r.status] ?? 'text-gray-300'}>{STATUS_LABEL[r.status] ?? r.status}</span>,
+              (r.status === 'Pendente' || r.status === 'rm_realizada' || STATUS_LABEL[r.status] === 'Pendente')
+                ? <span className="text-gray-500">—</span>
+                : <span className={statusColor[STATUS_LABEL[r.status] ?? r.status] ?? 'text-gray-300'}>{STATUS_LABEL[r.status] ?? r.status}</span>,
               r.sdr ?? '—',
             ] as any)}
           />
