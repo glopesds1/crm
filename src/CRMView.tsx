@@ -310,11 +310,13 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
 
     if (tipo === 'reuniao') {
       if (!statusReuniao) { setValidationMsg('Selecione se compareceu ou não'); return; }
-      if (!resultado) { setValidationMsg('Selecione o resultado da reunião'); return; }
-      if (!valorContrato) { setValidationMsg('Preencha o valor do contrato'); return; }
-      if (!valorCc) { setValidationMsg('Preencha o valor do cash collect'); return; }
-      if (!prazoMeses) { setValidationMsg('Preencha o prazo em meses'); return; }
-      if (!resumo.trim()) { setValidationMsg('Preencha o resumo da reunião'); return; }
+      if (statusReuniao === 'Compareceu') {
+        if (!resultado) { setValidationMsg('Selecione o resultado da reunião'); return; }
+        if (!valorContrato) { setValidationMsg('Preencha o valor do contrato'); return; }
+        if (!valorCc) { setValidationMsg('Preencha o valor do cash collect'); return; }
+        if (!prazoMeses) { setValidationMsg('Preencha o prazo em meses'); return; }
+        if (!resumo.trim()) { setValidationMsg('Preencha o resumo da reunião'); return; }
+      }
       if (resultado === 'Venda') {
         if (!razaoSocial.trim()) { setValidationMsg('Preencha a razão social'); return; }
         if (!cpfCnpj.trim()) { setValidationMsg('Preencha o CPF/CNPJ'); return; }
@@ -332,6 +334,8 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
     if (tipo !== 'reuniao' && !(tipo === 'ligacao' && agendou) && !descricao.trim()) { setValidationMsg('Preencha as observações sobre a atividade'); return; }
 
     setSaving(true);
+    // Clear resultado when lead didn't show up
+    if (tipo === 'reuniao' && statusReuniao === 'Não compareceu') setResultado('');
     const now = new Date().toISOString();
 
     // Upload image if selected (completely optional — never blocks save)
@@ -1348,6 +1352,7 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
 
   const handleSaveReuniao = async () => {
     if (!rrImageFile) { setRrImageError(true); return; }
+    if (rrStatusReuniao === 'Não compareceu') setRrResultado('');
     if (rrResultado === 'Perdido' && !rrMotivoPerda.trim()) { setRrErroMotivo(true); return; }
     setRrSaving(true);
     const now = new Date().toISOString();
