@@ -976,6 +976,18 @@ function PageReunioes({ data }: { data: any }) {
     'Perdido': 'text-red-400',
   };
 
+  const STATUS_LABEL: Record<string, string> = {
+    'rm_marcada': 'Reunião Marcada',
+    'rm_realizada': 'Reunião Realizada',
+    'fup_ativa': 'FUP Ativa',
+    'fechado': 'Fechado',
+    'perdido': 'Perdido',
+    'congelado': 'Congelado',
+    'base': 'Base',
+    'triagem': 'Triagem',
+    'desqualificado': 'Desqualificado',
+  };
+
   return (
     <div className="space-y-6">
       <div className="glass-card p-6">
@@ -989,7 +1001,7 @@ function PageReunioes({ data }: { data: any }) {
               r.vendedor,
               r.lead,
               r.telefone ?? '—',
-              <span className={statusColor[r.status] ?? 'text-gray-300'}>{r.status}</span>,
+              <span className={statusColor[STATUS_LABEL[r.status] ?? r.status] ?? 'text-gray-300'}>{STATUS_LABEL[r.status] ?? r.status}</span>,
               r.sdr ?? '—',
             ] as any)}
           />
