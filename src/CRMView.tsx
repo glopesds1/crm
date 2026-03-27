@@ -14,6 +14,21 @@ import { DEFAULT_ONBOARDING_ITEMS } from './constants';
 // Brasil aboliu horário de verão em 2019, então -03:00 é fixo.
 const SP_TZ = 'America/Sao_Paulo';
 
+const WEBHOOK_BASE = (import.meta.env.VITE_WEBHOOK_BASE ?? 'https://webhook.m2black.com/webhook/dashboard').replace('/webhook/dashboard', '');
+
+const syncPostgres = (leadExternoId: string | undefined | null, fields: Record<string, unknown>) => {
+  if (!leadExternoId) return;
+  const clean: Record<string, unknown> = { lead_externo_id: leadExternoId };
+  for (const [k, v] of Object.entries(fields)) {
+    if (v !== undefined) clean[k] = v;
+  }
+  fetch(`${WEBHOOK_BASE}/webhook/crm-sync-etapa`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(clean),
+  }).catch(e => console.warn('[syncPostgres]', e.message));
+};
+
 // datetime-local retorna "2026-03-24T18:00" sem timezone.
 // Anexa explicitamente -03:00 para que o Supabase (timestamptz) interprete
 // como horário de São Paulo, independente do fuso do navegador.
@@ -416,6 +431,7 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
           const bantPayload = {
             lead_nome: leadName,
             lead_telefone: leadObj?.telefone ?? '',
+            lead_externo_id: leadObj?.lead_externo_id ?? leadId,
             closer: bantCloser,
             tipo_reuniao: bantTipo,
             data_hora: new Date(bantDataHora).toISOString(),
@@ -598,53 +614,38 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
         }
       }
 
-      // Sync financeiro reunião → Railway (fire-and-forget)
-      if (leadObj?.lead_externo_id) {
-        try {
-          const webhookBase = import.meta.env.VITE_WEBHOOK_BASE?.replace('/webhook/dashboard', '') ?? 'https://webhook.m2black.com';
-          const hoje = new Date().toISOString().split('T')[0];
-          const syncPayload: Record<string, any> = { lead_id: leadObj.lead_externo_id };
-          if (statusReuniao === 'Compareceu') {
-            syncPayload.Data_Reuniao_Realizada = hoje;
-            syncPayload.closer = responsavelAtividade || leadObj.responsavel || null;
-            if (resultado === 'Marcou R2+' || resultado === 'Reagendou') {
-              const dataR2 = proximaReuniao ? new Date(proximaReuniao).toISOString().split('T')[0] : hoje;
-              syncPayload.Data_Reuniao_Marcada = dataR2;
-              syncPayload.Data_TP = dataR2;
-              syncPayload.Status_TP = 'Reunião Marcada';
-              syncPayload.TP = 'R2';
-            } else if (resultado === 'Venda') {
-              syncPayload.Data_Venda = hoje;
-              syncPayload.programa = leadObj.programa_apresentado || null;
-              syncPayload.rs_contrato = valorContrato || null;
-              syncPayload.rs_cc = valorCc || null;
-              syncPayload.mrr_adicionado = prazoMeses && valorContrato ? parseFloat(valorContrato) / parseInt(prazoMeses) : null;
-              syncPayload.Status_TP = 'Venda';
-            } else {
-              syncPayload.Status_TP = resultado === 'Perdido' ? 'Perdido' : 'Reunião Realizada';
-            }
-          } else if (statusReuniao === 'Não compareceu') {
-            syncPayload.Data_Reuniao_Realizada = null;
-            syncPayload.Status_TP = 'No-show';
-            syncPayload.Data_TP = null;
-            syncPayload.closer = responsavelAtividade || leadObj.responsavel || null;
-          }
-          fetch(`${webhookBase}/webhook/sync-financeiro-crm`, {
+      // Sync Postgres → Railway via n8n (fire-and-forget)
+      {
+        const hoje = new Date().toISOString().split('T')[0];
+        const closer = responsavelAtividade || leadObj?.responsavel || null;
+        if (statusReuniao === 'Não compareceu') {
+          syncPostgres(leadObj?.lead_externo_id, { Status_TP: 'No-show', closer });
+          // Cancelar touchpoints pendentes
+          fetch(`${WEBHOOK_BASE}/webhook/cancelar-touchpoints`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(syncPayload),
+            body: JSON.stringify({ lead_id: leadObj?.lead_externo_id ?? leadId }),
           }).catch(() => {});
-          // Cancelar touchpoints pendentes quando No-show
-          if (statusReuniao === 'Não compareceu') {
-            try {
-              fetch(`${webhookBase}/webhook/cancelar-touchpoints`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ lead_id: leadObj?.lead_externo_id ?? leadId }),
-              }).catch(() => {});
-            } catch { /* silent */ }
+        } else if (statusReuniao === 'Compareceu') {
+          if (resultado === 'Marcou R2+') {
+            const currentTP = (leadObj as any)?.tp || (leadObj as any)?.TP || '';
+            const tpMap: Record<string, string> = {'': 'R2', 'R1': 'R2', 'R2': 'R3', 'R3': 'R4+'};
+            syncPostgres(leadObj?.lead_externo_id, { Status_TP: 'Pendente', TP: tpMap[currentTP] || 'R4+', Data_Reuniao_Realizada: hoje, Data_TP: hoje, closer });
+          } else if (resultado === 'Reagendou') {
+            syncPostgres(leadObj?.lead_externo_id, { Status_TP: 'Reagendou', Data_Reuniao_Realizada: hoje, Data_TP: hoje, closer });
+          } else if (resultado === 'Venda') {
+            syncPostgres(leadObj?.lead_externo_id, {
+              status: 'ganho', etapa: 'fechado', Data_Venda: hoje, Data_Reuniao_Realizada: hoje, Data_TP: hoje,
+              programa: leadObj?.programa_apresentado || null, rs_contrato: valorContrato || null, rs_cc: valorCc || null,
+              mrr_adicionado: (prazoMeses && valorContrato ? parseFloat(valorContrato) / parseInt(prazoMeses) : null) || null,
+              Etapa_Fechamento: 'R1', closer,
+            });
+          } else if (resultado === 'Perdido') {
+            syncPostgres(leadObj?.lead_externo_id, { status: 'perdido', Data_Reuniao_Realizada: hoje, Data_TP: hoje, closer });
+          } else {
+            syncPostgres(leadObj?.lead_externo_id, { Status_TP: 'Pendente', Data_Reuniao_Realizada: hoje, Data_TP: hoje, closer });
           }
-        } catch { /* silent */ }
+        }
       }
 
       // Add No-show tag when lead didn't show up
@@ -1294,49 +1295,20 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
       || (valorMrr !== '' && valorMrr !== (lead.valor_mrr ?? ''))
       || (programaApresentado && programaApresentado !== (lead.programa_apresentado ?? ''));
     if (lead.lead_externo_id && finChanged) {
-      try {
-        const webhookBase = import.meta.env.VITE_WEBHOOK_BASE?.replace('/webhook/dashboard', '') ?? 'https://webhook.m2black.com';
-        const infoPayload: Record<string, any> = { lead_id: lead.lead_externo_id };
-        if (lead.proxima_reuniao) infoPayload.Data_Reuniao_Marcada = lead.proxima_reuniao;
-        if (programaApresentado) infoPayload.programa = programaApresentado;
-        if (valorContrato !== '') infoPayload.rs_contrato = valorContrato;
-        if (valorCc !== '') infoPayload.rs_cc = valorCc;
-        if (valorMrr && valorContrato) infoPayload.tempo_contrato = (Number(valorContrato) / Number(valorMrr)).toFixed(0);
-        if (valorMrr !== '') infoPayload.mrr_adicionado = valorMrr;
-        if (responsavel) infoPayload.closer = responsavel;
-        fetch(`${webhookBase}/webhook/sync-financeiro-crm`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(infoPayload),
-        }).catch(() => {});
-      } catch { /* silent */ }
+      const infoFields: Record<string, unknown> = {};
+      if (lead.proxima_reuniao) infoFields.Data_Reuniao_Marcada = lead.proxima_reuniao;
+      if (programaApresentado) infoFields.programa = programaApresentado;
+      if (valorContrato !== '') infoFields.rs_contrato = valorContrato;
+      if (valorCc !== '') infoFields.rs_cc = valorCc;
+      if (valorMrr && valorContrato) infoFields.tempo_contrato = (Number(valorContrato) / Number(valorMrr)).toFixed(0);
+      if (valorMrr !== '') infoFields.mrr_adicionado = valorMrr;
+      if (responsavel) infoFields.closer = responsavel;
+      syncPostgres(lead.lead_externo_id, infoFields);
     }
 
     // Sync mudança de etapa → Railway via n8n (fire-and-forget)
     if (lead.lead_externo_id && etapa !== lead.etapa) {
-      try {
-        const webhookBase = import.meta.env.VITE_WEBHOOK_BASE?.replace('/webhook/dashboard', '') ?? 'https://webhook.m2black.com';
-        const etapaPayload: Record<string, any> = { lead_id: lead.lead_externo_id, closer: responsavel || null };
-        if (etapa === 'rm_marcada') {
-          etapaPayload.Data_Reuniao_Marcada = new Date().toISOString().split('T')[0];
-          etapaPayload.Status_TP = 'Reunião Marcada';
-        }
-        if (etapa === 'rm_realizada') {
-          etapaPayload.Data_Reuniao_Realizada = new Date().toISOString().split('T')[0];
-          etapaPayload.Status_TP = 'Reunião Realizada';
-        }
-        if (etapa === 'fechado') {
-          etapaPayload.Status_TP = 'Venda';
-        }
-        if (etapa === 'perdido') {
-          etapaPayload.Status_TP = 'Perdido';
-        }
-        fetch(`${webhookBase}/webhook/sync-financeiro-crm`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(etapaPayload),
-        }).catch(() => {});
-      } catch { /* silent */ }
+      syncPostgres(lead.lead_externo_id, { etapa, closer: responsavel || null });
     }
 
     setSaving(false);
@@ -1418,21 +1390,11 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
           } catch { /* silent */ }
         } catch (err) { console.error('[agendar-reuniao] Failed:', err); }
         // Sync Status_TP = Reunião Marcada → Railway (fire-and-forget)
-        if (lead.lead_externo_id) {
-          try {
-            const syncBase = import.meta.env.VITE_WEBHOOK_BASE?.replace('/webhook/dashboard', '') ?? 'https://webhook.m2black.com';
-            fetch(`${syncBase}/webhook/sync-financeiro-crm`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                lead_id: lead.lead_externo_id,
-                Data_Reuniao_Marcada: new Date(agData).toISOString().split('T')[0],
-                Status_TP: 'Reunião Marcada',
-                closer: lead.responsavel || null,
-              }),
-            }).catch(() => {});
-          } catch { /* silent */ }
-        }
+        syncPostgres(lead.lead_externo_id, {
+          Data_Reuniao_Marcada: new Date(agData).toISOString().split('T')[0],
+          Status_TP: 'Reunião Marcada',
+          closer: lead.responsavel || null,
+        });
       }
       setShowAgendarTarefa(false);
       setAgTipo(null); setAgTitulo(''); setAgData(''); setAgResponsavel('');
@@ -1640,53 +1602,37 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
     if (leadUpd.valor_cc != null) setValorCc(leadUpd.valor_cc);
     if (leadUpd.valor_mrr != null) setValorMrr(leadUpd.valor_mrr);
 
-    // 6. Sync financeiro → Railway (fire-and-forget)
-    if (lead.lead_externo_id) {
-      try {
-        const webhookBase = import.meta.env.VITE_WEBHOOK_BASE?.replace('/webhook/dashboard', '') ?? 'https://webhook.m2black.com';
-        const hoje = new Date().toISOString().split('T')[0];
-        const syncPayload: Record<string, any> = { lead_id: lead.lead_externo_id };
-        if (rrStatusReuniao === 'Compareceu') {
-          syncPayload.Data_Reuniao_Realizada = hoje;
-          syncPayload.closer = responsavel || null;
-          if (rrResultado === 'Marcou R2+' || rrResultado === 'Reagendou') {
-            const dataR2 = rrProximaReuniao ? new Date(rrProximaReuniao).toISOString().split('T')[0] : hoje;
-            syncPayload.Data_Reuniao_Marcada = dataR2;
-            syncPayload.Data_TP = dataR2;
-            syncPayload.Status_TP = 'Reunião Marcada';
-            syncPayload.TP = 'R2';
-          } else if (rrResultado === 'Venda') {
-            syncPayload.Data_Venda = hoje;
-            syncPayload.programa = programaApresentado || null;
-            syncPayload.rs_contrato = rrValorContrato || null;
-            syncPayload.rs_cc = rrValorCc || null;
-            syncPayload.mrr_adicionado = computedMrr || null;
-            syncPayload.Status_TP = 'Venda';
-          } else {
-            syncPayload.Status_TP = rrResultado === 'Perdido' ? 'Perdido' : 'Reunião Realizada';
-          }
-        } else if (rrStatusReuniao === 'Não compareceu') {
-          syncPayload.Data_Reuniao_Realizada = null;
-          syncPayload.Status_TP = 'No-show';
-          syncPayload.Data_TP = null;
-          syncPayload.closer = responsavel || null;
-        }
-        fetch(`${webhookBase}/webhook/sync-financeiro-crm`, {
+    // 6. Sync Postgres → Railway via n8n (fire-and-forget)
+    {
+      const hoje = new Date().toISOString().split('T')[0];
+      const closer = responsavel || null;
+      if (rrStatusReuniao === 'Não compareceu') {
+        syncPostgres(lead.lead_externo_id, { Status_TP: 'No-show', closer });
+        // Cancelar touchpoints pendentes
+        fetch(`${WEBHOOK_BASE}/webhook/cancelar-touchpoints`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(syncPayload),
+          body: JSON.stringify({ lead_id: lead.lead_externo_id ?? lead.id }),
         }).catch(() => {});
-        // Cancelar touchpoints pendentes quando No-show
-        if (rrStatusReuniao === 'Não compareceu') {
-          try {
-            fetch(`${webhookBase}/webhook/cancelar-touchpoints`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ lead_id: lead.lead_externo_id ?? lead.id }),
-            }).catch(() => {});
-          } catch { /* silent */ }
+      } else if (rrStatusReuniao === 'Compareceu') {
+        if (rrResultado === 'Marcou R2+') {
+          const currentTP = (lead as any).tp || (lead as any).TP || '';
+          const tpMap: Record<string, string> = {'': 'R2', 'R1': 'R2', 'R2': 'R3', 'R3': 'R4+'};
+          syncPostgres(lead.lead_externo_id, { Status_TP: 'Pendente', TP: tpMap[currentTP] || 'R4+', Data_Reuniao_Realizada: hoje, Data_TP: hoje, closer });
+        } else if (rrResultado === 'Reagendou') {
+          syncPostgres(lead.lead_externo_id, { Status_TP: 'Reagendou', Data_Reuniao_Realizada: hoje, Data_TP: hoje, closer });
+        } else if (rrResultado === 'Venda') {
+          syncPostgres(lead.lead_externo_id, {
+            status: 'ganho', etapa: 'fechado', Data_Venda: hoje, Data_Reuniao_Realizada: hoje, Data_TP: hoje,
+            programa: programaApresentado || null, rs_contrato: rrValorContrato || null, rs_cc: rrValorCc || null,
+            mrr_adicionado: computedMrr || null, Etapa_Fechamento: 'R1', closer,
+          });
+        } else if (rrResultado === 'Perdido') {
+          syncPostgres(lead.lead_externo_id, { status: 'perdido', Data_Reuniao_Realizada: hoje, Data_TP: hoje, closer });
+        } else {
+          syncPostgres(lead.lead_externo_id, { Status_TP: 'Pendente', Data_Reuniao_Realizada: hoje, Data_TP: hoje, closer });
         }
-      } catch { /* silent */ }
+      }
     }
 
     // Add No-show tag when lead didn't show up
@@ -1750,6 +1696,7 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
           body: JSON.stringify({
             lead_nome: lead.nome,
             lead_telefone: lead.telefone ?? '',
+            lead_externo_id: lead.lead_externo_id ?? lead.id,
             closer: t.responsavel || lead.responsavel || '',
             tipo_reuniao: t.titulo?.includes('R2') ? 'R2' : 'R1',
             data_hora: new Date(reagendarData).toISOString(),
@@ -2725,6 +2672,7 @@ export default function CRMView({ userSession, teamMembers, openLeadByName, onLe
         body: JSON.stringify({
           lead_nome: lead?.nome ?? '',
           lead_telefone: lead?.telefone ?? '',
+          lead_externo_id: lead?.lead_externo_id ?? lead?.id ?? '',
           closer: tarefa.responsavel || lead?.responsavel || '',
           tipo_reuniao: tarefa.titulo?.includes('R2') ? 'R2' : 'R1',
           data_hora: new Date(novaData).toISOString(),
