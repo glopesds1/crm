@@ -984,6 +984,7 @@ function PageReunioes({ data }: { data: any }) {
     'Em negociação': 'Em negociação',
     'Reagendado': 'Reagendado',
     'Perdido': 'Perdido',
+    'Pendente': 'Pendente',
     'fup_ativa': 'FUP Ativa',
     'fechado': 'Fechado',
   };
@@ -1003,7 +1004,7 @@ function PageReunioes({ data }: { data: any }) {
               r.telefone ?? '—',
               (() => {
                 const label = STATUS_LABEL[r.status] ?? r.status;
-                if (!label || label === 'Pendente' || r.status === 'rm_realizada') return <span className="text-gray-500">—</span>;
+                if (!label || r.status === 'rm_realizada') return <span className="text-gray-500">—</span>;
                 return <span className={statusColor[label] ?? 'text-gray-300'}>{label}</span>;
               })(),
               r.sdr ?? '—',
