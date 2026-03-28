@@ -3562,7 +3562,7 @@ export default function App() {
     };
     return (permissions[role] ?? permissions['admin']).includes(tab);
   };
-  const [aquisicaoSubTab, setAquisicaoSubTab] = useState<'CRM' | 'Relatorio'>('CRM');
+  const [aquisicaoSubTab, setAquisicaoSubTab] = useState<'CRM' | 'Relatorio' | 'Dashboard' | 'Playbooks'>('CRM');
   const [openCRMLeadName, setOpenCRMLeadName] = useState('');
   const [clients, setClients] = useState<Client[]>([]);
   const [allTags, setAllTags] = useState<Record<string, Tag>>(INITIAL_TAGS);
@@ -4461,7 +4461,7 @@ export default function App() {
         </div>
 
         <nav className="flex-1 space-y-2">
-          {canSee('Dashboard') && <SidebarItem icon={LayoutDashboard} label="Dashboard" active={activeTab === 'Dashboard'} onClick={() => setActiveTab('Dashboard')} />}
+          {canSee('Dashboard') && !canSee('Aquisição') && <SidebarItem icon={LayoutDashboard} label="Dashboard" active={activeTab === 'Dashboard'} onClick={() => setActiveTab('Dashboard')} />}
           {canSee('Clientes') && <SidebarItem icon={Users} label="Clientes" active={activeTab === 'Clientes'} onClick={() => setActiveTab('Clientes')} />}
           {canSee('Kanban de Operação') && <SidebarItem icon={KanbanIcon} label="Kanban de Operação" active={activeTab === 'Kanban de Operação'} onClick={() => setActiveTab('Kanban de Operação')} />}
           {canSee('Equipe') && <SidebarItem icon={Users} label="Equipe" active={activeTab === 'Equipe'} onClick={() => setActiveTab('Equipe')} />}
@@ -4469,7 +4469,7 @@ export default function App() {
           {canSee('Área do Cliente') && <SidebarItem icon={Building2} label="Área do Cliente" active={activeTab === 'Área do Cliente'} onClick={() => { setActiveTab('Área do Cliente'); setSelectedCrmTenantId(null); }} />}
           {canSee('Relatórios') && <SidebarItem icon={BarChart3} label="Relatórios" active={activeTab === 'Relatórios'} onClick={() => setActiveTab('Relatórios')} />}
           {canSee('Educação') && <SidebarItem icon={GraduationCap} label="Educação" active={activeTab === 'Educação'} onClick={() => setActiveTab('Educação')} />}
-          {canSee('Playbooks') && <SidebarItem icon={BookOpen} label="Playbooks" active={activeTab === 'Playbooks'} onClick={() => setActiveTab('Playbooks')} />}
+          {canSee('Playbooks') && !canSee('Aquisição') && <SidebarItem icon={BookOpen} label="Playbooks" active={activeTab === 'Playbooks'} onClick={() => setActiveTab('Playbooks')} />}
           
           <div className="space-y-1">
             {canSee('Aquisição') && <SidebarItem icon={Briefcase} label="Aquisição" active={activeTab === 'Aquisição'} onClick={() => { setActiveTab('Aquisição'); setAquisicaoSubTab('CRM'); }} />}
@@ -4480,7 +4480,15 @@ export default function App() {
                 className="ml-9 space-y-1"
               >
                 <div className="space-y-1">
-                  <button 
+                  {canSee('Dashboard') && (
+                    <button
+                      onClick={() => setAquisicaoSubTab('Dashboard')}
+                      className={`w-full text-left px-4 py-2 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all ${aquisicaoSubTab === 'Dashboard' ? 'text-brand-primary bg-white/5' : 'text-gray-500 hover:text-white'}`}
+                    >
+                      Dashboard
+                    </button>
+                  )}
+                  <button
                     onClick={() => setAquisicaoSubTab('CRM')}
                     className={`w-full text-left px-4 py-2 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all ${aquisicaoSubTab === 'CRM' ? 'text-brand-primary bg-white/5' : 'text-gray-500 hover:text-white'}`}
                   >
@@ -4492,7 +4500,14 @@ export default function App() {
                   >
                     Relatório
                   </button>
-
+                  {canSee('Playbooks') && (
+                    <button
+                      onClick={() => setAquisicaoSubTab('Playbooks')}
+                      className={`w-full text-left px-4 py-2 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all ${aquisicaoSubTab === 'Playbooks' ? 'text-brand-primary bg-white/5' : 'text-gray-500 hover:text-white'}`}
+                    >
+                      Playbooks
+                    </button>
+                  )}
                 </div>
               </motion.div>
             )}
@@ -4561,7 +4576,9 @@ export default function App() {
             {activeTab === 'Aquisição' && (
               <>
                 <ChevronRight size={14} className="text-gray-700" />
-                <span className="text-xs font-bold text-white">{aquisicaoSubTab === 'CRM' ? 'CRM' : 'Relatório'}</span>
+                <span className="text-xs font-bold text-white">
+                  {aquisicaoSubTab === 'CRM' ? 'CRM' : aquisicaoSubTab === 'Relatorio' ? 'Relatório' : aquisicaoSubTab === 'Dashboard' ? 'Dashboard' : 'Playbooks'}
+                </span>
               </>
             )}
           </div>
@@ -4634,8 +4651,11 @@ export default function App() {
               )}
               {activeTab === 'Relatórios' && <ReportsView clients={clients} config={agencyConfig} />}
               {activeTab === 'Educação' && <EducacaoView userEmail={userSession.email} isAdmin={userSession.role.toLowerCase() === 'admin'} />}
-              {activeTab === 'Playbooks' && <PlaybooksView />}
+              {activeTab === 'Playbooks' && !canSee('Aquisição') && <PlaybooksView />}
               {activeTab === 'Área do Cliente' && <ClientCRMView clients={clients} selectedTenantId={selectedCrmTenantId} onBack={() => setSelectedCrmTenantId(null)} />}
+              {activeTab === 'Aquisição' && aquisicaoSubTab === 'Dashboard' && (
+                <DashboardView userSession={userSession} />
+              )}
               {activeTab === 'Aquisição' && aquisicaoSubTab === 'CRM' && (
                 <div className="glass-card p-6">
                   <CRMView userSession={userSession} teamMembers={teamMembers} openLeadByName={openCRMLeadName} onLeadOpened={() => setOpenCRMLeadName('')} />
@@ -4647,6 +4667,9 @@ export default function App() {
                   userSession={userSession}
                   onOpenInCRM={(name) => { setOpenCRMLeadName(name); setAquisicaoSubTab('CRM'); }}
                 />
+              )}
+              {activeTab === 'Aquisição' && aquisicaoSubTab === 'Playbooks' && (
+                <PlaybooksView />
               )}
             </motion.div>
           </AnimatePresence>
