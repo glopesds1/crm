@@ -45,7 +45,8 @@ import {
   Send,
   Building2,
   Shield,
-  QrCode
+  QrCode,
+  Package
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -3555,14 +3556,15 @@ export default function App() {
   const canSee = (tab: string): boolean => {
     const role = (userSession?.role ?? '').toLowerCase();
     const permissions: Record<string, string[]> = {
-      'admin':     ['Dashboard', 'Clientes', 'Kanban de Operação', 'Equipe', 'Demandas', 'Área do Cliente', 'Relatórios', 'Educação', 'Aquisição', 'Playbooks', 'Configurações'],
+      'admin':     ['Dashboard', 'Clientes', 'Kanban de Operação', 'Equipe', 'Demandas', 'Área do Cliente', 'Relatórios', 'Educação', 'Aquisição', 'Entrega', 'Playbooks', 'Configurações'],
       'comercial': ['Demandas', 'Educação', 'Aquisição', 'Playbooks'],
-      'suporte':   ['Clientes', 'Kanban de Operação', 'Demandas', 'Área do Cliente', 'Relatórios', 'Educação', 'Playbooks'],
-      'entrega':   ['Clientes', 'Kanban de Operação', 'Demandas', 'Área do Cliente', 'Relatórios', 'Educação', 'Playbooks'],
+      'suporte':   ['Clientes', 'Kanban de Operação', 'Demandas', 'Área do Cliente', 'Relatórios', 'Educação', 'Entrega', 'Playbooks'],
+      'entrega':   ['Clientes', 'Kanban de Operação', 'Demandas', 'Área do Cliente', 'Relatórios', 'Educação', 'Entrega', 'Playbooks'],
     };
     return (permissions[role] ?? permissions['admin']).includes(tab);
   };
   const [aquisicaoSubTab, setAquisicaoSubTab] = useState<'CRM' | 'Relatorio' | 'Dashboard' | 'Playbooks'>('CRM');
+  const [entregaSubTab, setEntregaSubTab] = useState<'Kanban' | 'Demandas' | 'AreaCliente' | 'Educacao'>('Kanban');
   const [openCRMLeadName, setOpenCRMLeadName] = useState('');
   const [clients, setClients] = useState<Client[]>([]);
   const [allTags, setAllTags] = useState<Record<string, Tag>>(INITIAL_TAGS);
@@ -4463,13 +4465,58 @@ export default function App() {
         <nav className="flex-1 space-y-2">
           {canSee('Dashboard') && !canSee('Aquisição') && <SidebarItem icon={LayoutDashboard} label="Dashboard" active={activeTab === 'Dashboard'} onClick={() => setActiveTab('Dashboard')} />}
           {canSee('Clientes') && <SidebarItem icon={Users} label="Clientes" active={activeTab === 'Clientes'} onClick={() => setActiveTab('Clientes')} />}
-          {canSee('Kanban de Operação') && <SidebarItem icon={KanbanIcon} label="Kanban de Operação" active={activeTab === 'Kanban de Operação'} onClick={() => setActiveTab('Kanban de Operação')} />}
           {canSee('Equipe') && <SidebarItem icon={Users} label="Equipe" active={activeTab === 'Equipe'} onClick={() => setActiveTab('Equipe')} />}
-          {canSee('Demandas') && <SidebarItem icon={ClipboardList} label="Demandas" active={activeTab === 'Demandas'} onClick={() => setActiveTab('Demandas')} badge={demands.filter(d => d.status === 'pendente').length || undefined} />}
-          {canSee('Área do Cliente') && <SidebarItem icon={Building2} label="Área do Cliente" active={activeTab === 'Área do Cliente'} onClick={() => { setActiveTab('Área do Cliente'); setSelectedCrmTenantId(null); }} />}
           {canSee('Relatórios') && <SidebarItem icon={BarChart3} label="Relatórios" active={activeTab === 'Relatórios'} onClick={() => setActiveTab('Relatórios')} />}
-          {canSee('Educação') && <SidebarItem icon={GraduationCap} label="Educação" active={activeTab === 'Educação'} onClick={() => setActiveTab('Educação')} />}
-          {canSee('Playbooks') && !canSee('Aquisição') && <SidebarItem icon={BookOpen} label="Playbooks" active={activeTab === 'Playbooks'} onClick={() => setActiveTab('Playbooks')} />}
+          {canSee('Playbooks') && !canSee('Aquisição') && !canSee('Entrega') && <SidebarItem icon={BookOpen} label="Playbooks" active={activeTab === 'Playbooks'} onClick={() => setActiveTab('Playbooks')} />}
+
+          {/* Entrega */}
+          <div className="space-y-1">
+            {canSee('Entrega') && (
+              <SidebarItem
+                icon={Package}
+                label="Entrega"
+                active={activeTab === 'Entrega'}
+                onClick={() => { setActiveTab('Entrega'); setEntregaSubTab('Kanban'); }}
+              />
+            )}
+            {activeTab === 'Entrega' && (
+              <motion.div
+                initial={{ opacity: 0, y: -10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="ml-9 space-y-1"
+              >
+                <button
+                  onClick={() => setEntregaSubTab('Kanban')}
+                  className={`w-full text-left px-4 py-2 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all ${entregaSubTab === 'Kanban' ? 'text-brand-primary bg-white/5' : 'text-gray-500 hover:text-white'}`}
+                >
+                  Kanban
+                </button>
+                <button
+                  onClick={() => setEntregaSubTab('Demandas')}
+                  className={`w-full text-left px-4 py-2 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all ${entregaSubTab === 'Demandas' ? 'text-brand-primary bg-white/5' : 'text-gray-500 hover:text-white'}`}
+                >
+                  Demandas
+                  {demands.filter(d => d.status === 'pendente').length > 0 && (
+                    <span className="ml-2 bg-brand-primary text-black text-[9px] font-bold rounded-full px-1.5 py-0.5">
+                      {demands.filter(d => d.status === 'pendente').length}
+                    </span>
+                  )}
+                </button>
+                <button
+                  onClick={() => { setEntregaSubTab('AreaCliente'); setSelectedCrmTenantId(null); }}
+                  className={`w-full text-left px-4 py-2 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all ${entregaSubTab === 'AreaCliente' ? 'text-brand-primary bg-white/5' : 'text-gray-500 hover:text-white'}`}
+                >
+                  Área do Cliente
+                </button>
+                <button
+                  onClick={() => setEntregaSubTab('Educacao')}
+                  className={`w-full text-left px-4 py-2 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all ${entregaSubTab === 'Educacao' ? 'text-brand-primary bg-white/5' : 'text-gray-500 hover:text-white'}`}
+                >
+                  Educação
+                </button>
+              </motion.div>
+            )}
+          </div>
           
           <div className="space-y-1">
             {canSee('Aquisição') && <SidebarItem icon={Briefcase} label="Aquisição" active={activeTab === 'Aquisição'} onClick={() => { setActiveTab('Aquisição'); setAquisicaoSubTab('CRM'); }} />}
@@ -4581,6 +4628,14 @@ export default function App() {
                 </span>
               </>
             )}
+            {activeTab === 'Entrega' && (
+              <>
+                <ChevronRight size={14} className="text-gray-700" />
+                <span className="text-xs font-bold text-white">
+                  {entregaSubTab === 'Kanban' ? 'Kanban de Operação' : entregaSubTab === 'Demandas' ? 'Demandas' : entregaSubTab === 'AreaCliente' ? 'Área do Cliente' : 'Educação'}
+                </span>
+              </>
+            )}
           </div>
 
           <div className="flex items-center gap-6">
@@ -4629,9 +4684,9 @@ export default function App() {
             >
               {activeTab === 'Dashboard' && renderDashboard()}
               {activeTab === 'Clientes' && renderClientes()}
-              {activeTab === 'Kanban de Operação' && renderKanban()}
+              {activeTab === 'Kanban de Operação' && !canSee('Entrega') && renderKanban()}
               {activeTab === 'Equipe' && renderEquipe()}
-              {activeTab === 'Demandas' && renderDemandas()}
+              {activeTab === 'Demandas' && !canSee('Entrega') && renderDemandas()}
               {activeTab === 'Configurações' && (
                 <SettingsView 
                   config={agencyConfig} 
@@ -4650,9 +4705,17 @@ export default function App() {
                 />
               )}
               {activeTab === 'Relatórios' && <ReportsView clients={clients} config={agencyConfig} />}
-              {activeTab === 'Educação' && <EducacaoView userEmail={userSession.email} isAdmin={userSession.role.toLowerCase() === 'admin'} />}
-              {activeTab === 'Playbooks' && !canSee('Aquisição') && <PlaybooksView />}
-              {activeTab === 'Área do Cliente' && <ClientCRMView clients={clients} selectedTenantId={selectedCrmTenantId} onBack={() => setSelectedCrmTenantId(null)} />}
+              {activeTab === 'Educação' && !canSee('Entrega') && <EducacaoView userEmail={userSession.email} isAdmin={userSession.role.toLowerCase() === 'admin'} />}
+              {activeTab === 'Playbooks' && !canSee('Aquisição') && !canSee('Entrega') && <PlaybooksView />}
+              {activeTab === 'Área do Cliente' && !canSee('Entrega') && <ClientCRMView clients={clients} selectedTenantId={selectedCrmTenantId} onBack={() => setSelectedCrmTenantId(null)} />}
+              {activeTab === 'Entrega' && entregaSubTab === 'Kanban' && renderKanban()}
+              {activeTab === 'Entrega' && entregaSubTab === 'Demandas' && renderDemandas()}
+              {activeTab === 'Entrega' && entregaSubTab === 'AreaCliente' && (
+                <ClientCRMView clients={clients} selectedTenantId={selectedCrmTenantId} onBack={() => setSelectedCrmTenantId(null)} />
+              )}
+              {activeTab === 'Entrega' && entregaSubTab === 'Educacao' && (
+                <EducacaoView userEmail={userSession.email} isAdmin={userSession.role.toLowerCase() === 'admin'} />
+              )}
               {activeTab === 'Aquisição' && aquisicaoSubTab === 'Dashboard' && (
                 <DashboardView userSession={userSession} />
               )}
