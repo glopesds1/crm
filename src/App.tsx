@@ -3555,10 +3555,10 @@ export default function App() {
   const canSee = (tab: string): boolean => {
     const role = (userSession?.role ?? '').toLowerCase();
     const permissions: Record<string, string[]> = {
-      'admin':     ['Dashboard', 'Clientes', 'Kanban de Operação', 'Equipe', 'Demandas', 'CRM Clientes', 'Relatórios', 'Educação', 'Aquisição', 'Playbooks', 'Configurações'],
+      'admin':     ['Dashboard', 'Clientes', 'Kanban de Operação', 'Equipe', 'Demandas', 'Área do Cliente', 'Relatórios', 'Educação', 'Aquisição', 'Playbooks', 'Configurações'],
       'comercial': ['Demandas', 'Educação', 'Aquisição', 'Playbooks'],
-      'suporte':   ['Clientes', 'Kanban de Operação', 'Demandas', 'CRM Clientes', 'Relatórios', 'Educação', 'Playbooks'],
-      'entrega':   ['Clientes', 'Kanban de Operação', 'Demandas', 'CRM Clientes', 'Relatórios', 'Educação', 'Playbooks'],
+      'suporte':   ['Clientes', 'Kanban de Operação', 'Demandas', 'Área do Cliente', 'Relatórios', 'Educação', 'Playbooks'],
+      'entrega':   ['Clientes', 'Kanban de Operação', 'Demandas', 'Área do Cliente', 'Relatórios', 'Educação', 'Playbooks'],
     };
     return (permissions[role] ?? permissions['admin']).includes(tab);
   };
@@ -4466,7 +4466,7 @@ export default function App() {
           {canSee('Kanban de Operação') && <SidebarItem icon={KanbanIcon} label="Kanban de Operação" active={activeTab === 'Kanban de Operação'} onClick={() => setActiveTab('Kanban de Operação')} />}
           {canSee('Equipe') && <SidebarItem icon={Users} label="Equipe" active={activeTab === 'Equipe'} onClick={() => setActiveTab('Equipe')} />}
           {canSee('Demandas') && <SidebarItem icon={ClipboardList} label="Demandas" active={activeTab === 'Demandas'} onClick={() => setActiveTab('Demandas')} badge={demands.filter(d => d.status === 'pendente').length || undefined} />}
-          {canSee('CRM Clientes') && <SidebarItem icon={Building2} label="CRM Clientes" active={activeTab === 'CRM Clientes'} onClick={() => { setActiveTab('CRM Clientes'); setSelectedCrmTenantId(null); }} />}
+          {canSee('Área do Cliente') && <SidebarItem icon={Building2} label="Área do Cliente" active={activeTab === 'Área do Cliente'} onClick={() => { setActiveTab('Área do Cliente'); setSelectedCrmTenantId(null); }} />}
           {canSee('Relatórios') && <SidebarItem icon={BarChart3} label="Relatórios" active={activeTab === 'Relatórios'} onClick={() => setActiveTab('Relatórios')} />}
           {canSee('Educação') && <SidebarItem icon={GraduationCap} label="Educação" active={activeTab === 'Educação'} onClick={() => setActiveTab('Educação')} />}
           {canSee('Playbooks') && <SidebarItem icon={BookOpen} label="Playbooks" active={activeTab === 'Playbooks'} onClick={() => setActiveTab('Playbooks')} />}
@@ -4635,7 +4635,7 @@ export default function App() {
               {activeTab === 'Relatórios' && <ReportsView clients={clients} config={agencyConfig} />}
               {activeTab === 'Educação' && <EducacaoView userEmail={userSession.email} isAdmin={userSession.role.toLowerCase() === 'admin'} />}
               {activeTab === 'Playbooks' && <PlaybooksView />}
-              {activeTab === 'CRM Clientes' && <ClientCRMView clients={clients} selectedTenantId={selectedCrmTenantId} onBack={() => setSelectedCrmTenantId(null)} />}
+              {activeTab === 'Área do Cliente' && <ClientCRMView clients={clients} selectedTenantId={selectedCrmTenantId} onBack={() => setSelectedCrmTenantId(null)} />}
               {activeTab === 'Aquisição' && aquisicaoSubTab === 'CRM' && (
                 <div className="glass-card p-6">
                   <CRMView userSession={userSession} teamMembers={teamMembers} openLeadByName={openCRMLeadName} onLeadOpened={() => setOpenCRMLeadName('')} />
@@ -4675,7 +4675,7 @@ export default function App() {
             onSaveTag={handleSaveTag}
             onDeleteTag={handleDeleteTag}
             userSession={userSession!}
-            onOpenClientCrm={(tenantId) => { setSelectedCrmTenantId(tenantId); setActiveTab('CRM Clientes'); }}
+            onOpenClientCrm={(tenantId) => { setSelectedCrmTenantId(tenantId); setActiveTab('Área do Cliente'); }}
             onCreateDemand={async (demand) => {
               try {
                 const saved = await createDemand(demand);

@@ -216,7 +216,7 @@ export default function ClientCRMView({ clients, selectedTenantId, onBack, tenan
   if (!activeTenantId) {
     return (
       <div className="p-6 space-y-6">
-        <h1 className="text-2xl font-bold text-white">CRM dos Clientes</h1>
+        <h1 className="text-2xl font-bold text-white">Área do Cliente</h1>
         {tenants.length === 0 ? (
           <div className="text-center py-20 text-white/40">
             <Building2 className="w-12 h-12 mx-auto mb-3 opacity-40" />
