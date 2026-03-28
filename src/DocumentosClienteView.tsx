@@ -199,7 +199,7 @@ function Section({ title, docs }: { title: string; docs: Documento[] }) {
 }
 
 // ── DocumentCard ─────────────────────────────────────────────
-function DocumentCard({ doc, index }: { doc: Documento; index: number }) {
+function DocumentCard({ doc, index }: { doc: Documento; index: number; key?: React.Key }) {
   return (
     <motion.a
       href={doc.arquivo_url}
