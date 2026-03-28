@@ -193,12 +193,13 @@ interface Message {
 interface Props {
   tenantId: string;
   userName: string;
+  onClose?: () => void;
 }
 
 const MAX_IMAGES = 6;
 const MAX_IMAGE_MB = 5;
 
-export default function ConsultorIAView({ tenantId, userName }: Props) {
+export default function ConsultorIAView({ tenantId, userName, onClose }: Props) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -381,9 +382,18 @@ export default function ConsultorIAView({ tenantId, userName }: Props) {
   return (
     <div className="flex flex-col h-full bg-[#0a0f1e]">
       {/* Header */}
-      <div className="flex items-center justify-between px-6 py-4 border-b border-white/10">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-white/10 flex-shrink-0">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-full overflow-hidden border border-brand-primary/50">
+          {onClose && (
+            <button
+              onClick={onClose}
+              className="w-8 h-8 rounded-full bg-white/5 hover:bg-white/10 flex items-center justify-center text-white/50 hover:text-white transition-all flex-shrink-0"
+              title="Fechar"
+            >
+              <X size={16} />
+            </button>
+          )}
+          <div className="w-9 h-9 rounded-full overflow-hidden border border-brand-primary/50 flex-shrink-0">
             <img src="/consultor-avatar.jpg" alt="Taleco" className="w-full h-full object-cover" />
           </div>
           <div>
@@ -392,8 +402,8 @@ export default function ConsultorIAView({ tenantId, userName }: Props) {
           </div>
         </div>
         {messages.length > 0 && (
-          <button onClick={clearChat} className="text-white/30 hover:text-red-400 transition-colors" title="Limpar chat">
-            <Trash2 size={18} />
+          <button onClick={clearChat} className="text-white/30 hover:text-red-400 transition-colors p-1" title="Limpar conversa">
+            <Trash2 size={16} />
           </button>
         )}
       </div>

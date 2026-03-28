@@ -3950,54 +3950,67 @@ export default function App() {
         </div>
 
         {/* Botão flutuante do Consultor IA */}
-        {!showConsultorChat && (
-          <div className="fixed bottom-6 right-6 z-50 flex items-end gap-3">
-            {/* Balão de fala */}
+        <AnimatePresence>
+          {!showConsultorChat && (
             <motion.div
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ delay: 1, duration: 0.4 }}
-              className="bg-white rounded-2xl rounded-br-sm px-4 py-3 shadow-xl max-w-[220px] cursor-pointer"
-              onClick={() => setShowConsultorChat(true)}
+              initial={{ opacity: 0, scale: 0.8 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.8 }}
+              transition={{ duration: 0.2 }}
+              className="fixed bottom-6 right-6 z-50 flex items-end gap-3"
             >
-              <p className="text-gray-800 text-sm font-medium leading-snug">Fala! Sou o <strong>Taleco</strong>, o cérebro comercial do Thalisson. Posso te ajudar? 💬</p>
+              {/* Balão de fala */}
+              <motion.div
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: 0.8, duration: 0.4 }}
+                className="bg-white rounded-2xl rounded-br-sm px-4 py-3 shadow-xl max-w-[200px] cursor-pointer"
+                onClick={() => setShowConsultorChat(true)}
+              >
+                <p className="text-gray-800 text-sm font-medium leading-snug">Com problemas comerciais? Posso te ajudar! 💬</p>
+              </motion.div>
+              {/* Avatar pulsante */}
+              <motion.button
+                whileHover={{ scale: 1.08 }}
+                whileTap={{ scale: 0.95 }}
+                onClick={() => setShowConsultorChat(true)}
+                className="relative w-16 h-16 rounded-full shadow-2xl shadow-brand-primary/40 overflow-hidden flex-shrink-0"
+              >
+                <span className="absolute inset-0 rounded-full border-2 border-brand-primary animate-ping opacity-30" />
+                <img src="/consultor-avatar.jpg" alt="Taleco" className="w-full h-full object-cover relative z-10" />
+                <span className="absolute bottom-0.5 right-0.5 w-3.5 h-3.5 bg-brand-primary rounded-full border-2 border-[#0a0f1e] z-20" />
+              </motion.button>
             </motion.div>
-            {/* Avatar pulsante */}
-            <motion.button
-              initial={{ scale: 0 }}
-              animate={{ scale: 1 }}
-              whileHover={{ scale: 1.1 }}
-              whileTap={{ scale: 0.95 }}
-              onClick={() => setShowConsultorChat(true)}
-              className="relative w-20 h-20 rounded-full shadow-2xl shadow-brand-primary/40 border-3 border-brand-primary overflow-hidden flex-shrink-0"
-            >
-              {/* Anel pulsante */}
-              <span className="absolute inset-0 rounded-full border-2 border-brand-primary animate-ping opacity-40" />
-              <span className="absolute -inset-1 rounded-full border-2 border-brand-primary/30 animate-pulse" />
-              <img src="/consultor-avatar.jpg" alt="Consultor" className="w-full h-full object-cover relative z-10" />
-              {/* Badge online */}
-              <span className="absolute bottom-1 right-1 w-4 h-4 bg-brand-primary rounded-full border-2 border-[#0a0f1e] z-20" />
-            </motion.button>
-          </div>
-        )}
+          )}
+        </AnimatePresence>
 
-        {/* Chat popup do Consultor IA */}
+        {/* Painel lateral do Consultor IA */}
         <AnimatePresence>
           {showConsultorChat && (
-            <motion.div
-              initial={{ opacity: 0, y: 20, scale: 0.95 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 20, scale: 0.95 }}
-              className="fixed bottom-6 right-6 w-[420px] h-[600px] bg-[#0a0f1e] rounded-2xl border border-white/10 shadow-2xl shadow-black/50 z-50 flex flex-col overflow-hidden"
-            >
-              <button
+            <>
+              {/* Backdrop semi-transparente */}
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="fixed inset-0 bg-black/40 z-40"
                 onClick={() => setShowConsultorChat(false)}
-                className="absolute top-3 right-3 z-10 w-7 h-7 rounded-full bg-white/10 flex items-center justify-center text-white/50 hover:text-white hover:bg-white/20 transition-all"
+              />
+              {/* Painel */}
+              <motion.div
+                initial={{ x: '100%' }}
+                animate={{ x: 0 }}
+                exit={{ x: '100%' }}
+                transition={{ type: 'spring', damping: 28, stiffness: 300 }}
+                className="fixed top-0 right-0 h-full w-full sm:w-[440px] bg-[#0a0f1e] border-l border-white/10 shadow-2xl shadow-black/60 z-50 flex flex-col overflow-hidden"
               >
-                ×
-              </button>
-              <ConsultorIAView tenantId={crmClientSession.tenant.id} userName={crmClientSession.user.nome} />
-            </motion.div>
+                <ConsultorIAView
+                  tenantId={crmClientSession.tenant.id}
+                  userName={crmClientSession.user.nome}
+                  onClose={() => setShowConsultorChat(false)}
+                />
+              </motion.div>
+            </>
           )}
         </AnimatePresence>
       </div>
