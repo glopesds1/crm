@@ -1,5 +1,5 @@
 import { supabase } from './supabase';
-import type { Client, TeamMember, AgencyConfig, Tag, ComercialTask, Demand } from '../types';
+import type { Client, TeamMember, AgencyConfig, Tag, ComercialTask, Demand, CrmClientTarefa, EducacaoModulo, EducacaoAula, EducacaoProgresso } from '../types';
 
 // --- Mappers Client camelCase <-> snake_case ---
 function clientToDb(c: Client): Record<string, unknown> {
@@ -457,6 +457,11 @@ function dbToClientLead(d: Record<string, unknown>): CrmClientLead {
     responsavel: (d.responsavel ?? '') as string,
     etiquetas: Array.isArray(d.etiquetas) ? d.etiquetas as string[] : [],
     observacoes: (d.observacoes ?? '') as string,
+    empresa: (d.empresa ?? '') as string, faturamento: (d.faturamento ?? '') as string,
+    area: (d.area ?? '') as string, origem: (d.origem ?? '') as string,
+    valorContrato: +(d.valor_contrato ?? 0), valorCc: +(d.valor_cc ?? 0), valorMrr: +(d.valor_mrr ?? 0),
+    status: (d.status ?? '') as string, motivoPerda: (d.motivo_perda ?? '') as string,
+    proximaReuniao: (d.proxima_reuniao ?? '') as string,
     criadoEm: d.criado_em as string, atualizadoEm: d.atualizado_em as string,
   };
 }
@@ -465,11 +470,30 @@ function clientLeadToDb(l: CrmClientLead): Record<string, unknown> {
     id: l.id, tenant_id: l.tenantId, stage_id: l.stageId, nome: l.nome,
     telefone: l.telefone, email: l.email, segmento: l.segmento,
     ticket_estimado: l.ticketEstimado, responsavel: l.responsavel,
-    etiquetas: l.etiquetas, observacoes: l.observacoes, atualizado_em: new Date().toISOString(),
+    etiquetas: l.etiquetas, observacoes: l.observacoes,
+    empresa: l.empresa, faturamento: l.faturamento, area: l.area, origem: l.origem,
+    valor_contrato: l.valorContrato, valor_cc: l.valorCc, valor_mrr: l.valorMrr,
+    status: l.status, motivo_perda: l.motivoPerda, proxima_reuniao: l.proximaReuniao || null,
+    atualizado_em: new Date().toISOString(),
   };
 }
 function dbToActivity(d: Record<string, unknown>): CrmClientLeadActivity {
-  return { id: d.id as string, leadId: d.lead_id as string, tenantId: d.tenant_id as string, tipo: d.tipo as string, conteudo: d.conteudo as string, autor: d.autor as string, criadoEm: d.criado_em as string };
+  return {
+    id: d.id as string, leadId: d.lead_id as string, tenantId: d.tenant_id as string,
+    tipo: d.tipo as string, subtipo: (d.subtipo ?? '') as string,
+    conteudo: d.conteudo as string, autor: d.autor as string,
+    imagemUrl: (d.imagem_url ?? '') as string,
+    dados: (d.dados ?? {}) as Record<string, unknown>,
+    criadoEm: d.criado_em as string,
+  };
+}
+function dbToTarefa(d: Record<string, unknown>): CrmClientTarefa {
+  return {
+    id: d.id as string, tenantId: d.tenant_id as string, leadId: d.lead_id as string,
+    titulo: d.titulo as string, dataAgendada: d.data_agendada as string,
+    responsavel: (d.responsavel ?? '') as string, concluida: d.concluida as boolean,
+    imagemUrl: (d.imagem_url ?? '') as string, criadoEm: d.criado_em as string,
+  };
 }
 function dbToTag(d: Record<string, unknown>): CrmClientTag {
   return { id: d.id as string, tenantId: d.tenant_id as string, nome: d.nome as string, cor: d.cor as string };
@@ -514,6 +538,12 @@ export async function activateCrmForClient(clientId: string, clientName: string)
   return dbToTenant(tenant as Record<string, unknown>);
 }
 
+export async function deleteTenant(tenantId: string): Promise<void> {
+  // CASCADE deleta pipelines, stages, leads, activities, tags, users vinculados
+  const { error } = await supabase.from('crm_client_tenants').delete().eq('id', tenantId);
+  if (error) throw error;
+}
+
 // ── Pipeline & Stages ──
 export async function getStagesByTenant(tenantId: string): Promise<CrmClientStage[]> {
   const { data, error } = await supabase.from('crm_client_stages').select('*').eq('tenant_id', tenantId).order('ordem');
@@ -533,6 +563,11 @@ export async function createClientLead(lead: Omit<CrmClientLead, 'id' | 'criadoE
     telefone: lead.telefone, email: lead.email, segmento: lead.segmento,
     ticket_estimado: lead.ticketEstimado, responsavel: lead.responsavel,
     etiquetas: lead.etiquetas, observacoes: lead.observacoes,
+    empresa: lead.empresa || '', faturamento: lead.faturamento || '',
+    area: lead.area || '', origem: lead.origem || '',
+    valor_contrato: lead.valorContrato || 0, valor_cc: lead.valorCc || 0, valor_mrr: lead.valorMrr || 0,
+    status: lead.status || '', motivo_perda: lead.motivoPerda || '',
+    proxima_reuniao: lead.proximaReuniao || null,
   }).select().single();
   if (error) throw error;
   return dbToClientLead(data as Record<string, unknown>);
@@ -556,10 +591,41 @@ export async function getLeadActivities(leadId: string): Promise<CrmClientLeadAc
 }
 export async function createLeadActivity(a: Omit<CrmClientLeadActivity, 'id' | 'criadoEm'>): Promise<CrmClientLeadActivity> {
   const { data, error } = await supabase.from('crm_client_lead_activities').insert({
-    lead_id: a.leadId, tenant_id: a.tenantId, tipo: a.tipo, conteudo: a.conteudo, autor: a.autor,
+    lead_id: a.leadId, tenant_id: a.tenantId, tipo: a.tipo, subtipo: a.subtipo || '',
+    conteudo: a.conteudo, autor: a.autor, imagem_url: a.imagemUrl || '', dados: a.dados || {},
   }).select().single();
   if (error) throw error;
   return dbToActivity(data as Record<string, unknown>);
+}
+
+// ── Tarefas CRM Cliente ──
+export async function getClientTarefas(tenantId: string, leadId?: string): Promise<CrmClientTarefa[]> {
+  let q = supabase.from('crm_client_tarefas').select('*').eq('tenant_id', tenantId).order('data_agendada');
+  if (leadId) q = q.eq('lead_id', leadId);
+  const { data, error } = await q;
+  if (error) throw error;
+  return (data ?? []).map((r) => dbToTarefa(r as Record<string, unknown>));
+}
+export async function createClientTarefa(t: Omit<CrmClientTarefa, 'id' | 'criadoEm'>): Promise<CrmClientTarefa> {
+  const { data, error } = await supabase.from('crm_client_tarefas').insert({
+    tenant_id: t.tenantId, lead_id: t.leadId, titulo: t.titulo,
+    data_agendada: t.dataAgendada, responsavel: t.responsavel,
+    concluida: false, imagem_url: '',
+  }).select().single();
+  if (error) throw error;
+  return dbToTarefa(data as Record<string, unknown>);
+}
+export async function updateClientTarefa(t: CrmClientTarefa): Promise<CrmClientTarefa> {
+  const { data, error } = await supabase.from('crm_client_tarefas').update({
+    titulo: t.titulo, data_agendada: t.dataAgendada, responsavel: t.responsavel,
+    concluida: t.concluida, imagem_url: t.imagemUrl,
+  }).eq('id', t.id).select().single();
+  if (error) throw error;
+  return dbToTarefa(data as Record<string, unknown>);
+}
+export async function deleteClientTarefa(id: string): Promise<void> {
+  const { error } = await supabase.from('crm_client_tarefas').delete().eq('id', id);
+  if (error) throw error;
 }
 
 // ── Tags ──
@@ -635,4 +701,75 @@ export async function authenticateCrmUser(email: string, senha: string): Promise
   }
   const tenant = dbToTenant(tenantData as Record<string, unknown>);
   return { user, tenant };
+}
+
+// ══════════════════════════════════════════════════════════════
+// Educação — Módulos, Aulas, Progresso
+// ══════════════════════════════════════════════════════════════
+function dbToModulo(d: Record<string, unknown>): EducacaoModulo {
+  return { id: d.id as string, titulo: d.titulo as string, descricao: (d.descricao ?? '') as string, ordem: +(d.ordem ?? 0), thumbnailUrl: (d.thumbnail_url ?? '') as string, ativo: d.ativo as boolean, criadoEm: d.criado_em as string };
+}
+function dbToAula(d: Record<string, unknown>): EducacaoAula {
+  return { id: d.id as string, moduloId: d.modulo_id as string, titulo: d.titulo as string, descricao: (d.descricao ?? '') as string, videoUrl: (d.video_url ?? '') as string, duracao: (d.duracao ?? '') as string, ordem: +(d.ordem ?? 0), ativo: d.ativo as boolean, criadoEm: d.criado_em as string };
+}
+function dbToProgresso(d: Record<string, unknown>): EducacaoProgresso {
+  return { id: d.id as string, aulaId: d.aula_id as string, userEmail: d.user_email as string, concluida: d.concluida as boolean, atualizadoEm: d.atualizado_em as string };
+}
+
+// Módulos
+export async function getModulos(): Promise<EducacaoModulo[]> {
+  const { data, error } = await supabase.from('educacao_modulos').select('*').eq('ativo', true).order('ordem');
+  if (error) throw error;
+  return (data ?? []).map(r => dbToModulo(r as Record<string, unknown>));
+}
+export async function createModulo(m: Omit<EducacaoModulo, 'id' | 'criadoEm'>): Promise<EducacaoModulo> {
+  const { data, error } = await supabase.from('educacao_modulos').insert({ titulo: m.titulo, descricao: m.descricao, ordem: m.ordem, thumbnail_url: m.thumbnailUrl, ativo: m.ativo }).select().single();
+  if (error) throw error;
+  return dbToModulo(data as Record<string, unknown>);
+}
+export async function updateModulo(m: EducacaoModulo): Promise<EducacaoModulo> {
+  const { data, error } = await supabase.from('educacao_modulos').update({ titulo: m.titulo, descricao: m.descricao, ordem: m.ordem, thumbnail_url: m.thumbnailUrl, ativo: m.ativo }).eq('id', m.id).select().single();
+  if (error) throw error;
+  return dbToModulo(data as Record<string, unknown>);
+}
+export async function deleteModulo(id: string): Promise<void> {
+  const { error } = await supabase.from('educacao_modulos').delete().eq('id', id);
+  if (error) throw error;
+}
+
+// Aulas
+export async function getAulasByModulo(moduloId: string): Promise<EducacaoAula[]> {
+  const { data, error } = await supabase.from('educacao_aulas').select('*').eq('modulo_id', moduloId).eq('ativo', true).order('ordem');
+  if (error) throw error;
+  return (data ?? []).map(r => dbToAula(r as Record<string, unknown>));
+}
+export async function getAllAulas(): Promise<EducacaoAula[]> {
+  const { data, error } = await supabase.from('educacao_aulas').select('*').eq('ativo', true).order('ordem');
+  if (error) throw error;
+  return (data ?? []).map(r => dbToAula(r as Record<string, unknown>));
+}
+export async function createAula(a: Omit<EducacaoAula, 'id' | 'criadoEm'>): Promise<EducacaoAula> {
+  const { data, error } = await supabase.from('educacao_aulas').insert({ modulo_id: a.moduloId, titulo: a.titulo, descricao: a.descricao, video_url: a.videoUrl, duracao: a.duracao, ordem: a.ordem, ativo: a.ativo }).select().single();
+  if (error) throw error;
+  return dbToAula(data as Record<string, unknown>);
+}
+export async function updateAula(a: EducacaoAula): Promise<EducacaoAula> {
+  const { data, error } = await supabase.from('educacao_aulas').update({ titulo: a.titulo, descricao: a.descricao, video_url: a.videoUrl, duracao: a.duracao, ordem: a.ordem, ativo: a.ativo }).eq('id', a.id).select().single();
+  if (error) throw error;
+  return dbToAula(data as Record<string, unknown>);
+}
+export async function deleteAula(id: string): Promise<void> {
+  const { error } = await supabase.from('educacao_aulas').delete().eq('id', id);
+  if (error) throw error;
+}
+
+// Progresso
+export async function getProgressoByUser(email: string): Promise<EducacaoProgresso[]> {
+  const { data, error } = await supabase.from('educacao_progresso').select('*').eq('user_email', email);
+  if (error) throw error;
+  return (data ?? []).map(r => dbToProgresso(r as Record<string, unknown>));
+}
+export async function upsertProgresso(aulaId: string, email: string, concluida: boolean): Promise<void> {
+  const { error } = await supabase.from('educacao_progresso').upsert({ aula_id: aulaId, user_email: email, concluida, atualizado_em: new Date().toISOString() }, { onConflict: 'aula_id,user_email' });
+  if (error) throw error;
 }

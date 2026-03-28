@@ -195,6 +195,16 @@ export type CrmClientLead = {
   responsavel: string;
   etiquetas: string[];
   observacoes: string;
+  empresa: string;
+  faturamento: string;
+  area: string;
+  origem: string;
+  valorContrato: number;
+  valorCc: number;
+  valorMrr: number;
+  status: string;
+  motivoPerda: string;
+  proximaReuniao: string;
   criadoEm: string;
   atualizadoEm: string;
 };
@@ -204,8 +214,23 @@ export type CrmClientLeadActivity = {
   leadId: string;
   tenantId: string;
   tipo: string;
+  subtipo: string;
   conteudo: string;
   autor: string;
+  imagemUrl: string;
+  dados: Record<string, unknown>;
+  criadoEm: string;
+};
+
+export type CrmClientTarefa = {
+  id: string;
+  tenantId: string;
+  leadId: string;
+  titulo: string;
+  dataAgendada: string;
+  responsavel: string;
+  concluida: boolean;
+  imagemUrl: string;
   criadoEm: string;
 };
 
@@ -225,6 +250,37 @@ export type CrmClientUser = {
   role: 'admin' | 'member';
   ativo: boolean;
   criadoEm: string;
+};
+
+// ── Educação ──────────────────────────────────────────────
+export type EducacaoModulo = {
+  id: string;
+  titulo: string;
+  descricao: string;
+  ordem: number;
+  thumbnailUrl: string;
+  ativo: boolean;
+  criadoEm: string;
+};
+
+export type EducacaoAula = {
+  id: string;
+  moduloId: string;
+  titulo: string;
+  descricao: string;
+  videoUrl: string;
+  duracao: string;
+  ordem: number;
+  ativo: boolean;
+  criadoEm: string;
+};
+
+export type EducacaoProgresso = {
+  id: string;
+  aulaId: string;
+  userEmail: string;
+  concluida: boolean;
+  atualizadoEm: string;
 };
 
 export type Demand = {

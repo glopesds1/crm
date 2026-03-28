@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { 
-  LayoutDashboard, BookOpen, 
+  LayoutDashboard, BookOpen, GraduationCap,
   Users, 
   Kanban as KanbanIcon, 
   BarChart3, 
@@ -69,6 +69,10 @@ import DashboardView from './DashboardView';
 import CRMView from './CRMView';
 import PlaybooksView from './PlaybooksView';
 import ClientCRMView from './ClientCRMView';
+import EducacaoView from './EducacaoView';
+import MateriaisClienteView from './MateriaisClienteView';
+import DocumentosClienteView from './DocumentosClienteView';
+import ConsultorIAView from './ConsultorIAView';
 import { getTenantByClientId, activateCrmForClient, authenticateCrmUser, getCrmUsersByTenant, createCrmUser, updateCrmUser, deleteCrmUser, authenticateUser, signOut, resetPassword, updatePassword, getAuthSession, mfaListFactors, mfaChallenge, mfaVerify, mfaEnrollTotp, mfaUnenroll, mfaGetAuthenticatorLevel } from './lib/database';
 import type { CrmClientTenant, CrmClientUser } from './types';
 import { ptBR } from 'date-fns/locale';
@@ -3551,10 +3555,10 @@ export default function App() {
   const canSee = (tab: string): boolean => {
     const role = (userSession?.role ?? '').toLowerCase();
     const permissions: Record<string, string[]> = {
-      'admin':     ['Dashboard', 'Clientes', 'Kanban de Operação', 'Equipe', 'Demandas', 'CRM Clientes', 'Relatórios', 'Aquisição', 'Playbooks', 'Configurações'],
-      'comercial': ['Demandas', 'Aquisição', 'Playbooks'],
-      'suporte':   ['Clientes', 'Kanban de Operação', 'Demandas', 'CRM Clientes', 'Relatórios', 'Playbooks'],
-      'entrega':   ['Clientes', 'Kanban de Operação', 'Demandas', 'CRM Clientes', 'Relatórios', 'Playbooks'],
+      'admin':     ['Dashboard', 'Clientes', 'Kanban de Operação', 'Equipe', 'Demandas', 'CRM Clientes', 'Relatórios', 'Educação', 'Aquisição', 'Playbooks', 'Configurações'],
+      'comercial': ['Demandas', 'Educação', 'Aquisição', 'Playbooks'],
+      'suporte':   ['Clientes', 'Kanban de Operação', 'Demandas', 'CRM Clientes', 'Relatórios', 'Educação', 'Playbooks'],
+      'entrega':   ['Clientes', 'Kanban de Operação', 'Demandas', 'CRM Clientes', 'Relatórios', 'Educação', 'Playbooks'],
     };
     return (permissions[role] ?? permissions['admin']).includes(tab);
   };
@@ -3566,6 +3570,8 @@ export default function App() {
   const [agencyConfig, setAgencyConfig] = useState<AgencyConfig>(INITIAL_AGENCY_CONFIG);
   const [userSession, setUserSession] = useState<UserSession | null>(null);
   const [crmClientSession, setCrmClientSession] = useState<{ user: CrmClientUser; tenant: CrmClientTenant } | null>(null);
+  const [clientTab, setClientTab] = useState<'crm' | 'educacao' | 'materiais' | 'documentos'>('crm');
+  const [showConsultorChat, setShowConsultorChat] = useState(false);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [demands, setDemands] = useState<Demand[]>([]);
   const [demandFilter, setDemandFilter] = useState<'todos' | 'pendente' | 'concluido'>('pendente');
@@ -3915,27 +3921,85 @@ export default function App() {
   // Se é um cliente CRM, mostra apenas o CRM dele
   if (crmClientSession) {
     return (
-      <div className="min-h-screen bg-bg-main">
-        {/* Header simples para cliente */}
-        <div className="h-16 border-b border-white/10 flex items-center justify-between px-6">
+      <div className="min-h-screen bg-bg-main flex flex-col">
+        {/* Header para cliente */}
+        <div className="h-16 border-b border-white/10 flex items-center justify-between px-6 flex-shrink-0">
           <div className="flex items-center gap-3">
             {agencyConfig.logoUrl && (
               <img src={agencyConfig.logoUrl} alt="" className="w-8 h-8 rounded-lg" referrerPolicy="no-referrer" />
             )}
             <span className="text-white font-bold">{agencyConfig.name}</span>
-            <span className="text-gray-500 text-sm">• CRM</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <button onClick={() => setClientTab('crm')} className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${clientTab === 'crm' ? 'bg-brand-primary/10 text-brand-primary' : 'text-white/40 hover:text-white/60'}`}>CRM</button>
+            <button onClick={() => setClientTab('materiais')} className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${clientTab === 'materiais' ? 'bg-brand-primary/10 text-brand-primary' : 'text-white/40 hover:text-white/60'}`}>Materiais</button>
+            <button onClick={() => setClientTab('documentos')} className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${clientTab === 'documentos' ? 'bg-brand-primary/10 text-brand-primary' : 'text-white/40 hover:text-white/60'}`}>Documentos</button>
+            <button onClick={() => setClientTab('educacao')} className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${clientTab === 'educacao' ? 'bg-brand-primary/10 text-brand-primary' : 'text-white/40 hover:text-white/60'}`}>Educação</button>
           </div>
           <div className="flex items-center gap-4">
             <span className="text-sm text-gray-400">{crmClientSession.user.nome}</span>
-            <button
-              onClick={() => { signOut(); setCrmClientSession(null); localStorage.removeItem('crmClientSession'); }}
-              className="text-sm text-red-400 hover:text-red-300 flex items-center gap-1"
-            >
-              <LogOut size={14} /> Sair
-            </button>
+            <button onClick={() => { signOut(); setCrmClientSession(null); localStorage.removeItem('crmClientSession'); }}
+              className="text-sm text-red-400 hover:text-red-300 flex items-center gap-1"><LogOut size={14} /> Sair</button>
           </div>
         </div>
-        <ClientCRMView tenantId={crmClientSession.tenant.id} userName={crmClientSession.user.nome} />
+        <div className="flex-1 overflow-auto">
+          {clientTab === 'crm' && <ClientCRMView tenantId={crmClientSession.tenant.id} userName={crmClientSession.user.nome} />}
+          {clientTab === 'materiais' && <MateriaisClienteView tenantId={crmClientSession.tenant.id} />}
+          {clientTab === 'documentos' && <DocumentosClienteView tenantId={crmClientSession.tenant.id} />}
+          {clientTab === 'educacao' && <EducacaoView userEmail={crmClientSession.user.email} isAdmin={false} />}
+        </div>
+
+        {/* Botão flutuante do Consultor IA */}
+        {!showConsultorChat && (
+          <div className="fixed bottom-6 right-6 z-50 flex items-end gap-3">
+            {/* Balão de fala */}
+            <motion.div
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ delay: 1, duration: 0.4 }}
+              className="bg-white rounded-2xl rounded-br-sm px-4 py-3 shadow-xl max-w-[220px] cursor-pointer"
+              onClick={() => setShowConsultorChat(true)}
+            >
+              <p className="text-gray-800 text-sm font-medium leading-snug">Fala! Sou o <strong>Taleco</strong>, o cérebro comercial do Thalisson. Posso te ajudar? 💬</p>
+            </motion.div>
+            {/* Avatar pulsante */}
+            <motion.button
+              initial={{ scale: 0 }}
+              animate={{ scale: 1 }}
+              whileHover={{ scale: 1.1 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={() => setShowConsultorChat(true)}
+              className="relative w-20 h-20 rounded-full shadow-2xl shadow-brand-primary/40 border-3 border-brand-primary overflow-hidden flex-shrink-0"
+            >
+              {/* Anel pulsante */}
+              <span className="absolute inset-0 rounded-full border-2 border-brand-primary animate-ping opacity-40" />
+              <span className="absolute -inset-1 rounded-full border-2 border-brand-primary/30 animate-pulse" />
+              <img src="/consultor-avatar.jpg" alt="Consultor" className="w-full h-full object-cover relative z-10" />
+              {/* Badge online */}
+              <span className="absolute bottom-1 right-1 w-4 h-4 bg-brand-primary rounded-full border-2 border-[#0a0f1e] z-20" />
+            </motion.button>
+          </div>
+        )}
+
+        {/* Chat popup do Consultor IA */}
+        <AnimatePresence>
+          {showConsultorChat && (
+            <motion.div
+              initial={{ opacity: 0, y: 20, scale: 0.95 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 20, scale: 0.95 }}
+              className="fixed bottom-6 right-6 w-[420px] h-[600px] bg-[#0a0f1e] rounded-2xl border border-white/10 shadow-2xl shadow-black/50 z-50 flex flex-col overflow-hidden"
+            >
+              <button
+                onClick={() => setShowConsultorChat(false)}
+                className="absolute top-3 right-3 z-10 w-7 h-7 rounded-full bg-white/10 flex items-center justify-center text-white/50 hover:text-white hover:bg-white/20 transition-all"
+              >
+                ×
+              </button>
+              <ConsultorIAView tenantId={crmClientSession.tenant.id} userName={crmClientSession.user.nome} />
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
     );
   }
@@ -4391,6 +4455,7 @@ export default function App() {
           {canSee('Demandas') && <SidebarItem icon={ClipboardList} label="Demandas" active={activeTab === 'Demandas'} onClick={() => setActiveTab('Demandas')} badge={demands.filter(d => d.status === 'pendente').length || undefined} />}
           {canSee('CRM Clientes') && <SidebarItem icon={Building2} label="CRM Clientes" active={activeTab === 'CRM Clientes'} onClick={() => { setActiveTab('CRM Clientes'); setSelectedCrmTenantId(null); }} />}
           {canSee('Relatórios') && <SidebarItem icon={BarChart3} label="Relatórios" active={activeTab === 'Relatórios'} onClick={() => setActiveTab('Relatórios')} />}
+          {canSee('Educação') && <SidebarItem icon={GraduationCap} label="Educação" active={activeTab === 'Educação'} onClick={() => setActiveTab('Educação')} />}
           {canSee('Playbooks') && <SidebarItem icon={BookOpen} label="Playbooks" active={activeTab === 'Playbooks'} onClick={() => setActiveTab('Playbooks')} />}
           
           <div className="space-y-1">
@@ -4555,6 +4620,7 @@ export default function App() {
                 />
               )}
               {activeTab === 'Relatórios' && <ReportsView clients={clients} config={agencyConfig} />}
+              {activeTab === 'Educação' && <EducacaoView userEmail={userSession.email} isAdmin={userSession.role.toLowerCase() === 'admin'} />}
               {activeTab === 'Playbooks' && <PlaybooksView />}
               {activeTab === 'CRM Clientes' && <ClientCRMView clients={clients} selectedTenantId={selectedCrmTenantId} onBack={() => setSelectedCrmTenantId(null)} />}
               {activeTab === 'Aquisição' && aquisicaoSubTab === 'CRM' && (
