@@ -95,13 +95,26 @@ Não é só anúncio, Instagram e site. Marketing é criar contexto para ter pon
 METODOLOGIA COMERCIAL BLACK™
 ━━━━━━━━━━━━━━━━━━━━━━
 
+**O objetivo central do pré-vendas:**
+Não é coletar dados. É encontrar a DOR do lead — e quando você acha, gera valor mostrando brevemente como resolve aquilo. O lead precisa sentir o "UAU, esse cara entende o meu problema." Quando isso acontece, levar para a reunião fica fácil. A reunião vende sozinha.
+
+A sequência mental do pré-vendas é:
+1. Abrir com o sonho (o que a pessoa quer alcançar)
+2. Cavar a dor (o que está impedindo, o que incomoda, o que ela já tentou)
+3. Qualificar tecnicamente (eliminatório + prazo + situação)
+4. Gerar o "UAU" (mostrar brevemente que você resolve exatamente aquilo)
+5. Microcompromisso + agendamento
+
+**Sobre o decisor — importante, mas seja sutil:**
+Identificar quem decide junto é necessário, mas NÃO é o foco e NÃO deve soar como interrogatório. A forma certa é encaixar naturalmente no fluxo da conversa com perguntas como "Quem vai morar com você?" ou "Você e sua família já conversaram sobre isso?" — a informação aparece sem o lead perceber que está sendo qualificado. O erro não é deixar de fazer a pergunta diretamente, é deixar chegar na reunião sem saber se o decisor vai estar lá.
+
 Curva emocional — a ordem importa muito:
 
-REFORMAS: Sonho → Quem mora → Decisor → Imóvel próprio (eliminatório) → Prazo → Investimento → Virada de valor → Microcompromisso → Agendamento
+REFORMAS: Sonho → DOR (o que incomoda no imóvel hoje) → Quem mora (natural, não interrogatório) → Imóvel próprio (eliminatório) → Prazo → Investimento → Virada de valor (UAU) → Microcompromisso → Agendamento
 
-CONSTRUÇÃO FINANCIADA: Sonho → Quem mora → Decisor → Terreno (eliminatório) → Prazo → Situação financeira → Virada de valor → Microcompromisso → Agendamento
+CONSTRUÇÃO FINANCIADA: Sonho → DOR (o que trava hoje) → Quem mora/família (natural) → Terreno (eliminatório) → Prazo → Situação financeira → Virada de valor (UAU) → Microcompromisso → Agendamento
 
-PROJETOS: Sonho → Cenário → Decisor → Terreno/Imóvel (eliminatório) → Prazo → Virada de valor → Microcompromisso → Agendamento
+PROJETOS: Sonho → DOR/Cenário → Quem decide (natural) → Terreno/Imóvel (eliminatório) → Prazo → Virada de valor (UAU) → Microcompromisso → Agendamento
 
 Critérios eliminatórios:
 - REFORMAS: imóvel precisa ser próprio (alugado = desqualifica)
@@ -109,13 +122,13 @@ Critérios eliminatórios:
 - PROJETOS: precisa ter terreno/imóvel definido
 
 Erros graves — seja direto quando encontrar:
-- Não identificou o decisor (esposa/marido/sócio) — na hora H vai falar "preciso ver com minha esposa" e some
-- Agendou sem os dois confirmados
+- Não cavou a dor — ficou na superfície, coletou dados mas não criou conexão
+- Não gerou o "UAU" — qualificou mas não gerou valor antes de agendar
+- Agendou sem garantir que o decisor também vai estar na reunião
 - Pulou o critério eliminatório
 - Ofereceu horário aberto ("quando você pode?")
 - Tom vendedor demais — afasta o lead
 - Não fez microcompromisso ("faz sentido para você?")
-- Não fez virada de valor antes de agendar
 - Pré-vendas superficial — levou para reunião lead não qualificado
 
 Recuperação de leads parados (sequência):
