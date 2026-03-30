@@ -517,18 +517,17 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
           console.error('Failed to send BANT webhook:', err);
         }
 
-        // Sync reuniao_tp → Railway (fire-and-forget)
+        // INSERT reunião na tabela reunioes (Bloco 1 — agendar R1)
         {
-          const currentTP = (leadObj as any)?.tp || (leadObj as any)?.TP || '';
-          const tpMap: Record<string, string> = {'': 'R1', 'R1': 'R2', 'R2': 'R3', 'R3': 'R4+'};
-          const agendamentoTP = tpMap[currentTP] || 'R4+';
+          const tpAtual_bant = (leadObj as any)?.tp_atual || 'R1';
           const horaBANT = new Date(bantDataHora).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'America/Sao_Paulo' });
           syncPostgres(leadObj?.lead_externo_id, {
-            etapa: 'rm_marcada',
-            reuniao_tp: agendamentoTP,
+            reuniao_action: 'agendar',
+            crm_lead_id: leadId,
+            reuniao_tp: tpAtual_bant,
             Data_Reuniao_Marcada: new Date(bantDataHora).toISOString().split('T')[0],
             hora_marcada: horaBANT,
-            TP: agendamentoTP,
+            etapa: 'rm_marcada',
             closer: bantCloser || null,
           });
         }
@@ -582,24 +581,8 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
         } catch (err) { console.error('Failed to create return task:', err); }
       }
     } else if (tipo === 'reuniao') {
-      // Resolver TP atual do lead (com fallback para última tarefa pendente)
-      let resolvedTP = (leadObj as any)?.tp_atual || (leadObj as any)?.tp || (leadObj as any)?.TP || '';
-      if (!resolvedTP) {
-        try {
-          const { data: lastTask } = await supabase
-            .from('crm_tarefas')
-            .select('titulo')
-            .eq('lead_id', leadId)
-            .eq('concluida', false)
-            .order('data_agendada', { ascending: false })
-            .limit(1);
-          if (lastTask && lastTask[0]) {
-            const match = lastTask[0].titulo?.match(/R(\d)/);
-            if (match) resolvedTP = 'R' + match[1];
-          }
-        } catch { /* silent */ }
-      }
-      if (!resolvedTP) resolvedTP = 'R1';
+      // TP sempre do card (crm_leads) — nunca de crm_tarefas
+      const resolvedTP = (leadObj as any)?.tp_atual || 'R1';
 
       try {
         if (resultado === 'Venda') {
@@ -785,8 +768,19 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
       {
         const hoje = new Date().toISOString().split('T')[0];
         const closer = responsavelAtividade || leadObj?.responsavel || null;
-        const leadTP = resolvedTP;
+        const currentTP = resolvedTP;
+
         if (statusReuniao === 'Não compareceu') {
+          // Bloco 6: UPDATE reunião → No-show
+          syncPostgres(leadObj?.lead_externo_id, {
+            reuniao_action: 'resultado',
+            crm_lead_id: leadId,
+            reuniao_tp: currentTP,
+            reuniao_status: 'No-show',
+            reuniao_resultado: 'No-show',
+            Data_Reuniao_Realizada: hoje,
+            closer,
+          });
           // Cancelar touchpoints pendentes
           fetch(`${WEBHOOK_BASE}/webhook/cancelar-touchpoints`, {
             method: 'POST',
@@ -795,17 +789,17 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
           }).catch(() => {});
 
           if (reagendarNoShow && dataReagendamento) {
-            // Bloco 5: Reagendar após no-show
-            const reagendaTP_ns = leadTP;
-            syncPostgres(leadObj?.lead_externo_id, { Status_TP: 'Reagendou', reuniao_tp: reagendaTP_ns, Data_Reuniao_Realizada: hoje, closer });
+            // INSERT nova reunião MESMO TP
+            const horaReag = new Date(dataReagendamento).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: SP_TZ });
             syncPostgres(leadObj?.lead_externo_id, {
-              reuniao_tp: reagendaTP_ns,
+              reuniao_action: 'agendar',
+              crm_lead_id: leadId,
+              reuniao_tp: currentTP,
               Data_Reuniao_Marcada: new Date(dataReagendamento).toISOString().split('T')[0],
-              hora_marcada: new Date(dataReagendamento).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: SP_TZ }),
-              Status_TP: 'Reagendou',
+              hora_marcada: horaReag,
               closer,
             });
-            // Dispatch agendar-reuniao webhook
+            // Calendar + WhatsApp
             fetch(`${WEBHOOK_BASE}/webhook/agendar-reuniao`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
@@ -815,50 +809,45 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
                 lead_externo_id: leadObj?.lead_externo_id ?? leadId,
                 closer: responsavelAtividade || leadObj?.responsavel || '',
                 data_hora: new Date(dataReagendamento).toISOString(),
-                tipo_reuniao: reagendaTP_ns,
+                tipo_reuniao: currentTP,
                 duracao_min: 60,
-                reagendamento: true,
               }),
-            }).catch(e => console.warn('[agendar-reuniao reagendou no-show]', e.message));
+            }).catch(e => console.warn('[reagendar no-show]', e.message));
             // Criar tarefa de lembrete
             try {
               const { data: nsTask } = await supabase.from('crm_tarefas').insert({
-                lead_id: leadId,
-                titulo: `${reagendaTP_ns} - ${leadName}`,
-                tipo: 'reuniao',
+                lead_id: leadId, titulo: `${currentTP} - ${leadName}`, tipo: 'reuniao',
                 data_agendada: localDatetimeToISO(dataReagendamento),
                 responsavel: responsavelAtividade || userSession?.name || '',
-                concluida: false,
-                created_at: now,
+                concluida: false, created_at: now,
               }).select().single();
               if (nsTask) onTarefaCreated?.(nsTask);
             } catch { /* silent */ }
-            // Mover lead para rm_marcada
+            // Atualizar crm_leads
             try {
               await supabase.from('crm_leads').update({
-                etapa: 'rm_marcada', etapa_desde: now, proxima_reuniao: localDatetimeToISO(dataReagendamento), updated_at: now,
+                etapa: 'rm_marcada', proxima_reuniao: localDatetimeToISO(dataReagendamento), updated_at: now,
               }).eq('id', leadId);
               onLeadUpdated?.({ etapa: 'rm_marcada' });
             } catch { /* silent */ }
           } else {
-            // Sem reagendamento: No-show simples
-            syncPostgres(leadObj?.lead_externo_id, { Status_TP: 'No-show', reuniao_tp: leadTP, closer });
-            // Mover para fup_ativa
+            // Sem reagendamento — mover para fup_ativa
             try {
-              await supabase.from('crm_leads').update({
-                etapa: 'fup_ativa', etapa_desde: now, updated_at: now,
-              }).eq('id', leadId);
+              await supabase.from('crm_leads').update({ etapa: 'fup_ativa', etapa_desde: now, updated_at: now }).eq('id', leadId);
               onLeadUpdated?.({ etapa: 'fup_ativa' });
             } catch { /* silent */ }
           }
         } else if (statusReuniao === 'Compareceu') {
           if (resultado === 'Marcou R2+') {
+            // Bloco 2: UPDATE reunião atual → Compareceu + INSERT R2
             const tpMap_sync: Record<string, string> = {'R1': 'R2', 'R2': 'R3', 'R3': 'R4+'};
-            const nextTP = tpMap_sync[resolvedTP] || 'R4+';
-            // Sync current meeting (realizada)
+            const nextTP = tpMap_sync[currentTP] || 'R4+';
             syncPostgres(leadObj?.lead_externo_id, {
-              reuniao_tp: resolvedTP,
-              Status_TP: 'Compareceu',
+              reuniao_action: 'resultado',
+              crm_lead_id: leadId,
+              reuniao_tp: currentTP,
+              reuniao_status: 'Compareceu',
+              reuniao_resultado: 'Marcou R2+',
               Data_Reuniao_Realizada: hoje,
               Data_TP: proximaReuniao ? new Date(proximaReuniao).toISOString().split('T')[0] : hoje,
               TP: nextTP,
@@ -867,43 +856,76 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
               rs_cc: valorCc || null,
               closer,
             });
-            // Sync next meeting scheduling (Data_Reuniao_Marcada + hora_marcada)
             if (proximaReuniao) {
+              const horaR2 = new Date(proximaReuniao).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: SP_TZ });
               syncPostgres(leadObj?.lead_externo_id, {
+                reuniao_action: 'agendar',
+                crm_lead_id: leadId,
                 reuniao_tp: nextTP,
                 Data_Reuniao_Marcada: new Date(proximaReuniao).toISOString().split('T')[0],
-                hora_marcada: new Date(proximaReuniao).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: SP_TZ }),
-                TP: nextTP,
+                hora_marcada: horaR2,
                 closer,
               });
             }
           } else if (resultado === 'Reagendou') {
-            const reagendaTP = leadTP;
-            // Sync current meeting (reagendamento)
-            syncPostgres(leadObj?.lead_externo_id, { Status_TP: 'Reagendou', reuniao_tp: reagendaTP, Data_Reuniao_Realizada: hoje, Data_TP: proximaReuniao ? new Date(proximaReuniao).toISOString().split('T')[0] : hoje, closer });
-            // Sync rescheduled meeting (Data_Reuniao_Marcada + hora_marcada)
+            // Bloco 7: UPDATE reunião → Reagendou + INSERT mesma TP
+            syncPostgres(leadObj?.lead_externo_id, {
+              reuniao_action: 'resultado',
+              crm_lead_id: leadId,
+              reuniao_tp: currentTP,
+              reuniao_status: 'Reagendou',
+              reuniao_resultado: 'Reagendou',
+              Data_Reuniao_Realizada: hoje,
+              closer,
+            });
             if (proximaReuniao) {
+              const horaReag = new Date(proximaReuniao).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: SP_TZ });
               syncPostgres(leadObj?.lead_externo_id, {
-                reuniao_tp: reagendaTP,
+                reuniao_action: 'agendar',
+                crm_lead_id: leadId,
+                reuniao_tp: currentTP,
                 Data_Reuniao_Marcada: new Date(proximaReuniao).toISOString().split('T')[0],
-                hora_marcada: new Date(proximaReuniao).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: SP_TZ }),
-                Status_TP: 'Reagendou',
+                hora_marcada: horaReag,
                 closer,
               });
             }
           } else if (resultado === 'Venda') {
+            // Bloco 3: UPDATE reunião → Venda
             syncPostgres(leadObj?.lead_externo_id, {
-              status: 'ganho', etapa: 'fechado', reuniao_tp: leadTP,
+              reuniao_action: 'resultado',
+              crm_lead_id: leadId,
+              reuniao_tp: currentTP,
+              reuniao_status: 'Venda',
+              reuniao_resultado: 'Venda',
+              status: 'ganho', etapa: 'fechado',
               Data_Venda: hoje, Data_Reuniao_Realizada: hoje,
               programa: programaApresentadoNAF || leadObj?.programa_apresentado || null,
               rs_contrato: valorContrato || null, rs_cc: valorCc || null,
-              mrr_adicionado: (prazoMeses && valorContrato ? parseFloat(valorContrato) / parseInt(prazoMeses) : null) || null,
-              Etapa_Fechamento: leadTP, closer,
+              Etapa_Fechamento: currentTP, closer,
             });
           } else if (resultado === 'Perdido') {
-            syncPostgres(leadObj?.lead_externo_id, { status: 'perdido', reuniao_tp: leadTP, Data_Reuniao_Realizada: hoje, Data_TP: hoje, closer });
+            // Bloco 4: UPDATE reunião → Perdido
+            syncPostgres(leadObj?.lead_externo_id, {
+              reuniao_action: 'resultado',
+              crm_lead_id: leadId,
+              reuniao_tp: currentTP,
+              reuniao_status: 'Perdido',
+              reuniao_resultado: 'Perdido',
+              status: 'perdido',
+              Data_Reuniao_Realizada: hoje,
+              closer,
+            });
           } else {
-            syncPostgres(leadObj?.lead_externo_id, { Status_TP: 'Pendente', reuniao_tp: leadTP, Data_Reuniao_Realizada: hoje, Data_TP: hoje, closer });
+            // Bloco 5: UPDATE reunião → Pendente
+            syncPostgres(leadObj?.lead_externo_id, {
+              reuniao_action: 'resultado',
+              crm_lead_id: leadId,
+              reuniao_tp: currentTP,
+              reuniao_status: 'Compareceu',
+              reuniao_resultado: 'Pendente',
+              Data_Reuniao_Realizada: hoje,
+              closer,
+            });
           }
         }
       }
@@ -1559,18 +1581,17 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
           }),
         }).catch(() => {});
       } catch { /* silent */ }
-      // Sync reuniao_tp → Railway (fire-and-forget)
+      // INSERT reunião na tabela reunioes
       {
-        const currentTP = (lead as any).tp || (lead as any).TP || '';
-        const tpMap: Record<string, string> = {'': 'R1', 'R1': 'R2', 'R2': 'R3', 'R3': 'R4+'};
-        const agendamentoTP = tpMap[currentTP] || 'R4+';
+        const tpAtual_ar = (lead as any).tp_atual || 'R1';
         const horaAR = new Date(arDataHora).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'America/Sao_Paulo' });
         syncPostgres(lead.lead_externo_id, {
-          etapa: 'rm_marcada',
-          reuniao_tp: agendamentoTP,
+          reuniao_action: 'agendar',
+          crm_lead_id: lead.id,
+          reuniao_tp: tpAtual_ar,
           Data_Reuniao_Marcada: new Date(arDataHora).toISOString().split('T')[0],
           hora_marcada: horaAR,
-          TP: agendamentoTP,
+          etapa: 'rm_marcada',
           closer: arCloser || null,
         });
       }
@@ -1782,24 +1803,8 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
     setRrSaving(true);
     const now = new Date().toISOString();
 
-    // Resolver TP atual do lead (com fallback para última tarefa pendente)
-    let resolvedTP_rr = (lead as any).tp_atual || (lead as any).tp || (lead as any).TP || '';
-    if (!resolvedTP_rr) {
-      try {
-        const { data: lastTask } = await supabase
-          .from('crm_tarefas')
-          .select('titulo')
-          .eq('lead_id', lead.id)
-          .eq('concluida', false)
-          .order('data_agendada', { ascending: false })
-          .limit(1);
-        if (lastTask && lastTask[0]) {
-          const match = lastTask[0].titulo?.match(/R(\d)/);
-          if (match) resolvedTP_rr = 'R' + match[1];
-        }
-      } catch { /* silent */ }
-    }
-    if (!resolvedTP_rr) resolvedTP_rr = 'R1';
+    // TP sempre do card (crm_leads) — nunca de crm_tarefas
+    const resolvedTP_rr = (lead as any).tp_atual || 'R1';
 
     // Upload image (non-blocking)
     let uploadedUrl: string | null = null;
@@ -2023,9 +2028,19 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
     {
       const hoje = new Date().toISOString().split('T')[0];
       const closer = responsavel || null;
-      const leadTP = resolvedTP_rr;
+      const currentTP = resolvedTP_rr;
+
       if (rrStatusReuniao === 'Não compareceu') {
-        syncPostgres(lead.lead_externo_id, { Status_TP: 'No-show', reuniao_tp: leadTP, closer });
+        // Bloco 6: UPDATE reunião → No-show
+        syncPostgres(lead.lead_externo_id, {
+          reuniao_action: 'resultado',
+          crm_lead_id: lead.id,
+          reuniao_tp: currentTP,
+          reuniao_status: 'No-show',
+          reuniao_resultado: 'No-show',
+          Data_Reuniao_Realizada: hoje,
+          closer,
+        });
         // Cancelar touchpoints pendentes
         fetch(`${WEBHOOK_BASE}/webhook/cancelar-touchpoints`, {
           method: 'POST',
@@ -2034,45 +2049,93 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
         }).catch(() => {});
       } else if (rrStatusReuniao === 'Compareceu') {
         if (rrResultado === 'Marcou R2+') {
+          // Bloco 2: UPDATE reunião atual → Compareceu + INSERT R2
           const tpMap_ld: Record<string, string> = {'R1': 'R2', 'R2': 'R3', 'R3': 'R4+'};
-          const nextTP = tpMap_ld[resolvedTP_rr] || 'R4+';
-          // Sync current meeting (realizada)
-          syncPostgres(lead.lead_externo_id, { Status_TP: 'Compareceu', TP: nextTP, reuniao_tp: resolvedTP_rr, Data_Reuniao_Realizada: hoje, Data_TP: rrProximaReuniao ? new Date(rrProximaReuniao).toISOString().split('T')[0] : hoje, closer });
-          // Sync next meeting scheduling (Data_Reuniao_Marcada + hora_marcada)
+          const nextTP = tpMap_ld[currentTP] || 'R4+';
+          syncPostgres(lead.lead_externo_id, {
+            reuniao_action: 'resultado',
+            crm_lead_id: lead.id,
+            reuniao_tp: currentTP,
+            reuniao_status: 'Compareceu',
+            reuniao_resultado: 'Marcou R2+',
+            Data_Reuniao_Realizada: hoje,
+            Data_TP: rrProximaReuniao ? new Date(rrProximaReuniao).toISOString().split('T')[0] : hoje,
+            TP: nextTP,
+            programa: programaApresentado || null,
+            rs_contrato: rrValorContrato || null,
+            rs_cc: rrValorCc || null,
+            closer,
+          });
           if (rrProximaReuniao) {
+            const horaR2 = new Date(rrProximaReuniao).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: SP_TZ });
             syncPostgres(lead.lead_externo_id, {
+              reuniao_action: 'agendar',
+              crm_lead_id: lead.id,
               reuniao_tp: nextTP,
               Data_Reuniao_Marcada: new Date(rrProximaReuniao).toISOString().split('T')[0],
-              hora_marcada: new Date(rrProximaReuniao).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: SP_TZ }),
-              TP: nextTP,
+              hora_marcada: horaR2,
               closer,
             });
           }
         } else if (rrResultado === 'Reagendou') {
-          const reagendaTP = leadTP;
-          // Sync current meeting (reagendamento)
-          syncPostgres(lead.lead_externo_id, { Status_TP: 'Reagendou', reuniao_tp: reagendaTP, Data_Reuniao_Realizada: hoje, Data_TP: rrProximaReuniao ? new Date(rrProximaReuniao).toISOString().split('T')[0] : hoje, closer });
-          // Sync rescheduled meeting (Data_Reuniao_Marcada + hora_marcada)
+          // Bloco 7: UPDATE reunião → Reagendou + INSERT mesma TP
+          syncPostgres(lead.lead_externo_id, {
+            reuniao_action: 'resultado',
+            crm_lead_id: lead.id,
+            reuniao_tp: currentTP,
+            reuniao_status: 'Reagendou',
+            reuniao_resultado: 'Reagendou',
+            Data_Reuniao_Realizada: hoje,
+            closer,
+          });
           if (rrProximaReuniao) {
+            const horaReag = new Date(rrProximaReuniao).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: SP_TZ });
             syncPostgres(lead.lead_externo_id, {
-              reuniao_tp: reagendaTP,
+              reuniao_action: 'agendar',
+              crm_lead_id: lead.id,
+              reuniao_tp: currentTP,
               Data_Reuniao_Marcada: new Date(rrProximaReuniao).toISOString().split('T')[0],
-              hora_marcada: new Date(rrProximaReuniao).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: SP_TZ }),
-              Status_TP: 'Reagendou',
+              hora_marcada: horaReag,
               closer,
             });
           }
         } else if (rrResultado === 'Venda') {
+          // Bloco 3: UPDATE reunião → Venda
           syncPostgres(lead.lead_externo_id, {
-            status: 'ganho', etapa: 'fechado', reuniao_tp: leadTP,
-            Data_Venda: hoje, Data_Reuniao_Realizada: hoje, Data_TP: hoje,
-            programa: programaApresentado || null, rs_contrato: rrValorContrato || null, rs_cc: rrValorCc || null,
-            mrr_adicionado: computedMrr || null, Etapa_Fechamento: leadTP, closer,
+            reuniao_action: 'resultado',
+            crm_lead_id: lead.id,
+            reuniao_tp: currentTP,
+            reuniao_status: 'Venda',
+            reuniao_resultado: 'Venda',
+            status: 'ganho', etapa: 'fechado',
+            Data_Venda: hoje, Data_Reuniao_Realizada: hoje,
+            programa: programaApresentado || null,
+            rs_contrato: rrValorContrato || null, rs_cc: rrValorCc || null,
+            mrr_adicionado: computedMrr || null, Etapa_Fechamento: currentTP, closer,
           });
         } else if (rrResultado === 'Perdido') {
-          syncPostgres(lead.lead_externo_id, { status: 'perdido', reuniao_tp: leadTP, Data_Reuniao_Realizada: hoje, Data_TP: hoje, closer });
+          // Bloco 4: UPDATE reunião → Perdido
+          syncPostgres(lead.lead_externo_id, {
+            reuniao_action: 'resultado',
+            crm_lead_id: lead.id,
+            reuniao_tp: currentTP,
+            reuniao_status: 'Perdido',
+            reuniao_resultado: 'Perdido',
+            status: 'perdido',
+            Data_Reuniao_Realizada: hoje,
+            closer,
+          });
         } else {
-          syncPostgres(lead.lead_externo_id, { Status_TP: 'Pendente', reuniao_tp: leadTP, Data_Reuniao_Realizada: hoje, Data_TP: hoje, closer });
+          // Bloco 5: UPDATE reunião → Pendente
+          syncPostgres(lead.lead_externo_id, {
+            reuniao_action: 'resultado',
+            crm_lead_id: lead.id,
+            reuniao_tp: currentTP,
+            reuniao_status: 'Compareceu',
+            reuniao_resultado: 'Pendente',
+            Data_Reuniao_Realizada: hoje,
+            closer,
+          });
         }
       }
     }
