@@ -1549,6 +1549,7 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
         const agendamentoTP = tpMap[currentTP] || 'R4+';
         const horaAR = new Date(arDataHora).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'America/Sao_Paulo' });
         syncPostgres(lead.lead_externo_id, {
+          etapa: 'rm_marcada',
           reuniao_tp: agendamentoTP,
           Data_Reuniao_Marcada: new Date(arDataHora).toISOString().split('T')[0],
           hora_marcada: horaAR,
@@ -2001,7 +2002,7 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
           const tpMap: Record<string, string> = {'': 'R2', 'R1': 'R2', 'R2': 'R3', 'R3': 'R4+'};
           const nextTP = tpMap[currentTP] || 'R4+';
           // Sync current meeting (realizada)
-          syncPostgres(lead.lead_externo_id, { Status_TP: 'Pendente', TP: nextTP, reuniao_tp: currentTP || 'R1', Data_Reuniao_Realizada: hoje, Data_TP: rrProximaReuniao ? new Date(rrProximaReuniao).toISOString().split('T')[0] : hoje, closer });
+          syncPostgres(lead.lead_externo_id, { Status_TP: 'Compareceu', TP: nextTP, reuniao_tp: currentTP || 'R1', Data_Reuniao_Realizada: hoje, Data_TP: rrProximaReuniao ? new Date(rrProximaReuniao).toISOString().split('T')[0] : hoje, closer });
           // Sync next meeting scheduling (Data_Reuniao_Marcada + hora_marcada)
           if (rrProximaReuniao) {
             syncPostgres(lead.lead_externo_id, {
