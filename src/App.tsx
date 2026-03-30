@@ -3601,7 +3601,7 @@ export default function App() {
   const playAlarm = () => {
     try {
       const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
-      for (let i = 0; i < 2; i++) {
+      for (let i = 0; i < 3; i++) {
         const osc = ctx.createOscillator();
         const gain = ctx.createGain();
         osc.connect(gain);
@@ -3612,7 +3612,7 @@ export default function App() {
         osc.start(ctx.currentTime + i * 0.3);
         osc.stop(ctx.currentTime + i * 0.3 + 0.2);
       }
-    } catch (e) { console.warn('[alarm sound]', e); }
+    } catch (e) { console.warn('[alarm]', e); }
   };
 
   useEffect(() => {
@@ -3625,11 +3625,11 @@ export default function App() {
 
         const { data } = await supabase
           .from('crm_tarefas')
-          .select('id, titulo, lead_id, data_agendada, responsavel')
+          .select('id, titulo, lead_id, data_agendada, responsavel, tipo')
           .eq('concluida', false)
           .lte('data_agendada', daquiUmMinuto.toISOString())
-          .order('data_agendada', { ascending: false })
-          .limit(10);
+          .order('data_agendada', { ascending: true })
+          .limit(5);
 
         if (data && data.length > 0) {
           for (const tarefa of data) {
@@ -3651,7 +3651,7 @@ export default function App() {
   // Inject pulse animation for alarm
   useEffect(() => {
     const style = document.createElement('style');
-    style.textContent = `@keyframes alarmPulse { 0%, 100% { border-color: #d4af37; } 50% { border-color: #f0d060; } }`;
+    style.textContent = `@keyframes alarmPulse { 0%, 100% { border-color: #d4af37; box-shadow: 0 4px 24px rgba(0,0,0,0.5); } 50% { border-color: #f0d060; box-shadow: 0 4px 32px rgba(212,175,55,0.3); } }`;
     document.head.appendChild(style);
     return () => { document.head.removeChild(style); };
   }, []);
@@ -4803,22 +4803,22 @@ export default function App() {
 
       {/* Global Task Alarm Popup */}
       {tarefaAlarme && (
-        <div style={{ position: 'fixed', top: 16, right: 16, zIndex: 9999, maxWidth: 360, width: '100%' }}>
+        <div style={{ position: 'fixed', top: 16, right: 16, zIndex: 9999, maxWidth: 360, width: 'calc(100% - 32px)' }}>
           <div style={{
             background: '#1a1a2e', border: '2px solid #d4af37', borderRadius: 12,
-            padding: '16px 20px', animation: 'alarmPulse 2s infinite',
-            boxShadow: '0 4px 24px rgba(0,0,0,0.4)',
+            padding: '16px 20px', animation: 'alarmPulse 1.5s ease-in-out infinite',
+            boxShadow: '0 4px 24px rgba(0,0,0,0.5)',
           }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
               <span style={{ fontSize: 14, fontWeight: 600, color: '#d4af37' }}>Tarefa agendada</span>
               <button onClick={() => setTarefaAlarme(null)}
-                style={{ background: 'none', border: 'none', color: '#888', cursor: 'pointer', fontSize: 18 }}>×</button>
+                style={{ background: 'none', border: 'none', color: '#888', cursor: 'pointer', fontSize: 18, padding: 0 }}>x</button>
             </div>
             <p style={{ fontSize: 15, fontWeight: 500, color: '#fff', margin: '0 0 4px' }}>{tarefaAlarme.titulo}</p>
             <p style={{ fontSize: 12, color: '#aaa', margin: '0 0 12px' }}>
-              {new Date(tarefaAlarme.data_agendada).toLocaleString('pt-BR', {
+              {tarefaAlarme.data_agendada ? new Date(tarefaAlarme.data_agendada).toLocaleString('pt-BR', {
                 day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit'
-              })}
+              }) : ''}
             </p>
             <div style={{ display: 'flex', gap: 8 }}>
               <button onClick={async () => {
@@ -4832,7 +4832,7 @@ export default function App() {
               <button onClick={() => setTarefaAlarme(null)} style={{
                 flex: 1, padding: '8px 12px', borderRadius: 8,
                 background: 'transparent', color: '#aaa',
-                border: '1px solid #333', cursor: 'pointer', fontSize: 13,
+                border: '1px solid #444', cursor: 'pointer', fontSize: 13,
               }}>Dispensar</button>
             </div>
           </div>

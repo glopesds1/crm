@@ -166,25 +166,53 @@ const TIPO_ICON: Record<string, any> = {
 function LeadCard({ lead, proximaTarefa, onClick }: { key?: React.Key; lead: CRMLead; proximaTarefa?: CRMTarefa; onClick: () => void }) {
   const etapa = ETAPA_MAP[lead.etapa];
   const fmtDate = (d: string) => fmtDateSP(d);
+
+  // Próxima reunião analysis
+  const proxReuniao = (lead as any).proxima_reuniao;
+  const proxDate = proxReuniao ? new Date(proxReuniao) : null;
+  const agora = new Date();
+  const isHoje = proxDate ? (proxDate.toDateString() === agora.toDateString()) : false;
+  const isAtrasada = proxDate ? (proxDate < agora && !isHoje) : false;
+  const tpAtual = (lead as any).tp_atual || '';
+  const tpColor = tpAtual === 'R1' ? 'bg-white/10 text-gray-400' : tpAtual === 'R2' ? 'bg-amber-900/30 text-amber-400' : tpAtual ? 'bg-red-900/30 text-red-400' : '';
+
+  // WhatsApp URL
+  const waUrl = lead.telefone ? `https://api.whatsapp.com/send?phone=${lead.telefone.replace(/\D/g, '').replace(/^0/, '').replace(/^(?!55)/, '55')}` : '';
+
   return (
     <motion.div layout initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
       onClick={onClick}
       className={`bg-[#161b26] border border-white/8 rounded-xl p-3.5 cursor-pointer hover:bg-[#1a2030] transition-all duration-200 space-y-2 shadow-md shadow-black/20`}
+      style={isHoje ? { borderLeft: '3px solid #d97706' } : undefined}
     >
       <div className="flex items-start justify-between gap-2">
-        <p className="text-xs font-bold text-white leading-tight line-clamp-1">{lead.nome}</p>
+        <div className="flex items-center gap-1.5 min-w-0">
+          <p className="text-xs font-bold text-white leading-tight line-clamp-1">{lead.nome}</p>
+          {tpAtual && <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full flex-shrink-0 ${tpColor}`}>{tpAtual}</span>}
+        </div>
         <ChevronRight size={12} className="text-gray-600 flex-shrink-0 mt-0.5" />
       </div>
-      {lead.telefone && <div className="flex items-center gap-1.5 text-[10px] text-gray-400"><Phone size={9} className="text-gray-600" />{lead.telefone}</div>}
+      {/* Próxima reunião */}
+      {proxDate && (
+        <div className={`flex items-center gap-1.5 text-[10px] ${isAtrasada ? 'text-red-400' : isHoje ? 'text-amber-400' : 'text-gray-500'}`}>
+          <Calendar size={9} className="flex-shrink-0" />
+          {isAtrasada ? <span className="font-bold">Atrasada</span> : (
+            <span>{proxDate.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })} {proxDate.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' })}</span>
+          )}
+        </div>
+      )}
+      {lead.telefone && (
+        <div className="flex items-center gap-1.5 text-[10px] text-gray-400">
+          <Phone size={9} className="text-gray-600" />
+          <a href={waUrl} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} className="hover:text-brand-primary transition-colors">{lead.telefone}</a>
+        </div>
+      )}
       {lead.area && <div className="flex items-center gap-1.5 text-[10px] text-gray-400"><MapPin size={9} className="text-gray-600" /><span className="truncate">{lead.area}</span></div>}
       {lead.faturamento && <div className="flex items-center gap-1.5 text-[10px] text-gray-500"><DollarSign size={9} className="text-gray-600" />{lead.faturamento}</div>}
       {lead.responsavel && <div className="flex items-center gap-1.5 text-[10px] text-gray-500"><User size={9} className="text-gray-600" />{lead.responsavel}</div>}
       {lead.programa_apresentado && <div className={`text-[10px] ${getProgramaStyle(lead.programa_apresentado)}`}>{lead.programa_apresentado}</div>}
       {lead.valor_contrato != null && lead.valor_contrato > 0 && (
-        <div className="text-[10px] font-bold text-brand-primary">Contrato: R$ {Number(lead.valor_contrato).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</div>
-      )}
-      {lead.valor_cc != null && lead.valor_cc > 0 && (
-        <div className="text-[10px] font-bold text-blue-400">Cash Collect: R$ {Number(lead.valor_cc).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</div>
+        <div className="text-[11px] text-gray-500">R$ {Number(lead.valor_contrato).toLocaleString('pt-BR')}</div>
       )}
       {proximaTarefa && !proximaTarefa.concluida && (() => {
         const isReuniao = proximaTarefa.titulo.startsWith('R1') || proximaTarefa.titulo.startsWith('R2');
@@ -264,6 +292,16 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
   const [dataAgendamento, setDataAgendamento] = useState('');
   const [nomeLeadConfirmado, setNomeLeadConfirmado] = useState('');
   const [motivoNaoAtendeu, setMotivoNaoAtendeu] = useState('');
+  // Bloco 1: Agendar retorno (ligação não atendeu)
+  const [agendarRetorno, setAgendarRetorno] = useState(false);
+  const [dataRetorno, setDataRetorno] = useState('');
+  // Bloco 4: Campos extras Venda
+  const [programaApresentadoNAF, setProgramaApresentadoNAF] = useState(leadObj?.programa_apresentado || '');
+  const [tempoContrato, setTempoContrato] = useState('');
+  const [dataOnboarding, setDataOnboarding] = useState('');
+  // Bloco 5: Reagendar após não compareceu
+  const [reagendarNoShow, setReagendarNoShow] = useState(false);
+  const [dataReagendamento, setDataReagendamento] = useState('');
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0] ?? null;
@@ -321,6 +359,7 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
         }
       }
       if (statusChamada === 'Não atendeu' && !motivoNaoAtendeu) { setValidationMsg('Selecione o motivo'); return; }
+      if (statusChamada === 'Não atendeu' && agendarRetorno && !dataRetorno) { setValidationMsg('Preencha a data e hora do retorno'); return; }
     }
 
     if (tipo === 'reuniao') {
@@ -333,6 +372,7 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
         if (!resumo.trim()) { setValidationMsg('Preencha o resumo da reunião'); return; }
       }
       if (resultado === 'Venda') {
+        if (!programaApresentadoNAF) { setValidationMsg('Selecione o programa'); return; }
         if (!razaoSocial.trim()) { setValidationMsg('Preencha a razão social'); return; }
         if (!cpfCnpj.trim()) { setValidationMsg('Preencha o CPF/CNPJ'); return; }
         if (!endereco.trim()) { setValidationMsg('Preencha o endereço'); return; }
@@ -341,9 +381,11 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
         if (!nomeResponsavel.trim()) { setValidationMsg('Preencha o nome do responsável'); return; }
         if (!formaPagamento) { setValidationMsg('Selecione a forma de pagamento'); return; }
         if (!dataPrimeiroVencimento) { setValidationMsg('Preencha a data do 1º vencimento'); return; }
+        if (!tempoContrato) { setValidationMsg('Selecione o tempo de contrato'); return; }
       }
       if (resultado === 'Perdido' && !motivoPerda.trim()) { setErroMotivo(true); return; }
       if ((resultado === 'Marcou R2+' || resultado === 'Reagendou') && !proximaReuniao) { setValidationMsg('Preencha a data da próxima reunião'); return; }
+      if (statusReuniao === 'Não compareceu' && reagendarNoShow && !dataReagendamento) { setValidationMsg('Preencha a data do reagendamento'); return; }
     }
 
     if (tipo !== 'reuniao' && !(tipo === 'ligacao' && agendou) && !descricao.trim()) { setValidationMsg('Preencha as observações sobre a atividade'); return; }
@@ -482,6 +524,7 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
           const agendamentoTP = tpMap[currentTP] || 'R4+';
           const horaBANT = new Date(bantDataHora).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'America/Sao_Paulo' });
           syncPostgres(leadObj?.lead_externo_id, {
+            etapa: 'rm_marcada',
             reuniao_tp: agendamentoTP,
             Data_Reuniao_Marcada: new Date(bantDataHora).toISOString().split('T')[0],
             hora_marcada: horaBANT,
@@ -495,6 +538,7 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
           const { data: newTask } = await supabase.from('crm_tarefas').insert({
             lead_id: leadId,
             titulo: `Reunião ${bantTipo} - ${leadName}`,
+            tipo: 'reuniao',
             data_agendada: localDatetimeToISO(bantDataHora),
             responsavel: bantCloser,
             concluida: false,
@@ -520,11 +564,29 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
           console.error('Failed to update lead to rm_marcada:', err);
         }
       }
+
+      // Bloco 1: Criar tarefa de retorno quando não atendeu + agendarRetorno
+      if (statusChamada === 'Não atendeu' && agendarRetorno && dataRetorno) {
+        try {
+          const { data: retornoTask } = await supabase.from('crm_tarefas').insert({
+            lead_id: leadId,
+            titulo: `Retorno ligação - ${leadName}`,
+            tipo: 'ligacao',
+            data_agendada: localDatetimeToISO(dataRetorno),
+            responsavel: responsavelAtividade || userSession?.name || '',
+            concluida: false,
+            created_at: now,
+          }).select().single();
+          if (retornoTask) onTarefaCreated?.(retornoTask);
+        } catch (err) { console.error('Failed to create return task:', err); }
+      }
     } else if (tipo === 'reuniao') {
       try {
         if (resultado === 'Venda') {
+          const vendaPrograma = programaApresentadoNAF || leadObj?.programa_apresentado || null;
           await supabase.from('crm_leads').update({
             etapa: 'fechado', status: 'ganho',
+            programa_apresentado: vendaPrograma,
             valor_contrato: valorContrato ? parseFloat(valorContrato) : null,
             valor_cc: valorCc ? parseFloat(valorCc) : null,
             valor_mrr: prazoMeses && valorContrato ? parseFloat(valorContrato) / parseInt(prazoMeses) : null,
@@ -535,14 +597,14 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
           try {
             const parsedContrato = valorContrato ? parseFloat(valorContrato) : 0;
             const parsedMrr = prazoMeses && valorContrato ? parseFloat(valorContrato) / parseInt(prazoMeses) : 0;
-            const dur = parsedMrr ? Math.round(parsedContrato / parsedMrr) : 12;
+            const dur = parseInt(tempoContrato) || (parsedMrr ? Math.round(parsedContrato / parsedMrr) : 12);
             const entryDate = new Date().toISOString().split('T')[0];
             const clienteData = {
               id: Date.now().toString(),
-              name: leadName,
-              responsible: leadObj?.responsavel ?? '',
-              plan: leadObj?.programa_apresentado === 'Pro' ? 'Pro' : leadObj?.programa_apresentado === 'Lite' ? 'Lite' : 'Basic',
-              status: 'Onboarding',
+              name: razaoSocial || leadName,
+              responsible: responsavelAtividade || (leadObj?.responsavel ?? ''),
+              plan: vendaPrograma || 'Pro',
+              status: 'Ativo',
               entry_date: entryDate,
               exit_date: '',
               contract_duration: dur,
@@ -589,14 +651,20 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
               body: JSON.stringify({
                 nome: leadName,
                 telefone: leadObj?.telefone,
-                programa: leadObj?.programa_apresentado,
+                programa: vendaPrograma,
                 valor_contrato: valorContrato ? parseFloat(valorContrato) : null,
                 valor_cc: valorCc ? parseFloat(valorCc) : null,
                 valor_mrr: prazoMeses && valorContrato ? parseFloat(valorContrato) / parseInt(prazoMeses) : null,
-                responsavel: leadObj?.responsavel,
+                responsavel: responsavelAtividade || leadObj?.responsavel,
                 razao_social: razaoSocial,
                 cnpj: cpfCnpj,
                 responsavel_empresa: nomeResponsavel,
+                email_contato: emailContato,
+                telefone_contato: telefoneContato,
+                endereco: endereco,
+                forma_pagamento: formaPagamento,
+                tempo_contrato: tempoContrato,
+                data_onboarding: dataOnboarding,
               }),
             }).catch(e => console.warn('Webhook venda-fechada (CORS em dev):', e.message));
           } catch (e) { console.warn('Webhook venda-fechada:', e); }
@@ -607,6 +675,29 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
             motivo_perda: motivoPerda || null,
             updated_at: now, etapa_desde: now,
           }).eq('id', leadId);
+        } else if (resultado === 'Marcou R2+' || resultado === 'Reagendou') {
+          // Bloco 3: Atualizar lead para rm_realizada com tp_atual
+          const currentTP_upd = (leadObj as any)?.tp || (leadObj as any)?.TP || (leadObj as any)?.tp_atual || 'R1';
+          const tpMap_upd: Record<string, string> = {'': 'R2', 'R1': 'R2', 'R2': 'R3', 'R3': 'R4+'};
+          const nextTP_upd = resultado === 'Marcou R2+' ? (tpMap_upd[currentTP_upd] || 'R4+') : currentTP_upd;
+          const leadUpdR2: Partial<CRMLead> = {
+            etapa: 'rm_realizada',
+            etapa_desde: now,
+            proxima_reuniao: proximaReuniao ? localDatetimeToISO(proximaReuniao) : undefined,
+            programa_apresentado: programaApresentadoNAF || leadObj?.programa_apresentado || undefined,
+            valor_contrato: valorContrato ? parseFloat(valorContrato) : leadObj?.valor_contrato ?? undefined,
+            valor_cc: valorCc ? parseFloat(valorCc) : leadObj?.valor_cc ?? undefined,
+            updated_at: now,
+          };
+          (leadUpdR2 as any).tp_atual = nextTP_upd;
+          await supabase.from('crm_leads').update(leadUpdR2).eq('id', leadId);
+          onLeadUpdated?.(leadUpdR2);
+        } else if (statusReuniao === 'Compareceu') {
+          // Other results (Pendente, etc): move to rm_realizada
+          await supabase.from('crm_leads').update({
+            etapa: 'rm_realizada', etapa_desde: now, updated_at: now,
+          }).eq('id', leadId);
+          onLeadUpdated?.({ etapa: 'rm_realizada' });
         }
       } catch (err) {
         console.error('Failed to update lead after reunião:', err);
@@ -615,18 +706,20 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
       // Auto-create task for R2+ / Reagendou
       if ((resultado === 'Marcou R2+' || resultado === 'Reagendou') && proximaReuniao) {
         // Compute TP for webhook and syncPostgres
-        const currentTP_naf = (leadObj as any)?.tp || (leadObj as any)?.TP || '';
+        const currentTP_naf = (leadObj as any)?.tp || (leadObj as any)?.TP || (leadObj as any)?.tp_atual || 'R1';
         const tpMap_naf: Record<string, string> = {'': 'R2', 'R1': 'R2', 'R2': 'R3', 'R3': 'R4+'};
         const nextTP_naf = tpMap_naf[currentTP_naf] || 'R4+';
         const reagendaTP_naf = currentTP_naf || 'R1';
         const webhookTipoReuniao_naf = resultado === 'Reagendou' ? reagendaTP_naf : nextTP_naf;
 
         try {
+          const taskTP = resultado === 'Marcou R2+' ? nextTP_naf : reagendaTP_naf;
           const { data: r2Task } = await supabase.from('crm_tarefas').insert({
             lead_id: leadId,
-            titulo: `R2+ - ${leadName}`,
+            titulo: `${taskTP} - ${leadName}`,
+            tipo: 'reuniao',
             data_agendada: localDatetimeToISO(proximaReuniao),
-            responsavel: userSession?.name ?? '',
+            responsavel: responsavelAtividade || (userSession?.name ?? ''),
             concluida: false,
             created_at: now,
           }).select().single();
@@ -676,20 +769,87 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
         const closer = responsavelAtividade || leadObj?.responsavel || null;
         const leadTP = (leadObj as any)?.tp || (leadObj as any)?.TP || 'R1';
         if (statusReuniao === 'Não compareceu') {
-          syncPostgres(leadObj?.lead_externo_id, { Status_TP: 'No-show', reuniao_tp: leadTP, closer });
           // Cancelar touchpoints pendentes
           fetch(`${WEBHOOK_BASE}/webhook/cancelar-touchpoints`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ lead_id: leadObj?.lead_externo_id ?? leadId }),
           }).catch(() => {});
+
+          if (reagendarNoShow && dataReagendamento) {
+            // Bloco 5: Reagendar após no-show
+            const reagendaTP_ns = leadTP;
+            syncPostgres(leadObj?.lead_externo_id, { Status_TP: 'Reagendou', reuniao_tp: reagendaTP_ns, Data_Reuniao_Realizada: hoje, closer });
+            syncPostgres(leadObj?.lead_externo_id, {
+              reuniao_tp: reagendaTP_ns,
+              Data_Reuniao_Marcada: new Date(dataReagendamento).toISOString().split('T')[0],
+              hora_marcada: new Date(dataReagendamento).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: SP_TZ }),
+              Status_TP: 'Reagendou',
+              closer,
+            });
+            // Dispatch agendar-reuniao webhook
+            fetch(`${WEBHOOK_BASE}/webhook/agendar-reuniao`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                lead_nome: leadName,
+                lead_telefone: leadObj?.telefone ?? '',
+                lead_externo_id: leadObj?.lead_externo_id ?? leadId,
+                closer: responsavelAtividade || leadObj?.responsavel || '',
+                data_hora: new Date(dataReagendamento).toISOString(),
+                tipo_reuniao: reagendaTP_ns,
+                duracao_min: 60,
+                reagendamento: true,
+              }),
+            }).catch(e => console.warn('[agendar-reuniao reagendou no-show]', e.message));
+            // Criar tarefa de lembrete
+            try {
+              const { data: nsTask } = await supabase.from('crm_tarefas').insert({
+                lead_id: leadId,
+                titulo: `${reagendaTP_ns} - ${leadName}`,
+                tipo: 'reuniao',
+                data_agendada: localDatetimeToISO(dataReagendamento),
+                responsavel: responsavelAtividade || userSession?.name || '',
+                concluida: false,
+                created_at: now,
+              }).select().single();
+              if (nsTask) onTarefaCreated?.(nsTask);
+            } catch { /* silent */ }
+            // Mover lead para rm_marcada
+            try {
+              await supabase.from('crm_leads').update({
+                etapa: 'rm_marcada', etapa_desde: now, proxima_reuniao: localDatetimeToISO(dataReagendamento), updated_at: now,
+              }).eq('id', leadId);
+              onLeadUpdated?.({ etapa: 'rm_marcada' });
+            } catch { /* silent */ }
+          } else {
+            // Sem reagendamento: No-show simples
+            syncPostgres(leadObj?.lead_externo_id, { Status_TP: 'No-show', reuniao_tp: leadTP, closer });
+            // Mover para fup_ativa
+            try {
+              await supabase.from('crm_leads').update({
+                etapa: 'fup_ativa', etapa_desde: now, updated_at: now,
+              }).eq('id', leadId);
+              onLeadUpdated?.({ etapa: 'fup_ativa' });
+            } catch { /* silent */ }
+          }
         } else if (statusReuniao === 'Compareceu') {
           if (resultado === 'Marcou R2+') {
-            const currentTP = (leadObj as any)?.tp || (leadObj as any)?.TP || '';
+            const currentTP = (leadObj as any)?.tp || (leadObj as any)?.TP || (leadObj as any)?.tp_atual || 'R1';
             const tpMap: Record<string, string> = {'': 'R2', 'R1': 'R2', 'R2': 'R3', 'R3': 'R4+'};
             const nextTP = tpMap[currentTP] || 'R4+';
             // Sync current meeting (realizada)
-            syncPostgres(leadObj?.lead_externo_id, { Status_TP: 'Pendente', TP: nextTP, reuniao_tp: currentTP || 'R1', Data_Reuniao_Realizada: hoje, Data_TP: proximaReuniao ? new Date(proximaReuniao).toISOString().split('T')[0] : hoje, closer });
+            syncPostgres(leadObj?.lead_externo_id, {
+              reuniao_tp: currentTP || 'R1',
+              Status_TP: 'Compareceu',
+              Data_Reuniao_Realizada: hoje,
+              Data_TP: proximaReuniao ? new Date(proximaReuniao).toISOString().split('T')[0] : hoje,
+              TP: nextTP,
+              programa: programaApresentadoNAF || leadObj?.programa_apresentado || null,
+              rs_contrato: valorContrato || null,
+              rs_cc: valorCc || null,
+              closer,
+            });
             // Sync next meeting scheduling (Data_Reuniao_Marcada + hora_marcada)
             if (proximaReuniao) {
               syncPostgres(leadObj?.lead_externo_id, {
@@ -717,8 +877,9 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
           } else if (resultado === 'Venda') {
             syncPostgres(leadObj?.lead_externo_id, {
               status: 'ganho', etapa: 'fechado', reuniao_tp: leadTP,
-              Data_Venda: hoje, Data_Reuniao_Realizada: hoje, Data_TP: hoje,
-              programa: leadObj?.programa_apresentado || null, rs_contrato: valorContrato || null, rs_cc: valorCc || null,
+              Data_Venda: hoje, Data_Reuniao_Realizada: hoje,
+              programa: programaApresentadoNAF || leadObj?.programa_apresentado || null,
+              rs_contrato: valorContrato || null, rs_cc: valorCc || null,
               mrr_adicionado: (prazoMeses && valorContrato ? parseFloat(valorContrato) / parseInt(prazoMeses) : null) || null,
               Etapa_Fechamento: leadTP, closer,
             });
@@ -741,20 +902,23 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
         } catch { /* silent */ }
       }
 
-      // Auto-concluir tarefa de reunião pendente do lead
+      // Bloco 6: Auto-concluir tarefa pendente do lead (match por tipo)
       try {
         const { data: tarefasPendentes } = await supabase
           .from('crm_tarefas')
-          .select('id, titulo')
+          .select('id, titulo, tipo')
           .eq('lead_id', leadId)
           .eq('concluida', false)
           .order('data_agendada', { ascending: false })
           .limit(5);
         if (tarefasPendentes && tarefasPendentes.length > 0) {
-          const tarefaReuniao = tarefasPendentes.find(t =>
-            /reuni|R\d|r\d/i.test(t.titulo || '')
-          ) || tarefasPendentes[0];
-          await supabase.from('crm_tarefas').update({ concluida: true }).eq('id', tarefaReuniao.id);
+          const tipoMatch = tipo === 'ligacao' ? 'ligacao' : 'reuniao';
+          const tarefa = tarefasPendentes.find(t => t.tipo === tipoMatch)
+            || tarefasPendentes.find(t => /reuni|R\d|ligac/i.test(t.titulo || ''))
+            || null;
+          if (tarefa) {
+            await supabase.from('crm_tarefas').update({ concluida: true }).eq('id', tarefa.id);
+          }
         }
       } catch (e) { console.warn('[auto-concluir tarefa NAF]', e); }
     }
@@ -1010,14 +1174,30 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
 
           {/* Não atendeu — motivo */}
           {statusChamada === 'Não atendeu' && (
-            <div>
-              <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">Motivo</label>
-              <select value={motivoNaoAtendeu} onChange={e => setMotivoNaoAtendeu(e.target.value)}
-                className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-1.5 text-sm text-white focus:outline-none focus:border-brand-primary appearance-none"
+            <div className="space-y-3">
+              <div>
+                <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">Motivo</label>
+                <select value={motivoNaoAtendeu} onChange={e => setMotivoNaoAtendeu(e.target.value)}
+                  className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-1.5 text-sm text-white focus:outline-none focus:border-brand-primary appearance-none"
+                >
+                  <option value="" className="bg-bg-main">Selecionar...</option>
+                  {['Não atendeu', 'Caixa postal', 'Número errado', 'Bloqueou', 'Outro'].map(m => <option key={m} value={m} className="bg-bg-main">{m}</option>)}
+                </select>
+              </div>
+              {/* Bloco 1: Agendar retorno */}
+              <button onClick={() => setAgendarRetorno(!agendarRetorno)} type="button"
+                className={`w-full py-2 rounded-xl text-xs font-bold border transition-all flex items-center justify-center gap-2 cursor-pointer ${agendarRetorno ? 'bg-yellow-500/10 border-yellow-500/30 text-yellow-400' : 'bg-white/5 border-white/10 text-gray-500 hover:text-white'}`}
               >
-                <option value="" className="bg-bg-main">Selecionar...</option>
-                {['Não atendeu', 'Caixa postal', 'Número errado', 'Bloqueou', 'Outro'].map(m => <option key={m} value={m} className="bg-bg-main">{m}</option>)}
-              </select>
+                <Calendar size={13} /> {agendarRetorno ? '✓ Retorno agendado' : 'Agendar retorno'}
+              </button>
+              {agendarRetorno && (
+                <div>
+                  <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">Data e hora do retorno <span className="text-red-400">*</span></label>
+                  <input type="datetime-local" value={dataRetorno} onChange={e => setDataRetorno(e.target.value)}
+                    className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-1.5 text-sm text-gray-300 focus:outline-none focus:border-yellow-500"
+                  />
+                </div>
+              )}
             </div>
           )}
         </>
@@ -1032,17 +1212,42 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
               >{s}</button>
             ))}
           </div>
-          <div>
-            <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">Resultado</label>
-            <select value={resultado} onChange={e => setResultado(e.target.value)}
-              className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-1.5 text-sm text-white focus:outline-none focus:border-brand-primary appearance-none"
-            >
-              <option value="" className="bg-bg-main">Selecionar...</option>
-              {['Venda', 'Marcou R2+', 'Reagendou', 'Perdido', 'Pendente'].map(r => <option key={r} value={r} className="bg-bg-main">{r}</option>)}
-            </select>
-          </div>
+          {/* Bloco 5: Não compareceu — reagendar */}
+          {statusReuniao === 'Não compareceu' && (
+            <div className="space-y-3 bg-red-900/10 border border-red-500/20 rounded-xl p-3">
+              <p className="text-[9px] font-bold uppercase tracking-widest text-red-400">Lead não compareceu</p>
+              <button onClick={() => setReagendarNoShow(!reagendarNoShow)} type="button"
+                className={`w-full py-2 rounded-xl text-xs font-bold border transition-all flex items-center justify-center gap-2 cursor-pointer ${reagendarNoShow ? 'bg-yellow-500/10 border-yellow-500/30 text-yellow-400' : 'bg-white/5 border-white/10 text-gray-500 hover:text-white'}`}
+              >
+                <Calendar size={13} /> {reagendarNoShow ? '✓ Reagendamento confirmado' : 'Deseja reagendar?'}
+              </button>
+              {reagendarNoShow && (
+                <div>
+                  <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">Nova data e hora <span className="text-red-400">*</span></label>
+                  <input type="datetime-local" value={dataReagendamento} onChange={e => setDataReagendamento(e.target.value)}
+                    className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-1.5 text-sm text-gray-300 focus:outline-none focus:border-yellow-500"
+                  />
+                </div>
+              )}
+            </div>
+          )}
 
-          {/* Campos base reunião */}
+          {statusReuniao === 'Compareceu' && (
+            <>
+              <div>
+                <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">Resultado</label>
+                <select value={resultado} onChange={e => setResultado(e.target.value)}
+                  className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-1.5 text-sm text-white focus:outline-none focus:border-brand-primary appearance-none"
+                >
+                  <option value="" className="bg-bg-main">Selecionar...</option>
+                  {['Venda', 'Marcou R2+', 'Reagendou', 'Perdido', 'Pendente'].map(r => <option key={r} value={r} className="bg-bg-main">{r}</option>)}
+                </select>
+              </div>
+            </>
+          )}
+
+          {/* Campos base reunião (only when Compareceu) */}
+          {statusReuniao === 'Compareceu' && (<>
           <div className="grid grid-cols-3 gap-2">
             <div>
               <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">Contrato (R$)</label>
@@ -1075,6 +1280,32 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
           {resultado === 'Venda' && (
             <div className="border-t border-white/5 pt-3 space-y-3">
               <p className="text-[9px] font-bold uppercase tracking-widest text-brand-primary">Dados do Cliente</p>
+              <div className="grid grid-cols-3 gap-2">
+                <div>
+                  <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">Programa <span className="text-red-400">*</span></label>
+                  <select value={programaApresentadoNAF} onChange={e => setProgramaApresentadoNAF(e.target.value)}
+                    className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-1.5 text-sm text-white focus:outline-none focus:border-brand-primary appearance-none"
+                  >
+                    <option value="" className="bg-bg-main">Selecionar...</option>
+                    {['Pro', 'Lite', 'Basic'].map(p => <option key={p} value={p} className="bg-bg-main">{p}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">Tempo Contrato <span className="text-red-400">*</span></label>
+                  <select value={tempoContrato} onChange={e => setTempoContrato(e.target.value)}
+                    className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-1.5 text-sm text-white focus:outline-none focus:border-brand-primary appearance-none"
+                  >
+                    <option value="" className="bg-bg-main">Selecionar...</option>
+                    {['1', '3', '6', '12'].map(m => <option key={m} value={m} className="bg-bg-main">{m} {m === '1' ? 'mês' : 'meses'}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">Data Onboarding</label>
+                  <input type="datetime-local" value={dataOnboarding} onChange={e => setDataOnboarding(e.target.value)}
+                    className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-1.5 text-sm text-gray-300 focus:outline-none focus:border-brand-primary"
+                  />
+                </div>
+              </div>
               <div className="grid grid-cols-2 gap-2">
                 <div>
                   <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">Razão Social</label>
@@ -1166,6 +1397,7 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
               {erroMotivo && <p className="text-[10px] text-red-400 mt-1">Motivo de perda obrigatório</p>}
             </div>
           )}
+          </>)}
         </>
       )}
 
@@ -1569,21 +1801,23 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
       data_atividade: now, created_at: now,
     }).select().single();
 
-    // Auto-concluir tarefa de reunião pendente do lead
+    // Bloco 6: Auto-concluir tarefa de reunião pendente do lead (match por tipo)
     try {
       const { data: tarefasPendentes } = await supabase
         .from('crm_tarefas')
-        .select('id, titulo')
+        .select('id, titulo, tipo')
         .eq('lead_id', lead.id)
         .eq('concluida', false)
         .order('data_agendada', { ascending: false })
         .limit(5);
       if (tarefasPendentes && tarefasPendentes.length > 0) {
-        const tarefaReuniao = tarefasPendentes.find(t =>
-          /reuni|R\d|r\d/i.test(t.titulo || '')
-        ) || tarefasPendentes[0];
-        await supabase.from('crm_tarefas').update({ concluida: true }).eq('id', tarefaReuniao.id);
-        setTarefas(prev => prev.map(t => t.id === tarefaReuniao.id ? { ...t, concluida: true } : t));
+        const tarefa = tarefasPendentes.find(t => t.tipo === 'reuniao')
+          || tarefasPendentes.find(t => /reuni|R\d|ligac/i.test(t.titulo || ''))
+          || null;
+        if (tarefa) {
+          await supabase.from('crm_tarefas').update({ concluida: true }).eq('id', tarefa.id);
+          setTarefas(prev => prev.map(t => t.id === tarefa.id ? { ...t, concluida: true } : t));
+        }
       }
     } catch (e) { console.warn('[auto-concluir tarefa]', e); }
 
@@ -2028,8 +2262,16 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
           {tab === 'info' && (<>
             {/* Dados básicos */}
             <div className="grid grid-cols-2 gap-3">
+              {lead.telefone && (
+                <div>
+                  <p className="text-[9px] font-bold uppercase tracking-widest text-gray-600 mb-0.5">Telefone</p>
+                  <a href={`https://api.whatsapp.com/send?phone=${lead.telefone.replace(/\D/g, '').replace(/^0/, '').replace(/^(?!55)/, '55')}`}
+                    target="_blank" rel="noopener noreferrer"
+                    className="text-xs text-gray-300 hover:text-brand-primary transition-colors"
+                  >{lead.telefone}</a>
+                </div>
+              )}
               {[
-                { label: 'Telefone', value: lead.telefone },
                 { label: 'Empresa', value: lead.empresa },
                 { label: 'Origem', value: lead.anuncio ?? lead.origem, extra: lead.created_at ? fmtDateSP(lead.created_at, { year: true }) : undefined },
               ].filter(f => f.value).map(f => (
@@ -2700,7 +2942,10 @@ function TaskAlarmPopup({ tarefa, lead, onDismiss, onOpenLead, onComplete, onRes
               {lead.telefone && (
                 <div className="flex items-center gap-2 text-xs">
                   <Phone size={13} className="text-gray-500 flex-shrink-0" />
-                  <span className="text-gray-400">{lead.telefone}</span>
+                  <a href={`https://api.whatsapp.com/send?phone=${lead.telefone.replace(/\D/g, '').replace(/^0/, '').replace(/^(?!55)/, '55')}`}
+                    target="_blank" rel="noopener noreferrer"
+                    className="text-gray-400 hover:text-brand-primary transition-colors"
+                  >{lead.telefone}</a>
                 </div>
               )}
             </>
