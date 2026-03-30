@@ -1,187 +1,222 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   ArrowLeft, Plus, Phone, Mail, DollarSign, User, Tag,
-  ChevronDown, X, MessageSquare, Clock, Search, Building2,
+  ChevronDown, X, MessageSquare, Clock, Search, Building2, Trash2, Download,
+  Filter, SortAsc, CalendarDays, FileText, CheckCircle2, AlertCircle,
+  PhoneCall, Video, Image as ImageIcon, Upload, Bell, Volume2,
+  Briefcase, MapPin, Target, TrendingUp, Save, MoreHorizontal,
 } from 'lucide-react';
+import * as XLSX from 'xlsx';
 import type {
   CrmClientTenant, CrmClientStage, CrmClientLead,
-  CrmClientLeadActivity, Client,
+  CrmClientLeadActivity, CrmClientTarefa, Client,
 } from './types';
 import {
   getAllTenants, getStagesByTenant, getClientLeads,
   createClientLead, updateClientLead, deleteClientLead,
-  getLeadActivities, createLeadActivity,
+  getLeadActivities, createLeadActivity, deleteTenant,
+  getClientTarefas, createClientTarefa, updateClientTarefa, deleteClientTarefa,
 } from './lib/database';
+import { supabase } from './lib/supabase';
 
 // ── Helpers ─────────────────────────────────────────────────
+const SP_TZ = 'America/Sao_Paulo';
+const fmtBRL = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v);
+const fmtDate = (iso: string) => {
+  if (!iso) return '—';
+  return new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', timeZone: SP_TZ }).format(new Date(iso));
+};
+const fmtDateTime = (iso: string) => {
+  if (!iso) return '—';
+  return new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', timeZone: SP_TZ }).format(new Date(iso));
+};
+const localDatetimeToISO = (dt: string) => dt ? dt + ':00-03:00' : '';
 
-const fmtBRL = (v: number) =>
-  new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v);
+const PLAN_COLORS: Record<string, string> = { Pro: '#00FF88', Lite: '#3B82F6', Basic: '#8B5CF6' };
 
-const fmtDate = (iso: string) =>
-  new Date(iso).toLocaleDateString('pt-BR');
-
-const PLAN_COLORS: Record<string, string> = {
-  Pro: '#00FF88',
-  Lite: '#3B82F6',
-  Basic: '#8B5CF6',
+const playAlarmSound = () => {
+  try {
+    const ctx = new AudioContext();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain); gain.connect(ctx.destination);
+    osc.frequency.value = 880; osc.type = 'sine';
+    gain.gain.setValueAtTime(0.3, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.5);
+    osc.start(ctx.currentTime); osc.stop(ctx.currentTime + 0.5);
+  } catch { /* silent */ }
 };
 
 // ── Props ───────────────────────────────────────────────────
-
 type Props = {
   clients?: Client[];
   selectedTenantId?: string | null;
   onBack?: () => void;
-  // Quando é um cliente logado diretamente
   tenantId?: string;
   userName?: string;
 };
 
 // ── Main Component ──────────────────────────────────────────
-
 export default function ClientCRMView({ clients, selectedTenantId, onBack, tenantId, userName }: Props) {
   const isClientView = !!tenantId;
   const [tenants, setTenants] = useState<CrmClientTenant[]>([]);
   const [activeTenantId, setActiveTenantId] = useState<string | null>(tenantId ?? selectedTenantId ?? null);
   const [stages, setStages] = useState<CrmClientStage[]>([]);
   const [leads, setLeads] = useState<CrmClientLead[]>([]);
+  const [tarefas, setTarefas] = useState<CrmClientTarefa[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
-
-  // Modals
+  const [filterResponsavel, setFilterResponsavel] = useState('');
+  const [filterEtiqueta, setFilterEtiqueta] = useState('');
+  const [sortBy, setSortBy] = useState<'recent' | 'oldest' | 'value'>('recent');
+  const [deletingTenantId, setDeletingTenantId] = useState<string | null>(null);
   const [selectedLead, setSelectedLead] = useState<CrmClientLead | null>(null);
   const [showNewLeadModal, setShowNewLeadModal] = useState(false);
+  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
+  const [alarmTarefa, setAlarmTarefa] = useState<CrmClientTarefa | null>(null);
+  const dismissedAlarms = useRef(new Set<string>());
 
-  // ── Load tenants (só para admin M2, não para cliente) ─────
+  // ── Load tenants ─────
   useEffect(() => {
     if (!activeTenantId && !isClientView) {
       setLoading(true);
-      getAllTenants()
-        .then(setTenants)
-        .catch(console.error)
-        .finally(() => setLoading(false));
+      getAllTenants().then(setTenants).catch(console.error).finally(() => setLoading(false));
     }
   }, [activeTenantId, isClientView]);
 
-  // ── Load stages + leads for active tenant ─────────────────
+  // ── Load stages + leads + tarefas ─────
   useEffect(() => {
     if (!activeTenantId) return;
     setLoading(true);
     Promise.all([
       getStagesByTenant(activeTenantId),
       getClientLeads(activeTenantId),
+      getClientTarefas(activeTenantId),
     ])
-      .then(([s, l]) => { setStages(s); setLeads(l); })
+      .then(([s, l, t]) => { setStages(s); setLeads(l); setTarefas(t); })
       .catch(console.error)
       .finally(() => setLoading(false));
   }, [activeTenantId]);
 
-  // ── Client lookup ─────────────────────────────────────────
+  // ── Task alarm check ─────
+  useEffect(() => {
+    if (!activeTenantId || tarefas.length === 0) return;
+    const interval = setInterval(() => {
+      const now = Date.now();
+      const pending = tarefas.find(t =>
+        !t.concluida &&
+        !dismissedAlarms.current.has(t.id) &&
+        new Date(t.dataAgendada).getTime() <= now
+      );
+      if (pending) {
+        setAlarmTarefa(pending);
+        playAlarmSound();
+      }
+    }, 30000);
+    return () => clearInterval(interval);
+  }, [tarefas, activeTenantId]);
+
+  // ── Client lookup ─────
   const clientMap = useMemo(() => {
     const m = new Map<string, Client>();
-    (clients ?? []).forEach((c) => m.set(c.id, c));
+    (clients ?? []).forEach(c => m.set(c.id, c));
     return m;
   }, [clients]);
 
   const activeClient = useMemo(() => {
     if (!activeTenantId) return null;
-    const t = tenants.find((t) => t.id === activeTenantId);
+    const t = tenants.find(t => t.id === activeTenantId);
     return t ? clientMap.get(t.clientId) ?? null : null;
   }, [activeTenantId, tenants, clientMap]);
 
-  // ── Tenant lead counts ────────────────────────────────────
-  const tenantLeadCounts = useMemo(() => {
-    const counts = new Map<string, number>();
-    leads.forEach((l) => {
-      counts.set(l.tenantId, (counts.get(l.tenantId) || 0) + 1);
-    });
-    return counts;
-  }, [leads]);
+  // ── Unique values for filters ─────
+  const uniqueResponsaveis = useMemo(() => [...new Set(leads.map(l => l.responsavel).filter(Boolean))], [leads]);
+  const uniqueEtiquetas = useMemo(() => [...new Set(leads.flatMap(l => l.etiquetas))], [leads]);
 
-  // ── Filtered leads ────────────────────────────────────────
+  // ── Filtered + sorted leads ─────
   const filteredLeads = useMemo(() => {
-    if (!searchQuery.trim()) return leads;
-    const q = searchQuery.toLowerCase();
-    return leads.filter(
-      (l) =>
-        l.nome.toLowerCase().includes(q) ||
-        l.telefone.toLowerCase().includes(q) ||
-        l.email.toLowerCase().includes(q) ||
-        l.segmento.toLowerCase().includes(q),
-    );
-  }, [leads, searchQuery]);
+    let result = leads;
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      result = result.filter(l =>
+        l.nome.toLowerCase().includes(q) || l.telefone.includes(q) ||
+        l.email.toLowerCase().includes(q) || l.empresa.toLowerCase().includes(q)
+      );
+    }
+    if (filterResponsavel) result = result.filter(l => l.responsavel === filterResponsavel);
+    if (filterEtiqueta) result = result.filter(l => l.etiquetas.includes(filterEtiqueta));
 
-  // ── Leads grouped by stage ────────────────────────────────
+    // Sort
+    if (sortBy === 'oldest') result = [...result].sort((a, b) => new Date(a.criadoEm).getTime() - new Date(b.criadoEm).getTime());
+    else if (sortBy === 'value') result = [...result].sort((a, b) => b.ticketEstimado - a.ticketEstimado);
+    else result = [...result].sort((a, b) => new Date(b.criadoEm).getTime() - new Date(a.criadoEm).getTime());
+
+    return result;
+  }, [leads, searchQuery, filterResponsavel, filterEtiqueta, sortBy]);
+
   const leadsByStage = useMemo(() => {
     const m = new Map<string, CrmClientLead[]>();
-    stages.forEach((s) => m.set(s.id, []));
-    filteredLeads.forEach((l) => {
-      const arr = m.get(l.stageId);
-      if (arr) arr.push(l);
-    });
+    stages.forEach(s => m.set(s.id, []));
+    filteredLeads.forEach(l => { m.get(l.stageId)?.push(l); });
     return m;
   }, [filteredLeads, stages]);
 
-  // ── Handlers ──────────────────────────────────────────────
-  const handleOpenTenant = (tenantId: string) => setActiveTenantId(tenantId);
+  const tarefasByLead = useMemo(() => {
+    const m = new Map<string, CrmClientTarefa[]>();
+    tarefas.forEach(t => {
+      if (!m.has(t.leadId)) m.set(t.leadId, []);
+      m.get(t.leadId)!.push(t);
+    });
+    return m;
+  }, [tarefas]);
 
-  const handleBackToList = () => {
-    setActiveTenantId(null);
-    setStages([]);
-    setLeads([]);
-    setSearchQuery('');
-    onBack?.();
-  };
+  // ── Handlers ─────
+  const handleOpenTenant = (id: string) => setActiveTenantId(id);
+  const handleBackToList = () => { setActiveTenantId(null); setStages([]); setLeads([]); setTarefas([]); setSearchQuery(''); onBack?.(); };
 
   const handleCreateLead = async (data: Omit<CrmClientLead, 'id' | 'criadoEm' | 'atualizadoEm'>) => {
-    try {
-      const newLead = await createClientLead(data);
-      setLeads((prev) => [newLead, ...prev]);
-      setShowNewLeadModal(false);
-    } catch (err) {
-      console.error('Erro ao criar lead:', err);
-    }
+    const newLead = await createClientLead(data);
+    setLeads(prev => [newLead, ...prev]);
+    setShowNewLeadModal(false);
   };
 
   const handleUpdateLead = async (lead: CrmClientLead) => {
-    try {
-      const updated = await updateClientLead(lead);
-      setLeads((prev) => prev.map((l) => (l.id === updated.id ? updated : l)));
-      setSelectedLead(updated);
-    } catch (err) {
-      console.error('Erro ao atualizar lead:', err);
-    }
+    const updated = await updateClientLead(lead);
+    setLeads(prev => prev.map(l => l.id === updated.id ? updated : l));
+    setSelectedLead(updated);
   };
 
   const handleDeleteLead = async (id: string) => {
-    try {
-      await deleteClientLead(id);
-      setLeads((prev) => prev.filter((l) => l.id !== id));
-      setSelectedLead(null);
-    } catch (err) {
-      console.error('Erro ao excluir lead:', err);
-    }
+    await deleteClientLead(id);
+    setLeads(prev => prev.filter(l => l.id !== id));
+    setSelectedLead(null);
   };
 
-  // ── Loading state ─────────────────────────────────────────
+  const handleCreateTarefa = async (t: Omit<CrmClientTarefa, 'id' | 'criadoEm'>) => {
+    const newT = await createClientTarefa(t);
+    setTarefas(prev => [...prev, newT]);
+    return newT;
+  };
+
+  const handleUpdateTarefa = async (t: CrmClientTarefa) => {
+    const updated = await updateClientTarefa(t);
+    setTarefas(prev => prev.map(x => x.id === updated.id ? updated : x));
+    return updated;
+  };
+
+  // ── Loading ─────
   if (loading) {
-    return (
-      <div className="flex items-center justify-center h-full">
-        <div className="w-8 h-8 border-2 border-brand-primary border-t-transparent rounded-full animate-spin" />
-      </div>
-    );
+    return <div className="flex items-center justify-center h-full"><div className="w-8 h-8 border-2 border-brand-primary border-t-transparent rounded-full animate-spin" /></div>;
   }
 
-  // ── MODE 1: Tenant List ───────────────────────────────────
+  // ══════════════════════════════════════════════════════════
+  // MODE 1: Tenant List (admin M2 only)
+  // ══════════════════════════════════════════════════════════
   if (!activeTenantId) {
     return (
       <div className="p-6 space-y-6">
-        <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-bold text-white">CRM dos Clientes</h1>
-        </div>
-
+        <h1 className="text-2xl font-bold text-white">Área do Cliente</h1>
         {tenants.length === 0 ? (
           <div className="text-center py-20 text-white/40">
             <Building2 className="w-12 h-12 mx-auto mb-3 opacity-40" />
@@ -190,183 +225,143 @@ export default function ClientCRMView({ clients, selectedTenantId, onBack, tenan
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-            {tenants.map((tenant) => {
+            {tenants.map(tenant => {
               const client = clientMap.get(tenant.clientId);
               const planColor = client ? PLAN_COLORS[client.plan] ?? '#6B7280' : '#6B7280';
               return (
-                <motion.div
-                  key={tenant.id}
-                  initial={{ opacity: 0, y: 12 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="bg-[#0d1117]/80 border border-white/10 rounded-2xl p-5 hover:border-white/20 transition-colors"
-                >
+                <motion.div key={tenant.id} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
+                  className="bg-[#0d1117]/80 border border-white/10 rounded-2xl p-5 hover:border-white/20 transition-colors">
                   <div className="flex items-start justify-between mb-3">
                     <div className="flex-1 min-w-0">
-                      <h3 className="text-lg font-semibold text-white truncate">
-                        {client?.name ?? tenant.slug}
-                      </h3>
-                      {client && (
-                        <span
-                          className="inline-block mt-1 px-2.5 py-0.5 rounded-full text-xs font-bold"
-                          style={{ backgroundColor: planColor + '20', color: planColor }}
-                        >
-                          {client.plan}
-                        </span>
-                      )}
+                      <h3 className="text-lg font-semibold text-white truncate">{client?.name ?? tenant.slug}</h3>
+                      {client && <span className="inline-block mt-1 px-2.5 py-0.5 rounded-full text-xs font-bold" style={{ backgroundColor: planColor + '20', color: planColor }}>{client.plan}</span>}
                     </div>
-                    <Building2 className="w-5 h-5 text-white/20 flex-shrink-0" />
+                    <button onClick={e => { e.stopPropagation(); setDeletingTenantId(tenant.id); }} className="p-1.5 rounded-lg hover:bg-red-500/10 text-white/20 hover:text-red-400 transition-all" title="Excluir CRM"><Trash2 className="w-4 h-4" /></button>
                   </div>
-
-                  <div className="flex items-center gap-2 text-sm text-white/50 mb-4">
-                    <User className="w-4 h-4" />
-                    <span>{client?.responsible ?? '—'}</span>
+                  <div className="flex items-center gap-2 text-sm text-white/50 mb-4"><User className="w-4 h-4" /><span>{client?.responsible ?? '—'}</span></div>
+                  <div className="flex gap-2">
+                    <button onClick={() => handleOpenTenant(tenant.id)} className="flex-1 bg-brand-primary text-black font-bold rounded-xl px-4 py-2 text-sm hover:brightness-110 transition-all">Abrir CRM</button>
+                    {!isClientView && (
+                      <button onClick={async e => {
+                        e.stopPropagation();
+                        try {
+                          const stgs = await getStagesByTenant(tenant.id);
+                          const lds = await getClientLeads(tenant.id);
+                          const stageMap = Object.fromEntries(stgs.map(st => [st.id, st.nome]));
+                          const wb = XLSX.utils.book_new();
+                          const rows = lds.map(l => ({ Nome: l.nome, Telefone: l.telefone, Email: l.email, Segmento: l.segmento, Empresa: l.empresa, 'Ticket Estimado': l.ticketEstimado, Responsável: l.responsavel, Etapa: stageMap[l.stageId] || '—', Contrato: l.valorContrato, 'Cash Collect': l.valorCc, MRR: l.valorMrr, Etiquetas: (l.etiquetas || []).join(', '), 'Criado em': l.criadoEm ? fmtDate(l.criadoEm) : '' }));
+                          XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows.length > 0 ? rows : [{ Info: 'Nenhum lead' }]), 'Leads');
+                          XLSX.writeFile(wb, `CRM_${(client?.name || tenant.slug || 'CRM').replace(/[^a-zA-Z0-9]/g, '_')}_${new Date().toISOString().slice(0, 10)}.xlsx`);
+                        } catch { alert('Erro ao exportar.'); }
+                      }} className="bg-white/5 border border-white/10 text-white/50 rounded-xl px-3 py-2 hover:bg-white/10 hover:text-white transition-all" title="Exportar Excel"><Download size={16} /></button>
+                    )}
                   </div>
-
-                  <button
-                    onClick={() => handleOpenTenant(tenant.id)}
-                    className="w-full bg-brand-primary text-black font-bold rounded-xl px-4 py-2 text-sm hover:brightness-110 transition-all"
-                  >
-                    Abrir CRM
-                  </button>
                 </motion.div>
               );
             })}
           </div>
         )}
+
+        {/* Delete confirmation modal */}
+        <AnimatePresence>
+          {deletingTenantId && (
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[100] bg-black/60 flex items-center justify-center p-4" onClick={() => setDeletingTenantId(null)}>
+              <motion.div initial={{ scale: 0.95 }} animate={{ scale: 1 }} exit={{ scale: 0.95 }} className="bg-[#0d1117] border border-white/10 rounded-2xl p-6 max-w-sm w-full space-y-4" onClick={e => e.stopPropagation()}>
+                <div className="flex items-center gap-3"><div className="w-10 h-10 rounded-xl bg-red-500/10 flex items-center justify-center"><Trash2 size={20} className="text-red-400" /></div><div><h3 className="font-bold text-white">Excluir CRM</h3><p className="text-xs text-gray-500">Esta ação não pode ser desfeita</p></div></div>
+                <p className="text-sm text-gray-400">Todos os dados deste CRM serão excluídos permanentemente.</p>
+                <div className="flex gap-3">
+                  <button onClick={() => setDeletingTenantId(null)} className="flex-1 bg-white/5 text-gray-400 py-2.5 rounded-xl text-sm hover:bg-white/10">Cancelar</button>
+                  <button onClick={async () => { try { await deleteTenant(deletingTenantId); setTenants(prev => prev.filter(t => t.id !== deletingTenantId)); setDeletingTenantId(null); } catch { alert('Erro ao excluir.'); } }} className="flex-1 bg-red-500/20 text-red-400 font-bold py-2.5 rounded-xl text-sm hover:bg-red-500/30">Excluir</button>
+                </div>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
     );
   }
 
-  // ── MODE 2: Kanban View ───────────────────────────────────
+  // ══════════════════════════════════════════════════════════
+  // MODE 2: Kanban View
+  // ══════════════════════════════════════════════════════════
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
-      <div className="flex items-center gap-4 px-6 py-4 border-b border-white/5">
-        {!isClientView && (
-          <button
-            onClick={handleBackToList}
-            className="p-2 rounded-lg hover:bg-white/5 transition-colors"
-          >
-            <ArrowLeft className="w-5 h-5 text-white/60" />
-          </button>
-        )}
+      <div className="flex items-center gap-3 px-6 py-4 border-b border-white/5 flex-wrap">
+        {!isClientView && <button onClick={handleBackToList} className="p-2 rounded-lg hover:bg-white/5"><ArrowLeft className="w-5 h-5 text-white/60" /></button>}
+        <h1 className="text-xl font-bold text-white truncate">{activeClient?.name ?? 'CRM'}</h1>
 
-        <h1 className="text-xl font-bold text-white truncate">
-          {activeClient?.name ?? 'CRM'}
-        </h1>
-
-        <div className="flex-1 max-w-md relative">
+        <div className="flex-1 max-w-sm relative">
           <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-white/30" />
-          <input
-            type="text"
-            placeholder="Buscar leads..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full bg-white/5 border border-white/10 rounded-xl pl-10 pr-4 py-2 text-sm text-white placeholder-white/30 focus:outline-none focus:border-brand-primary"
-          />
+          <input type="text" placeholder="Buscar leads..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
+            className="w-full bg-white/5 border border-white/10 rounded-xl pl-10 pr-4 py-2 text-sm text-white placeholder-white/30 focus:outline-none focus:border-brand-primary" />
         </div>
 
-        <button
-          onClick={() => setShowNewLeadModal(true)}
-          className="flex items-center gap-2 bg-brand-primary text-black font-bold rounded-xl px-4 py-2 text-sm hover:brightness-110 transition-all"
-        >
-          <Plus className="w-4 h-4" />
-          Novo Lead
+        {/* Filters */}
+        <select value={filterResponsavel} onChange={e => setFilterResponsavel(e.target.value)}
+          className="bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs text-white/70 focus:outline-none focus:border-brand-primary">
+          <option value="">Todos os responsáveis</option>
+          {uniqueResponsaveis.map(r => <option key={r} value={r}>{r}</option>)}
+        </select>
+
+        <select value={filterEtiqueta} onChange={e => setFilterEtiqueta(e.target.value)}
+          className="bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs text-white/70 focus:outline-none focus:border-brand-primary">
+          <option value="">Todas as etiquetas</option>
+          {uniqueEtiquetas.map(t => <option key={t} value={t}>{t}</option>)}
+        </select>
+
+        <select value={sortBy} onChange={e => setSortBy(e.target.value as typeof sortBy)}
+          className="bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs text-white/70 focus:outline-none focus:border-brand-primary">
+          <option value="recent">Mais recentes</option>
+          <option value="oldest">Mais antigos</option>
+          <option value="value">Maior valor</option>
+        </select>
+
+        <button onClick={() => setShowNewLeadModal(true)} className="flex items-center gap-2 bg-brand-primary text-black font-bold rounded-xl px-4 py-2 text-sm hover:brightness-110">
+          <Plus className="w-4 h-4" /> Novo Lead
         </button>
       </div>
 
       {/* Kanban columns */}
-      <div className="flex-1 overflow-x-auto p-6">
+      <div className="flex-1 overflow-x-auto p-4">
         <div className="flex gap-4 h-full min-w-max">
-          {stages.map((stage) => {
+          {stages.map(stage => {
             const stageLeads = leadsByStage.get(stage.id) ?? [];
             return (
-              <div
-                key={stage.id}
-                className="w-72 bg-[#1a1f2e] rounded-2xl p-3 border border-white/5 flex flex-col"
-                style={{ borderTopColor: stage.cor, borderTopWidth: 3 }}
-              >
-                {/* Column header */}
+              <div key={stage.id} className="w-72 bg-[#1a1f2e] rounded-2xl p-2.5 border border-white/5 flex flex-col" style={{ borderTopColor: stage.cor, borderTopWidth: 3 }}>
                 <div className="flex items-center justify-between mb-3 px-1">
                   <h3 className="text-sm font-semibold text-white">{stage.nome}</h3>
-                  <span
-                    className="text-xs font-bold px-2 py-0.5 rounded-full"
-                    style={{ backgroundColor: stage.cor + '20', color: stage.cor }}
-                  >
-                    {stageLeads.length}
-                  </span>
+                  <span className="text-xs font-bold px-2 py-0.5 rounded-full" style={{ backgroundColor: stage.cor + '20', color: stage.cor }}>{stageLeads.length}</span>
                 </div>
-
-                {/* Lead cards */}
-                <div className="flex-1 overflow-y-auto space-y-2 pr-1 custom-scrollbar">
-                  {stageLeads.map((lead, idx) => (
-                    <React.Fragment key={lead.id}>
-                      <motion.div
-                        initial={{ opacity: 0, y: 8 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: idx * 0.03 }}
-                        onClick={() => setSelectedLead(lead)}
-                        className="bg-[#161b26] border border-white/8 rounded-xl p-3.5 cursor-pointer hover:border-white/15 transition-colors"
-                      >
-                        <p className="text-sm font-semibold text-white mb-2 truncate">
-                          {lead.nome}
-                        </p>
-
-                        {lead.telefone && (
-                          <div className="flex items-center gap-1.5 text-xs text-white/50 mb-1">
-                            <Phone className="w-3 h-3" />
-                            <span className="truncate">{lead.telefone}</span>
-                          </div>
-                        )}
-
-                        {lead.email && (
-                          <div className="flex items-center gap-1.5 text-xs text-white/50 mb-1">
-                            <Mail className="w-3 h-3" />
-                            <span className="truncate">{lead.email}</span>
-                          </div>
-                        )}
-
-                        {lead.segmento && (
-                          <div className="flex items-center gap-1.5 text-xs text-white/40 mb-1">
-                            <Building2 className="w-3 h-3" />
-                            <span className="truncate">{lead.segmento}</span>
-                          </div>
-                        )}
-
-                        {lead.ticketEstimado > 0 && (
-                          <div className="flex items-center gap-1.5 text-xs text-brand-primary font-semibold mt-2">
-                            <DollarSign className="w-3 h-3" />
-                            <span>{fmtBRL(lead.ticketEstimado)}</span>
-                          </div>
-                        )}
-
-                        {lead.etiquetas.length > 0 && (
-                          <div className="flex flex-wrap gap-1 mt-2">
-                            {lead.etiquetas.map((tag) => (
-                              <span
-                                key={tag}
-                                className="px-1.5 py-0.5 text-[10px] rounded-md bg-white/5 text-white/50 border border-white/10"
-                              >
-                                {tag}
-                              </span>
-                            ))}
-                          </div>
-                        )}
-                      </motion.div>
-
-                      {idx < stageLeads.length - 1 && (
-                        <div className="flex justify-center py-0.5">
-                          <ChevronDown className="w-3.5 h-3.5 text-white/10" />
-                        </div>
-                      )}
-                    </React.Fragment>
-                  ))}
-
-                  {stageLeads.length === 0 && (
-                    <div className="text-center py-8 text-white/20 text-xs">
-                      Sem leads
-                    </div>
-                  )}
+                <div className="flex-1 overflow-y-auto pr-1 custom-scrollbar">
+                  {stageLeads.map((lead, idx) => {
+                    const leadTarefas = tarefasByLead.get(lead.id) ?? [];
+                    const nextTask = leadTarefas.find(t => !t.concluida);
+                    return (
+                      <React.Fragment key={lead.id}>
+                        {idx > 0 && <div className="flex justify-center py-1"><ChevronDown size={14} className="text-white/20" /></div>}
+                        <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: idx * 0.02 }}
+                          onClick={() => setSelectedLead(lead)} className="bg-[#161b26] border border-white/8 rounded-xl p-3 cursor-pointer hover:border-white/15 transition-colors space-y-1.5">
+                          <p className="text-sm font-semibold text-white truncate">{lead.nome}</p>
+                          {lead.empresa && <div className="flex items-center gap-1.5 text-xs text-white/40"><Building2 className="w-3 h-3" /><span className="truncate">{lead.empresa}</span></div>}
+                          {lead.telefone && <div className="flex items-center gap-1.5 text-xs text-white/50"><Phone className="w-3 h-3" /><span className="truncate">{lead.telefone}</span></div>}
+                          {lead.responsavel && <div className="flex items-center gap-1.5 text-xs text-white/40"><User className="w-3 h-3" /><span>{lead.responsavel}</span></div>}
+                          {(lead.valorContrato > 0 || lead.ticketEstimado > 0) && (
+                            <div className="flex items-center gap-1.5 text-xs text-brand-primary font-semibold"><DollarSign className="w-3 h-3" /><span>{fmtBRL(lead.valorContrato || lead.ticketEstimado)}</span></div>
+                          )}
+                          {lead.valorCc > 0 && <div className="text-xs text-yellow-400">CC: {fmtBRL(lead.valorCc)}</div>}
+                          {lead.etiquetas.length > 0 && (
+                            <div className="flex flex-wrap gap-1 pt-1">{lead.etiquetas.map(tag => <span key={tag} className="px-1.5 py-0.5 text-[10px] rounded-md bg-white/5 text-white/50 border border-white/10">{tag}</span>)}</div>
+                          )}
+                          {nextTask && (
+                            <div className="flex items-center gap-1 text-[10px] text-amber-400 mt-1"><CalendarDays className="w-3 h-3" /><span className="truncate">{nextTask.titulo} - {fmtDateTime(nextTask.dataAgendada)}</span></div>
+                          )}
+                          <div className="text-[9px] text-gray-600 pt-1 mt-1 border-t border-white/5">{fmtDate(lead.criadoEm)}</div>
+                        </motion.div>
+                      </React.Fragment>
+                    );
+                  })}
+                  {stageLeads.length === 0 && <div className="text-center py-8 text-white/20 text-xs">Sem leads</div>}
                 </div>
               </div>
             );
@@ -377,321 +372,409 @@ export default function ClientCRMView({ clients, selectedTenantId, onBack, tenan
       {/* Lead Modal */}
       <AnimatePresence>
         {selectedLead && (
-          <LeadModal
-            lead={selectedLead}
-            stages={stages}
-            tenantId={activeTenantId}
-            onClose={() => setSelectedLead(null)}
-            onUpdate={handleUpdateLead}
-            onDelete={handleDeleteLead}
-          />
+          <LeadModal lead={selectedLead} stages={stages} tenantId={activeTenantId} tarefas={tarefasByLead.get(selectedLead.id) ?? []}
+            onClose={() => setSelectedLead(null)} onUpdate={handleUpdateLead} onDelete={handleDeleteLead}
+            onCreateTarefa={handleCreateTarefa} onUpdateTarefa={handleUpdateTarefa}
+            onImageClick={url => setLightboxUrl(url)} userName={userName} />
         )}
       </AnimatePresence>
 
       {/* New Lead Modal */}
       <AnimatePresence>
-        {showNewLeadModal && (
-          <NewLeadModal
-            tenantId={activeTenantId}
-            stages={stages}
-            onClose={() => setShowNewLeadModal(false)}
-            onCreate={handleCreateLead}
-          />
+        {showNewLeadModal && <NewLeadModal tenantId={activeTenantId} stages={stages} onClose={() => setShowNewLeadModal(false)} onCreate={handleCreateLead} />}
+      </AnimatePresence>
+
+      {/* Lightbox */}
+      <AnimatePresence>
+        {lightboxUrl && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[200] bg-black/90 flex items-center justify-center p-8 cursor-pointer" onClick={() => setLightboxUrl(null)}>
+            <img src={lightboxUrl} alt="Preview" className="max-h-[90vh] max-w-[90vw] object-contain rounded-xl" />
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Task Alarm */}
+      <AnimatePresence>
+        {alarmTarefa && (
+          <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }}
+            className="fixed top-4 right-4 z-[300] bg-[#0d1117] border-2 border-amber-500 rounded-2xl p-5 w-96 shadow-2xl">
+            <div className="flex items-center gap-3 mb-3">
+              <div className="w-10 h-10 rounded-xl bg-amber-500/20 flex items-center justify-center"><Bell size={20} className="text-amber-400" /></div>
+              <div><h3 className="font-bold text-white text-sm">Tarefa Agendada</h3><p className="text-xs text-amber-400">{fmtDateTime(alarmTarefa.dataAgendada)}</p></div>
+            </div>
+            <p className="text-sm text-white/80 mb-4">{alarmTarefa.titulo}</p>
+            <div className="flex gap-2">
+              <button onClick={() => { dismissedAlarms.current.add(alarmTarefa.id); setAlarmTarefa(null); }} className="flex-1 bg-white/5 text-gray-400 py-2 rounded-xl text-sm hover:bg-white/10">Depois</button>
+              <button onClick={() => {
+                const lead = leads.find(l => l.id === alarmTarefa.leadId);
+                if (lead) { setSelectedLead(lead); }
+                dismissedAlarms.current.add(alarmTarefa.id);
+                setAlarmTarefa(null);
+              }} className="flex-1 bg-brand-primary text-black font-bold py-2 rounded-xl text-sm hover:brightness-110">Abrir Lead</button>
+            </div>
+          </motion.div>
         )}
       </AnimatePresence>
     </div>
   );
 }
 
-// ── LeadModal ───────────────────────────────────────────────
-
+// ══════════════════════════════════════════════════════════════
+// LeadModal — 3 tabs: Info | Timeline | Tarefas
+// ══════════════════════════════════════════════════════════════
 type LeadModalProps = {
-  lead: CrmClientLead;
-  stages: CrmClientStage[];
-  tenantId: string;
-  onClose: () => void;
-  onUpdate: (lead: CrmClientLead) => Promise<void>;
+  lead: CrmClientLead; stages: CrmClientStage[]; tenantId: string;
+  tarefas: CrmClientTarefa[];
+  onClose: () => void; onUpdate: (l: CrmClientLead) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
+  onCreateTarefa: (t: Omit<CrmClientTarefa, 'id' | 'criadoEm'>) => Promise<CrmClientTarefa>;
+  onUpdateTarefa: (t: CrmClientTarefa) => Promise<CrmClientTarefa>;
+  onImageClick: (url: string) => void;
+  userName?: string;
 };
 
-function LeadModal({ lead, stages, tenantId, onClose, onUpdate, onDelete }: LeadModalProps) {
-  const [activeTab, setActiveTab] = useState<'info' | 'timeline'>('info');
+function LeadModal({ lead, stages, tenantId, tarefas, onClose, onUpdate, onDelete, onCreateTarefa, onUpdateTarefa, onImageClick, userName }: LeadModalProps) {
+  const [activeTab, setActiveTab] = useState<'info' | 'timeline' | 'tarefas'>('info');
   const [form, setForm] = useState({ ...lead });
   const [saving, setSaving] = useState(false);
-
-  // Timeline
   const [activities, setActivities] = useState<CrmClientLeadActivity[]>([]);
   const [loadingActivities, setLoadingActivities] = useState(false);
-  const [newComment, setNewComment] = useState('');
-  const [sendingComment, setSendingComment] = useState(false);
 
-  useEffect(() => {
-    setForm({ ...lead });
-  }, [lead]);
+  // Activity form
+  const [showActivityForm, setShowActivityForm] = useState(false);
+  const [actType, setActType] = useState<'ligacao' | 'reuniao'>('ligacao');
+  const [actSubtype, setActSubtype] = useState('');
+  const [actContent, setActContent] = useState('');
+  const [actImage, setActImage] = useState<File | null>(null);
+  const [actImagePreview, setActImagePreview] = useState('');
+  const [sendingActivity, setSendingActivity] = useState(false);
+
+  // Task form
+  const [showTaskForm, setShowTaskForm] = useState(false);
+  const [taskTitle, setTaskTitle] = useState('');
+  const [taskDate, setTaskDate] = useState('');
+  const [taskResponsavel, setTaskResponsavel] = useState('');
+
+  // Completing task
+  const [completingTaskId, setCompletingTaskId] = useState<string | null>(null);
+  const [taskCompleteImage, setTaskCompleteImage] = useState<File | null>(null);
+
+  useEffect(() => { setForm({ ...lead }); }, [lead]);
 
   useEffect(() => {
     if (activeTab === 'timeline') {
       setLoadingActivities(true);
-      getLeadActivities(lead.id)
-        .then(setActivities)
-        .catch(console.error)
-        .finally(() => setLoadingActivities(false));
+      getLeadActivities(lead.id).then(setActivities).catch(console.error).finally(() => setLoadingActivities(false));
     }
   }, [activeTab, lead.id]);
 
-  const handleSave = async () => {
-    setSaving(true);
-    try {
-      await onUpdate(form);
-    } finally {
-      setSaving(false);
-    }
+  const handleSave = async () => { setSaving(true); try { await onUpdate(form); } finally { setSaving(false); } };
+
+  const uploadImage = async (file: File): Promise<string> => {
+    const ext = file.name.split('.').pop() || 'jpg';
+    const path = `crm-client/${tenantId}/${Date.now()}.${ext}`;
+    const { error } = await supabase.storage.from('comercial-prints').upload(path, file);
+    if (error) throw error;
+    const { data } = supabase.storage.from('comercial-prints').getPublicUrl(path);
+    return data.publicUrl;
   };
 
-  const handleAddComment = async () => {
-    if (!newComment.trim()) return;
-    setSendingComment(true);
+  const handleSubmitActivity = async () => {
+    if (!actContent.trim() && !actImage) return;
+    setSendingActivity(true);
     try {
+      let imageUrl = '';
+      if (actImage) imageUrl = await uploadImage(actImage);
       const activity = await createLeadActivity({
-        leadId: lead.id,
-        tenantId,
-        tipo: 'comentario',
-        conteudo: newComment.trim(),
-        autor: 'Usuário',
+        leadId: lead.id, tenantId, tipo: actType, subtipo: actSubtype,
+        conteudo: actContent.trim(), autor: userName || 'Usuário',
+        imagemUrl: imageUrl, dados: {},
       });
-      setActivities((prev) => [activity, ...prev]);
-      setNewComment('');
-    } catch (err) {
-      console.error('Erro ao adicionar comentário:', err);
-    } finally {
-      setSendingComment(false);
-    }
+      setActivities(prev => [activity, ...prev]);
+      // Also register stage change if needed
+      if (actType === 'reuniao' && actSubtype === 'realizada') {
+        const rmRealizada = stages.find(s => s.nome.toLowerCase().includes('realizada'));
+        if (rmRealizada && form.stageId !== rmRealizada.id) {
+          const updated = { ...form, stageId: rmRealizada.id };
+          setForm(updated);
+          await onUpdate(updated);
+        }
+      }
+      setShowActivityForm(false); setActContent(''); setActImage(null); setActImagePreview(''); setActSubtype('');
+    } catch (err) { console.error('Erro:', err); alert('Erro ao registrar atividade.'); }
+    finally { setSendingActivity(false); }
   };
 
-  const inputCls =
-    'w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder-white/30 focus:outline-none focus:border-brand-primary transition-colors';
+  const handleCreateTask = async () => {
+    if (!taskTitle.trim() || !taskDate) return;
+    await onCreateTarefa({
+      tenantId, leadId: lead.id, titulo: taskTitle.trim(),
+      dataAgendada: localDatetimeToISO(taskDate),
+      responsavel: taskResponsavel || userName || '',
+      concluida: false, imagemUrl: '',
+    });
+    // Also create activity
+    await createLeadActivity({
+      leadId: lead.id, tenantId, tipo: 'tarefa', subtipo: 'agendada',
+      conteudo: `Tarefa agendada: ${taskTitle.trim()}`, autor: userName || 'Usuário',
+      imagemUrl: '', dados: {},
+    });
+    setShowTaskForm(false); setTaskTitle(''); setTaskDate(''); setTaskResponsavel('');
+  };
+
+  const handleCompleteTask = async (tarefa: CrmClientTarefa) => {
+    try {
+      let imageUrl = '';
+      if (taskCompleteImage) imageUrl = await uploadImage(taskCompleteImage);
+      await onUpdateTarefa({ ...tarefa, concluida: true, imagemUrl: imageUrl });
+      await createLeadActivity({
+        leadId: lead.id, tenantId, tipo: 'tarefa', subtipo: 'concluida',
+        conteudo: `Tarefa concluída: ${tarefa.titulo}`, autor: userName || 'Usuário',
+        imagemUrl: imageUrl, dados: {},
+      });
+      setCompletingTaskId(null); setTaskCompleteImage(null);
+    } catch { alert('Erro ao concluir tarefa.'); }
+  };
+
+  const inputCls = 'w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder-white/30 focus:outline-none focus:border-brand-primary transition-colors';
 
   const TABS = [
     { id: 'info' as const, label: 'Informações' },
-    { id: 'timeline' as const, label: 'Timeline' },
+    { id: 'timeline' as const, label: 'Atividades' },
+    { id: 'tarefas' as const, label: 'Tarefas' },
   ];
 
   const TIPO_BADGES: Record<string, string> = {
-    comentario: 'bg-blue-500/20 text-blue-400',
-    ligacao: 'bg-green-500/20 text-green-400',
-    reuniao: 'bg-purple-500/20 text-purple-400',
-    tarefa: 'bg-amber-500/20 text-amber-400',
-    email: 'bg-pink-500/20 text-pink-400',
+    comentario: 'bg-blue-500/20 text-blue-400', ligacao: 'bg-green-500/20 text-green-400',
+    reuniao: 'bg-purple-500/20 text-purple-400', tarefa: 'bg-amber-500/20 text-amber-400',
+    email: 'bg-pink-500/20 text-pink-400', movimentacao: 'bg-cyan-500/20 text-cyan-400',
   };
 
   return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
-      onClick={onClose}
-    >
-      <motion.div
-        initial={{ opacity: 0, scale: 0.95, y: 20 }}
-        animate={{ opacity: 1, scale: 1, y: 0 }}
-        exit={{ opacity: 0, scale: 0.95, y: 20 }}
-        onClick={(e) => e.stopPropagation()}
-        className="bg-[#0d1117] border border-white/10 rounded-2xl w-full max-w-2xl max-h-[85vh] flex flex-col overflow-hidden"
-      >
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={onClose}>
+      <motion.div initial={{ opacity: 0, scale: 0.95, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95, y: 20 }}
+        onClick={e => e.stopPropagation()} className="bg-[#0d1117] border border-white/10 rounded-2xl w-full max-w-3xl max-h-[90vh] flex flex-col overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-white/5">
           <h2 className="text-lg font-bold text-white truncate">{lead.nome}</h2>
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-white/5 transition-colors">
-            <X className="w-5 h-5 text-white/50" />
-          </button>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-white/5"><X className="w-5 h-5 text-white/50" /></button>
         </div>
 
         {/* Tabs */}
         <div className="flex gap-1 px-6 pt-3">
-          {TABS.map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={`px-4 py-2 text-sm rounded-lg font-medium transition-colors ${
-                activeTab === tab.id
-                  ? 'bg-brand-primary/10 text-brand-primary'
-                  : 'text-white/40 hover:text-white/60 hover:bg-white/5'
-              }`}
-            >
+          {TABS.map(tab => (
+            <button key={tab.id} onClick={() => setActiveTab(tab.id)}
+              className={`px-4 py-2 text-sm rounded-lg font-medium transition-colors ${activeTab === tab.id ? 'bg-brand-primary/10 text-brand-primary' : 'text-white/40 hover:text-white/60 hover:bg-white/5'}`}>
               {tab.label}
+              {tab.id === 'tarefas' && tarefas.filter(t => !t.concluida).length > 0 && (
+                <span className="ml-1.5 bg-amber-500/20 text-amber-400 px-1.5 py-0.5 rounded-full text-[10px] font-bold">{tarefas.filter(t => !t.concluida).length}</span>
+              )}
             </button>
           ))}
         </div>
 
         {/* Body */}
         <div className="flex-1 overflow-y-auto p-6">
+          {/* ── INFO TAB ── */}
           {activeTab === 'info' && (
             <div className="space-y-4">
-              <div>
-                <label className="block text-xs text-white/40 mb-1">Nome</label>
-                <input
-                  className={inputCls}
-                  value={form.nome}
-                  onChange={(e) => setForm({ ...form, nome: e.target.value })}
-                />
-              </div>
-
               <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs text-white/40 mb-1">Telefone</label>
-                  <input
-                    className={inputCls}
-                    value={form.telefone}
-                    onChange={(e) => setForm({ ...form, telefone: e.target.value })}
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs text-white/40 mb-1">Email</label>
-                  <input
-                    className={inputCls}
-                    value={form.email}
-                    onChange={(e) => setForm({ ...form, email: e.target.value })}
-                  />
-                </div>
+                <div><label className="block text-xs text-white/40 mb-1">Nome</label><input className={inputCls} value={form.nome} onChange={e => setForm({ ...form, nome: e.target.value })} /></div>
+                <div><label className="block text-xs text-white/40 mb-1">Empresa</label><input className={inputCls} value={form.empresa} onChange={e => setForm({ ...form, empresa: e.target.value })} /></div>
               </div>
-
               <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs text-white/40 mb-1">Segmento</label>
-                  <input
-                    className={inputCls}
-                    value={form.segmento}
-                    onChange={(e) => setForm({ ...form, segmento: e.target.value })}
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs text-white/40 mb-1">Ticket estimado</label>
-                  <input
-                    type="number"
-                    className={inputCls}
-                    value={form.ticketEstimado || ''}
-                    onChange={(e) => setForm({ ...form, ticketEstimado: +e.target.value })}
-                  />
-                </div>
+                <div><label className="block text-xs text-white/40 mb-1">Telefone</label><input className={inputCls} value={form.telefone} onChange={e => setForm({ ...form, telefone: e.target.value })} /></div>
+                <div><label className="block text-xs text-white/40 mb-1">Email</label><input className={inputCls} value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} /></div>
               </div>
-
+              <div className="grid grid-cols-3 gap-4">
+                <div><label className="block text-xs text-white/40 mb-1">Segmento</label><input className={inputCls} value={form.segmento} onChange={e => setForm({ ...form, segmento: e.target.value })} /></div>
+                <div><label className="block text-xs text-white/40 mb-1">Área</label><input className={inputCls} value={form.area} onChange={e => setForm({ ...form, area: e.target.value })} /></div>
+                <div><label className="block text-xs text-white/40 mb-1">Origem</label><input className={inputCls} value={form.origem} onChange={e => setForm({ ...form, origem: e.target.value })} /></div>
+              </div>
               <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs text-white/40 mb-1">Responsável</label>
-                  <input
-                    className={inputCls}
-                    value={form.responsavel}
-                    onChange={(e) => setForm({ ...form, responsavel: e.target.value })}
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs text-white/40 mb-1">Etapa</label>
-                  <select
-                    className={inputCls}
-                    value={form.stageId}
-                    onChange={(e) => setForm({ ...form, stageId: e.target.value })}
-                  >
-                    {stages.map((s) => (
-                      <option key={s.id} value={s.id}>
-                        {s.nome}
-                      </option>
-                    ))}
-                  </select>
+                <div><label className="block text-xs text-white/40 mb-1">Faturamento</label><input className={inputCls} value={form.faturamento} onChange={e => setForm({ ...form, faturamento: e.target.value })} /></div>
+                <div><label className="block text-xs text-white/40 mb-1">Responsável</label><input className={inputCls} value={form.responsavel} onChange={e => setForm({ ...form, responsavel: e.target.value })} /></div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div><label className="block text-xs text-white/40 mb-1">Etapa</label><select className={inputCls} value={form.stageId} onChange={e => setForm({ ...form, stageId: e.target.value })}>{stages.map(s => <option key={s.id} value={s.id}>{s.nome}</option>)}</select></div>
+                <div><label className="block text-xs text-white/40 mb-1">Ticket estimado</label><input type="number" className={inputCls} value={form.ticketEstimado || ''} onChange={e => setForm({ ...form, ticketEstimado: +e.target.value })} /></div>
+              </div>
+
+              {/* Financial */}
+              <div className="border-t border-white/5 pt-4 mt-4">
+                <h4 className="text-xs font-bold text-brand-primary uppercase mb-3">Financeiro</h4>
+                <div className="grid grid-cols-3 gap-4">
+                  <div><label className="block text-xs text-white/40 mb-1">Contrato (R$)</label><input type="number" className={inputCls} value={form.valorContrato || ''} onChange={e => setForm({ ...form, valorContrato: +e.target.value })} /></div>
+                  <div><label className="block text-xs text-white/40 mb-1">Cash Collect (R$)</label><input type="number" className={inputCls} value={form.valorCc || ''} onChange={e => setForm({ ...form, valorCc: +e.target.value })} /></div>
+                  <div><label className="block text-xs text-white/40 mb-1">MRR (R$)</label><input type="number" className={inputCls} value={form.valorMrr || ''} onChange={e => setForm({ ...form, valorMrr: +e.target.value })} /></div>
                 </div>
               </div>
 
-              <div>
-                <label className="block text-xs text-white/40 mb-1">Observações</label>
-                <textarea
-                  rows={3}
-                  className={inputCls + ' resize-none'}
-                  value={form.observacoes}
-                  onChange={(e) => setForm({ ...form, observacoes: e.target.value })}
-                />
-              </div>
+              <div><label className="block text-xs text-white/40 mb-1">Observações</label><textarea rows={3} className={inputCls + ' resize-none'} value={form.observacoes} onChange={e => setForm({ ...form, observacoes: e.target.value })} /></div>
 
               <div className="flex items-center gap-3 pt-2">
-                <button
-                  onClick={handleSave}
-                  disabled={saving}
-                  className="bg-brand-primary text-black font-bold rounded-xl px-6 py-2 text-sm hover:brightness-110 transition-all disabled:opacity-50"
-                >
-                  {saving ? 'Salvando...' : 'Salvar'}
-                </button>
-                <button
-                  onClick={() => {
-                    if (confirm('Tem certeza que deseja excluir este lead?')) {
-                      onDelete(lead.id);
-                    }
-                  }}
-                  className="text-sm text-red-400 hover:text-red-300 transition-colors"
-                >
-                  Excluir lead
-                </button>
+                <button onClick={handleSave} disabled={saving} className="bg-brand-primary text-black font-bold rounded-xl px-6 py-2 text-sm hover:brightness-110 disabled:opacity-50">{saving ? 'Salvando...' : 'Salvar'}</button>
+                <button onClick={() => { if (confirm('Excluir este lead?')) onDelete(lead.id); }} className="text-sm text-red-400 hover:text-red-300">Excluir lead</button>
               </div>
             </div>
           )}
 
+          {/* ── TIMELINE TAB ── */}
           {activeTab === 'timeline' && (
             <div className="space-y-4">
-              {/* New comment */}
+              {/* Buttons */}
               <div className="flex gap-2">
-                <input
-                  className={inputCls + ' flex-1'}
-                  placeholder="Adicionar comentário..."
-                  value={newComment}
-                  onChange={(e) => setNewComment(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                      e.preventDefault();
-                      handleAddComment();
-                    }
-                  }}
-                />
-                <button
-                  onClick={handleAddComment}
-                  disabled={sendingComment || !newComment.trim()}
-                  className="bg-brand-primary text-black font-bold rounded-xl px-4 py-2 text-sm hover:brightness-110 transition-all disabled:opacity-50"
-                >
-                  <MessageSquare className="w-4 h-4" />
+                <button onClick={() => { setShowActivityForm(true); setActType('ligacao'); }} className="flex items-center gap-2 bg-green-500/10 text-green-400 px-4 py-2 rounded-xl text-sm font-medium hover:bg-green-500/20">
+                  <PhoneCall className="w-4 h-4" /> Registrar Ligação
+                </button>
+                <button onClick={() => { setShowActivityForm(true); setActType('reuniao'); }} className="flex items-center gap-2 bg-purple-500/10 text-purple-400 px-4 py-2 rounded-xl text-sm font-medium hover:bg-purple-500/20">
+                  <Video className="w-4 h-4" /> Registrar Reunião
                 </button>
               </div>
 
+              {/* Activity Form */}
+              <AnimatePresence>
+                {showActivityForm && (
+                  <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
+                    className="bg-white/3 border border-white/10 rounded-xl p-4 space-y-3 overflow-hidden">
+                    <div className="flex items-center justify-between">
+                      <h4 className="text-sm font-bold text-white">{actType === 'ligacao' ? '📞 Ligação' : '📹 Reunião'}</h4>
+                      <button onClick={() => setShowActivityForm(false)} className="text-white/30 hover:text-white"><X size={16} /></button>
+                    </div>
+
+                    {actType === 'ligacao' && (
+                      <div className="flex gap-2">
+                        {['Atendeu', 'Não atendeu'].map(opt => (
+                          <button key={opt} onClick={() => setActSubtype(opt)}
+                            className={`px-3 py-1.5 text-xs rounded-lg border transition-colors ${actSubtype === opt ? 'bg-brand-primary/20 border-brand-primary text-brand-primary' : 'border-white/10 text-white/50 hover:border-white/20'}`}>{opt}</button>
+                        ))}
+                      </div>
+                    )}
+                    {actType === 'reuniao' && (
+                      <div className="flex gap-2">
+                        {['Realizada', 'Não compareceu', 'Remarcou'].map(opt => (
+                          <button key={opt} onClick={() => setActSubtype(opt.toLowerCase())}
+                            className={`px-3 py-1.5 text-xs rounded-lg border transition-colors ${actSubtype === opt.toLowerCase() ? 'bg-brand-primary/20 border-brand-primary text-brand-primary' : 'border-white/10 text-white/50 hover:border-white/20'}`}>{opt}</button>
+                        ))}
+                      </div>
+                    )}
+
+                    <textarea className={inputCls + ' resize-none'} rows={3} placeholder="Descreva a atividade..." value={actContent} onChange={e => setActContent(e.target.value)} />
+
+                    {/* Image upload */}
+                    <div>
+                      <label className="block text-xs text-white/40 mb-1">Print da tela (obrigatório)</label>
+                      <div className="flex items-center gap-3">
+                        <label className="flex items-center gap-2 bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-xs text-white/60 cursor-pointer hover:bg-white/10">
+                          <Upload size={14} /> {actImage ? actImage.name : 'Selecionar imagem'}
+                          <input type="file" accept="image/*" className="hidden" onChange={e => {
+                            const f = e.target.files?.[0];
+                            if (f) { setActImage(f); setActImagePreview(URL.createObjectURL(f)); }
+                          }} />
+                        </label>
+                        {actImagePreview && <img src={actImagePreview} alt="Preview" className="w-12 h-12 rounded-lg object-cover border border-white/10" />}
+                      </div>
+                    </div>
+
+                    <button onClick={handleSubmitActivity} disabled={sendingActivity || !actImage}
+                      className="w-full bg-brand-primary text-black font-bold rounded-xl py-2.5 text-sm hover:brightness-110 disabled:opacity-50">
+                      {sendingActivity ? 'Enviando...' : 'Registrar Atividade'}
+                    </button>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
               {/* Activity list */}
               {loadingActivities ? (
-                <div className="flex justify-center py-8">
-                  <div className="w-6 h-6 border-2 border-brand-primary border-t-transparent rounded-full animate-spin" />
-                </div>
+                <div className="flex justify-center py-8"><div className="w-6 h-6 border-2 border-brand-primary border-t-transparent rounded-full animate-spin" /></div>
               ) : activities.length === 0 ? (
-                <div className="text-center py-12 text-white/30 text-sm">
-                  Nenhuma atividade registrada
-                </div>
+                <div className="text-center py-12 text-white/30 text-sm">Nenhuma atividade registrada</div>
               ) : (
                 <div className="space-y-3">
-                  {activities.map((act) => (
-                    <motion.div
-                      key={act.id}
-                      initial={{ opacity: 0, y: 6 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      className="bg-white/3 border border-white/5 rounded-xl p-3.5"
-                    >
+                  {activities.map(act => (
+                    <motion.div key={act.id} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} className="bg-white/3 border border-white/5 rounded-xl p-3.5">
                       <div className="flex items-center gap-2 mb-1.5">
-                        <span
-                          className={`text-[10px] font-bold px-2 py-0.5 rounded-md uppercase ${
-                            TIPO_BADGES[act.tipo] ?? 'bg-white/10 text-white/50'
-                          }`}
-                        >
-                          {act.tipo}
-                        </span>
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md uppercase ${TIPO_BADGES[act.tipo] ?? 'bg-white/10 text-white/50'}`}>{act.tipo}</span>
+                        {act.subtipo && <span className="text-[10px] text-white/30 bg-white/5 px-1.5 py-0.5 rounded">{act.subtipo}</span>}
                         <span className="text-xs text-white/30">{act.autor}</span>
-                        <span className="text-xs text-white/20 ml-auto flex items-center gap-1">
-                          <Clock className="w-3 h-3" />
-                          {fmtDate(act.criadoEm)}
-                        </span>
+                        <span className="text-xs text-white/20 ml-auto flex items-center gap-1"><Clock className="w-3 h-3" />{fmtDateTime(act.criadoEm)}</span>
                       </div>
                       <p className="text-sm text-white/70">{act.conteudo}</p>
+                      {act.imagemUrl && (
+                        <img src={act.imagemUrl} alt="Print" onClick={() => onImageClick(act.imagemUrl)}
+                          className="mt-2 w-24 h-16 object-cover rounded-lg border border-white/10 cursor-pointer hover:opacity-80 transition-opacity" />
+                      )}
                     </motion.div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── TAREFAS TAB ── */}
+          {activeTab === 'tarefas' && (
+            <div className="space-y-4">
+              <button onClick={() => setShowTaskForm(true)} className="flex items-center gap-2 bg-amber-500/10 text-amber-400 px-4 py-2 rounded-xl text-sm font-medium hover:bg-amber-500/20">
+                <Plus className="w-4 h-4" /> Agendar Tarefa
+              </button>
+
+              {/* Task Form */}
+              <AnimatePresence>
+                {showTaskForm && (
+                  <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
+                    className="bg-white/3 border border-white/10 rounded-xl p-4 space-y-3 overflow-hidden">
+                    <div className="flex items-center justify-between"><h4 className="text-sm font-bold text-white">Nova Tarefa</h4><button onClick={() => setShowTaskForm(false)} className="text-white/30 hover:text-white"><X size={16} /></button></div>
+                    <input className={inputCls} placeholder="Título da tarefa *" value={taskTitle} onChange={e => setTaskTitle(e.target.value)} />
+                    <div className="grid grid-cols-2 gap-3">
+                      <input type="datetime-local" className={inputCls} value={taskDate} onChange={e => setTaskDate(e.target.value)} />
+                      <input className={inputCls} placeholder="Responsável" value={taskResponsavel} onChange={e => setTaskResponsavel(e.target.value)} />
+                    </div>
+                    <button onClick={handleCreateTask} disabled={!taskTitle.trim() || !taskDate} className="w-full bg-amber-500/20 text-amber-400 font-bold rounded-xl py-2 text-sm hover:bg-amber-500/30 disabled:opacity-50">Agendar</button>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              {/* Task list */}
+              {tarefas.length === 0 ? (
+                <div className="text-center py-12 text-white/30 text-sm">Nenhuma tarefa agendada</div>
+              ) : (
+                <div className="space-y-2">
+                  {tarefas.sort((a, b) => +a.concluida - +b.concluida || new Date(a.dataAgendada).getTime() - new Date(b.dataAgendada).getTime()).map(tarefa => (
+                    <div key={tarefa.id} className={`bg-white/3 border rounded-xl p-3.5 ${tarefa.concluida ? 'border-green-500/20 opacity-60' : 'border-white/10'}`}>
+                      <div className="flex items-center gap-3">
+                        <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${tarefa.concluida ? 'border-green-500 bg-green-500' : 'border-white/20'}`}>
+                          {tarefa.concluida && <CheckCircle2 size={12} className="text-black" />}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className={`text-sm font-medium ${tarefa.concluida ? 'text-white/40 line-through' : 'text-white'}`}>{tarefa.titulo}</p>
+                          <div className="flex items-center gap-3 text-xs text-white/40 mt-0.5">
+                            <span className="flex items-center gap-1"><CalendarDays className="w-3 h-3" />{fmtDateTime(tarefa.dataAgendada)}</span>
+                            {tarefa.responsavel && <span className="flex items-center gap-1"><User className="w-3 h-3" />{tarefa.responsavel}</span>}
+                          </div>
+                        </div>
+                        {!tarefa.concluida && (
+                          <button onClick={() => setCompletingTaskId(tarefa.id)} className="bg-brand-primary/10 text-brand-primary px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-brand-primary/20">Concluir</button>
+                        )}
+                        {tarefa.imagemUrl && (
+                          <img src={tarefa.imagemUrl} alt="Print" onClick={() => onImageClick(tarefa.imagemUrl)} className="w-10 h-10 rounded-lg object-cover border border-white/10 cursor-pointer" />
+                        )}
+                      </div>
+
+                      {/* Complete task with image */}
+                      {completingTaskId === tarefa.id && (
+                        <div className="mt-3 pt-3 border-t border-white/5 space-y-2">
+                          <label className="flex items-center gap-2 bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-xs text-white/60 cursor-pointer hover:bg-white/10">
+                            <Upload size={14} /> {taskCompleteImage ? taskCompleteImage.name : 'Anexar print (obrigatório)'}
+                            <input type="file" accept="image/*" className="hidden" onChange={e => { if (e.target.files?.[0]) setTaskCompleteImage(e.target.files[0]); }} />
+                          </label>
+                          <div className="flex gap-2">
+                            <button onClick={() => { setCompletingTaskId(null); setTaskCompleteImage(null); }} className="flex-1 bg-white/5 text-gray-400 py-2 rounded-xl text-xs">Cancelar</button>
+                            <button onClick={() => handleCompleteTask(tarefa)} disabled={!taskCompleteImage} className="flex-1 bg-brand-primary text-black font-bold py-2 rounded-xl text-xs disabled:opacity-50">Confirmar</button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   ))}
                 </div>
               )}
@@ -703,25 +786,13 @@ function LeadModal({ lead, stages, tenantId, onClose, onUpdate, onDelete }: Lead
   );
 }
 
-// ── NewLeadModal ────────────────────────────────────────────
-
-type NewLeadModalProps = {
-  tenantId: string;
-  stages: CrmClientStage[];
-  onClose: () => void;
-  onCreate: (data: Omit<CrmClientLead, 'id' | 'criadoEm' | 'atualizadoEm'>) => Promise<void>;
-};
+// ══════════════════════════════════════════════════════════════
+// NewLeadModal
+// ══════════════════════════════════════════════════════════════
+type NewLeadModalProps = { tenantId: string; stages: CrmClientStage[]; onClose: () => void; onCreate: (data: Omit<CrmClientLead, 'id' | 'criadoEm' | 'atualizadoEm'>) => Promise<void>; };
 
 function NewLeadModal({ tenantId, stages, onClose, onCreate }: NewLeadModalProps) {
-  const [form, setForm] = useState({
-    nome: '',
-    telefone: '',
-    email: '',
-    segmento: '',
-    ticketEstimado: 0,
-    responsavel: '',
-    stageId: stages[0]?.id ?? '',
-  });
+  const [form, setForm] = useState({ nome: '', telefone: '', email: '', segmento: '', empresa: '', ticketEstimado: 0, responsavel: '', stageId: stages[0]?.id ?? '' });
   const [creating, setCreating] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -730,140 +801,38 @@ function NewLeadModal({ tenantId, stages, onClose, onCreate }: NewLeadModalProps
     setCreating(true);
     try {
       await onCreate({
-        tenantId,
-        stageId: form.stageId,
-        nome: form.nome.trim(),
-        telefone: form.telefone.trim(),
-        email: form.email.trim(),
-        segmento: form.segmento.trim(),
-        ticketEstimado: form.ticketEstimado,
-        responsavel: form.responsavel.trim(),
-        etiquetas: [],
-        observacoes: '',
+        tenantId, stageId: form.stageId, nome: form.nome.trim(), telefone: form.telefone.trim(),
+        email: form.email.trim(), segmento: form.segmento.trim(), empresa: form.empresa.trim(),
+        ticketEstimado: form.ticketEstimado, responsavel: form.responsavel.trim(),
+        etiquetas: [], observacoes: '', faturamento: '', area: '', origem: '',
+        valorContrato: 0, valorCc: 0, valorMrr: 0, status: '', motivoPerda: '', proximaReuniao: '',
       });
-    } finally {
-      setCreating(false);
-    }
+    } finally { setCreating(false); }
   };
 
-  const inputCls =
-    'w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder-white/30 focus:outline-none focus:border-brand-primary transition-colors';
+  const inputCls = 'w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder-white/30 focus:outline-none focus:border-brand-primary';
 
   return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
-      onClick={onClose}
-    >
-      <motion.div
-        initial={{ opacity: 0, scale: 0.95, y: 20 }}
-        animate={{ opacity: 1, scale: 1, y: 0 }}
-        exit={{ opacity: 0, scale: 0.95, y: 20 }}
-        onClick={(e) => e.stopPropagation()}
-        className="bg-[#0d1117] border border-white/10 rounded-2xl w-full max-w-lg overflow-hidden"
-      >
-        {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-white/5">
-          <h2 className="text-lg font-bold text-white">Novo Lead</h2>
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-white/5 transition-colors">
-            <X className="w-5 h-5 text-white/50" />
-          </button>
-        </div>
-
-        {/* Form */}
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={onClose}>
+      <motion.div initial={{ opacity: 0, scale: 0.95, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95, y: 20 }}
+        onClick={e => e.stopPropagation()} className="bg-[#0d1117] border border-white/10 rounded-2xl w-full max-w-lg overflow-hidden">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-white/5"><h2 className="text-lg font-bold text-white">Novo Lead</h2><button onClick={onClose} className="p-1.5 rounded-lg hover:bg-white/5"><X className="w-5 h-5 text-white/50" /></button></div>
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
-          <div>
-            <label className="block text-xs text-white/40 mb-1">Nome *</label>
-            <input
-              className={inputCls}
-              placeholder="Nome do lead"
-              value={form.nome}
-              onChange={(e) => setForm({ ...form, nome: e.target.value })}
-              required
-            />
-          </div>
-
+          <div><label className="block text-xs text-white/40 mb-1">Nome *</label><input className={inputCls} placeholder="Nome do lead" value={form.nome} onChange={e => setForm({ ...form, nome: e.target.value })} required /></div>
           <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs text-white/40 mb-1">Telefone</label>
-              <input
-                className={inputCls}
-                placeholder="(00) 00000-0000"
-                value={form.telefone}
-                onChange={(e) => setForm({ ...form, telefone: e.target.value })}
-              />
-            </div>
-            <div>
-              <label className="block text-xs text-white/40 mb-1">Email</label>
-              <input
-                type="email"
-                className={inputCls}
-                placeholder="email@exemplo.com"
-                value={form.email}
-                onChange={(e) => setForm({ ...form, email: e.target.value })}
-              />
-            </div>
+            <div><label className="block text-xs text-white/40 mb-1">Empresa</label><input className={inputCls} placeholder="Nome da empresa" value={form.empresa} onChange={e => setForm({ ...form, empresa: e.target.value })} /></div>
+            <div><label className="block text-xs text-white/40 mb-1">Segmento</label><input className={inputCls} placeholder="Ex: Construtora" value={form.segmento} onChange={e => setForm({ ...form, segmento: e.target.value })} /></div>
           </div>
-
           <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs text-white/40 mb-1">Segmento</label>
-              <input
-                className={inputCls}
-                placeholder="Ex: Construtora"
-                value={form.segmento}
-                onChange={(e) => setForm({ ...form, segmento: e.target.value })}
-              />
-            </div>
-            <div>
-              <label className="block text-xs text-white/40 mb-1">Ticket estimado</label>
-              <input
-                type="number"
-                className={inputCls}
-                placeholder="0,00"
-                value={form.ticketEstimado || ''}
-                onChange={(e) => setForm({ ...form, ticketEstimado: +e.target.value })}
-              />
-            </div>
+            <div><label className="block text-xs text-white/40 mb-1">Telefone</label><input className={inputCls} placeholder="(00) 00000-0000" value={form.telefone} onChange={e => setForm({ ...form, telefone: e.target.value })} /></div>
+            <div><label className="block text-xs text-white/40 mb-1">Email</label><input type="email" className={inputCls} placeholder="email@exemplo.com" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} /></div>
           </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs text-white/40 mb-1">Responsável</label>
-              <input
-                className={inputCls}
-                placeholder="Nome do responsável"
-                value={form.responsavel}
-                onChange={(e) => setForm({ ...form, responsavel: e.target.value })}
-              />
-            </div>
-            <div>
-              <label className="block text-xs text-white/40 mb-1">Etapa inicial</label>
-              <select
-                className={inputCls}
-                value={form.stageId}
-                onChange={(e) => setForm({ ...form, stageId: e.target.value })}
-              >
-                {stages.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.nome}
-                  </option>
-                ))}
-              </select>
-            </div>
+          <div className="grid grid-cols-3 gap-4">
+            <div><label className="block text-xs text-white/40 mb-1">Ticket estimado</label><input type="number" className={inputCls} placeholder="0,00" value={form.ticketEstimado || ''} onChange={e => setForm({ ...form, ticketEstimado: +e.target.value })} /></div>
+            <div><label className="block text-xs text-white/40 mb-1">Responsável</label><input className={inputCls} placeholder="Nome" value={form.responsavel} onChange={e => setForm({ ...form, responsavel: e.target.value })} /></div>
+            <div><label className="block text-xs text-white/40 mb-1">Etapa inicial</label><select className={inputCls} value={form.stageId} onChange={e => setForm({ ...form, stageId: e.target.value })}>{stages.map(s => <option key={s.id} value={s.id}>{s.nome}</option>)}</select></div>
           </div>
-
-          <div className="pt-2">
-            <button
-              type="submit"
-              disabled={creating || !form.nome.trim()}
-              className="w-full bg-brand-primary text-black font-bold rounded-xl px-4 py-2.5 text-sm hover:brightness-110 transition-all disabled:opacity-50"
-            >
-              {creating ? 'Criando...' : 'Criar Lead'}
-            </button>
-          </div>
+          <button type="submit" disabled={creating || !form.nome.trim()} className="w-full bg-brand-primary text-black font-bold rounded-xl px-4 py-2.5 text-sm hover:brightness-110 disabled:opacity-50">{creating ? 'Criando...' : 'Criar Lead'}</button>
         </form>
       </motion.div>
     </motion.div>

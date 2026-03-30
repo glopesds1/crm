@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { 
-  LayoutDashboard, BookOpen, 
+  LayoutDashboard, BookOpen, GraduationCap,
   Users, 
   Kanban as KanbanIcon, 
   BarChart3, 
@@ -45,7 +45,8 @@ import {
   Send,
   Building2,
   Shield,
-  QrCode
+  QrCode,
+  Package
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -69,6 +70,10 @@ import DashboardView from './DashboardView';
 import CRMView from './CRMView';
 import PlaybooksView from './PlaybooksView';
 import ClientCRMView from './ClientCRMView';
+import EducacaoView from './EducacaoView';
+import MateriaisClienteView from './MateriaisClienteView';
+import DocumentosClienteView from './DocumentosClienteView';
+import ConsultorIAView from './ConsultorIAView';
 import { getTenantByClientId, activateCrmForClient, authenticateCrmUser, getCrmUsersByTenant, createCrmUser, updateCrmUser, deleteCrmUser, authenticateUser, signOut, resetPassword, updatePassword, getAuthSession, mfaListFactors, mfaChallenge, mfaVerify, mfaEnrollTotp, mfaUnenroll, mfaGetAuthenticatorLevel } from './lib/database';
 import type { CrmClientTenant, CrmClientUser } from './types';
 import { ptBR } from 'date-fns/locale';
@@ -3551,14 +3556,15 @@ export default function App() {
   const canSee = (tab: string): boolean => {
     const role = (userSession?.role ?? '').toLowerCase();
     const permissions: Record<string, string[]> = {
-      'admin':     ['Dashboard', 'Clientes', 'Kanban de Operação', 'Equipe', 'Demandas', 'CRM Clientes', 'Relatórios', 'Aquisição', 'Playbooks', 'Configurações'],
-      'comercial': ['Demandas', 'Aquisição', 'Playbooks'],
-      'suporte':   ['Clientes', 'Kanban de Operação', 'Demandas', 'CRM Clientes', 'Relatórios', 'Playbooks'],
-      'entrega':   ['Clientes', 'Kanban de Operação', 'Demandas', 'CRM Clientes', 'Relatórios', 'Playbooks'],
+      'admin':     ['Dashboard', 'Clientes', 'Kanban de Operação', 'Equipe', 'Demandas', 'Área do Cliente', 'Relatórios', 'Educação', 'Aquisição', 'Entrega', 'Playbooks', 'Configurações'],
+      'comercial': ['Demandas', 'Educação', 'Aquisição', 'Playbooks'],
+      'suporte':   ['Clientes', 'Kanban de Operação', 'Demandas', 'Área do Cliente', 'Relatórios', 'Educação', 'Entrega', 'Playbooks'],
+      'entrega':   ['Clientes', 'Kanban de Operação', 'Demandas', 'Área do Cliente', 'Relatórios', 'Educação', 'Entrega', 'Playbooks'],
     };
     return (permissions[role] ?? permissions['admin']).includes(tab);
   };
-  const [aquisicaoSubTab, setAquisicaoSubTab] = useState<'CRM' | 'Relatorio'>('CRM');
+  const [aquisicaoSubTab, setAquisicaoSubTab] = useState<'CRM' | 'Relatorio' | 'Dashboard' | 'Playbooks'>('CRM');
+  const [entregaSubTab, setEntregaSubTab] = useState<'Kanban' | 'Demandas' | 'AreaCliente' | 'Educacao'>('Kanban');
   const [openCRMLeadName, setOpenCRMLeadName] = useState('');
   const [clients, setClients] = useState<Client[]>([]);
   const [allTags, setAllTags] = useState<Record<string, Tag>>(INITIAL_TAGS);
@@ -3566,6 +3572,8 @@ export default function App() {
   const [agencyConfig, setAgencyConfig] = useState<AgencyConfig>(INITIAL_AGENCY_CONFIG);
   const [userSession, setUserSession] = useState<UserSession | null>(null);
   const [crmClientSession, setCrmClientSession] = useState<{ user: CrmClientUser; tenant: CrmClientTenant } | null>(null);
+  const [clientTab, setClientTab] = useState<'crm' | 'educacao' | 'materiais' | 'documentos'>('crm');
+  const [showConsultorChat, setShowConsultorChat] = useState(false);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [demands, setDemands] = useState<Demand[]>([]);
   const [demandFilter, setDemandFilter] = useState<'todos' | 'pendente' | 'concluido'>('pendente');
@@ -3977,27 +3985,98 @@ export default function App() {
   // Se é um cliente CRM, mostra apenas o CRM dele
   if (crmClientSession) {
     return (
-      <div className="min-h-screen bg-bg-main">
-        {/* Header simples para cliente */}
-        <div className="h-16 border-b border-white/10 flex items-center justify-between px-6">
+      <div className="min-h-screen bg-bg-main flex flex-col">
+        {/* Header para cliente */}
+        <div className="h-16 border-b border-white/10 flex items-center justify-between px-6 flex-shrink-0">
           <div className="flex items-center gap-3">
             {agencyConfig.logoUrl && (
               <img src={agencyConfig.logoUrl} alt="" className="w-8 h-8 rounded-lg" referrerPolicy="no-referrer" />
             )}
             <span className="text-white font-bold">{agencyConfig.name}</span>
-            <span className="text-gray-500 text-sm">• CRM</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <button onClick={() => setClientTab('crm')} className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${clientTab === 'crm' ? 'bg-brand-primary/10 text-brand-primary' : 'text-white/40 hover:text-white/60'}`}>CRM</button>
+            <button onClick={() => setClientTab('materiais')} className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${clientTab === 'materiais' ? 'bg-brand-primary/10 text-brand-primary' : 'text-white/40 hover:text-white/60'}`}>Materiais</button>
+            <button onClick={() => setClientTab('documentos')} className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${clientTab === 'documentos' ? 'bg-brand-primary/10 text-brand-primary' : 'text-white/40 hover:text-white/60'}`}>Documentos</button>
+            <button onClick={() => setClientTab('educacao')} className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${clientTab === 'educacao' ? 'bg-brand-primary/10 text-brand-primary' : 'text-white/40 hover:text-white/60'}`}>Educação</button>
           </div>
           <div className="flex items-center gap-4">
             <span className="text-sm text-gray-400">{crmClientSession.user.nome}</span>
-            <button
-              onClick={() => { signOut(); setCrmClientSession(null); localStorage.removeItem('crmClientSession'); }}
-              className="text-sm text-red-400 hover:text-red-300 flex items-center gap-1"
-            >
-              <LogOut size={14} /> Sair
-            </button>
+            <button onClick={() => { signOut(); setCrmClientSession(null); localStorage.removeItem('crmClientSession'); }}
+              className="text-sm text-red-400 hover:text-red-300 flex items-center gap-1"><LogOut size={14} /> Sair</button>
           </div>
         </div>
-        <ClientCRMView tenantId={crmClientSession.tenant.id} userName={crmClientSession.user.nome} />
+        <div className="flex-1 overflow-auto">
+          {clientTab === 'crm' && <ClientCRMView tenantId={crmClientSession.tenant.id} userName={crmClientSession.user.nome} />}
+          {clientTab === 'materiais' && <MateriaisClienteView tenantId={crmClientSession.tenant.id} />}
+          {clientTab === 'documentos' && <DocumentosClienteView tenantId={crmClientSession.tenant.id} />}
+          {clientTab === 'educacao' && <EducacaoView userEmail={crmClientSession.user.email} isAdmin={false} />}
+        </div>
+
+        {/* Botão flutuante do Consultor IA */}
+        <AnimatePresence>
+          {!showConsultorChat && (
+            <motion.div
+              initial={{ opacity: 0, scale: 0.8 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.8 }}
+              transition={{ duration: 0.2 }}
+              className="fixed bottom-6 right-6 z-50 flex items-end gap-3"
+            >
+              {/* Balão de fala */}
+              <motion.div
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: 0.8, duration: 0.4 }}
+                className="bg-white rounded-2xl rounded-br-sm px-4 py-3 shadow-xl max-w-[200px] cursor-pointer"
+                onClick={() => setShowConsultorChat(true)}
+              >
+                <p className="text-gray-800 text-sm font-medium leading-snug">Com problemas comerciais? Posso te ajudar! 💬</p>
+              </motion.div>
+              {/* Avatar pulsante */}
+              <motion.button
+                whileHover={{ scale: 1.08 }}
+                whileTap={{ scale: 0.95 }}
+                onClick={() => setShowConsultorChat(true)}
+                className="relative w-16 h-16 rounded-full shadow-2xl shadow-brand-primary/40 overflow-hidden flex-shrink-0"
+              >
+                <span className="absolute inset-0 rounded-full border-2 border-brand-primary animate-ping opacity-30" />
+                <img src="/consultor-avatar.jpg" alt="Taleco" className="w-full h-full object-cover relative z-10" />
+                <span className="absolute bottom-0.5 right-0.5 w-3.5 h-3.5 bg-brand-primary rounded-full border-2 border-[#0a0f1e] z-20" />
+              </motion.button>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Painel lateral do Consultor IA */}
+        <AnimatePresence>
+          {showConsultorChat && (
+            <>
+              {/* Backdrop semi-transparente */}
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="fixed inset-0 bg-black/40 z-40"
+                onClick={() => setShowConsultorChat(false)}
+              />
+              {/* Painel */}
+              <motion.div
+                initial={{ x: '100%' }}
+                animate={{ x: 0 }}
+                exit={{ x: '100%' }}
+                transition={{ type: 'spring', damping: 28, stiffness: 300 }}
+                className="fixed top-0 right-0 h-full w-full sm:w-[440px] bg-[#0a0f1e] border-l border-white/10 shadow-2xl shadow-black/60 z-50 flex flex-col overflow-hidden"
+              >
+                <ConsultorIAView
+                  tenantId={crmClientSession.tenant.id}
+                  userName={crmClientSession.user.nome}
+                  onClose={() => setShowConsultorChat(false)}
+                />
+              </motion.div>
+            </>
+          )}
+        </AnimatePresence>
       </div>
     );
   }
@@ -4446,14 +4525,60 @@ export default function App() {
         </div>
 
         <nav className="flex-1 space-y-2">
-          {canSee('Dashboard') && <SidebarItem icon={LayoutDashboard} label="Dashboard" active={activeTab === 'Dashboard'} onClick={() => setActiveTab('Dashboard')} />}
+          {canSee('Dashboard') && !canSee('Aquisição') && <SidebarItem icon={LayoutDashboard} label="Dashboard" active={activeTab === 'Dashboard'} onClick={() => setActiveTab('Dashboard')} />}
           {canSee('Clientes') && <SidebarItem icon={Users} label="Clientes" active={activeTab === 'Clientes'} onClick={() => setActiveTab('Clientes')} />}
-          {canSee('Kanban de Operação') && <SidebarItem icon={KanbanIcon} label="Kanban de Operação" active={activeTab === 'Kanban de Operação'} onClick={() => setActiveTab('Kanban de Operação')} />}
           {canSee('Equipe') && <SidebarItem icon={Users} label="Equipe" active={activeTab === 'Equipe'} onClick={() => setActiveTab('Equipe')} />}
-          {canSee('Demandas') && <SidebarItem icon={ClipboardList} label="Demandas" active={activeTab === 'Demandas'} onClick={() => setActiveTab('Demandas')} badge={demands.filter(d => d.status === 'pendente').length || undefined} />}
-          {canSee('CRM Clientes') && <SidebarItem icon={Building2} label="CRM Clientes" active={activeTab === 'CRM Clientes'} onClick={() => { setActiveTab('CRM Clientes'); setSelectedCrmTenantId(null); }} />}
           {canSee('Relatórios') && <SidebarItem icon={BarChart3} label="Relatórios" active={activeTab === 'Relatórios'} onClick={() => setActiveTab('Relatórios')} />}
-          {canSee('Playbooks') && <SidebarItem icon={BookOpen} label="Playbooks" active={activeTab === 'Playbooks'} onClick={() => setActiveTab('Playbooks')} />}
+          {canSee('Playbooks') && !canSee('Aquisição') && !canSee('Entrega') && <SidebarItem icon={BookOpen} label="Playbooks" active={activeTab === 'Playbooks'} onClick={() => setActiveTab('Playbooks')} />}
+
+          {/* Entrega */}
+          <div className="space-y-1">
+            {canSee('Entrega') && (
+              <SidebarItem
+                icon={Package}
+                label="Entrega"
+                active={activeTab === 'Entrega'}
+                onClick={() => { setActiveTab('Entrega'); setEntregaSubTab('Kanban'); }}
+              />
+            )}
+            {activeTab === 'Entrega' && (
+              <motion.div
+                initial={{ opacity: 0, y: -10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="ml-9 space-y-1"
+              >
+                <button
+                  onClick={() => setEntregaSubTab('Kanban')}
+                  className={`w-full text-left px-4 py-2 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all ${entregaSubTab === 'Kanban' ? 'text-brand-primary bg-white/5' : 'text-gray-500 hover:text-white'}`}
+                >
+                  Kanban
+                </button>
+                <button
+                  onClick={() => setEntregaSubTab('Demandas')}
+                  className={`w-full text-left px-4 py-2 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all ${entregaSubTab === 'Demandas' ? 'text-brand-primary bg-white/5' : 'text-gray-500 hover:text-white'}`}
+                >
+                  Demandas
+                  {demands.filter(d => d.status === 'pendente').length > 0 && (
+                    <span className="ml-2 bg-brand-primary text-black text-[9px] font-bold rounded-full px-1.5 py-0.5">
+                      {demands.filter(d => d.status === 'pendente').length}
+                    </span>
+                  )}
+                </button>
+                <button
+                  onClick={() => { setEntregaSubTab('AreaCliente'); setSelectedCrmTenantId(null); }}
+                  className={`w-full text-left px-4 py-2 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all ${entregaSubTab === 'AreaCliente' ? 'text-brand-primary bg-white/5' : 'text-gray-500 hover:text-white'}`}
+                >
+                  Área do Cliente
+                </button>
+                <button
+                  onClick={() => setEntregaSubTab('Educacao')}
+                  className={`w-full text-left px-4 py-2 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all ${entregaSubTab === 'Educacao' ? 'text-brand-primary bg-white/5' : 'text-gray-500 hover:text-white'}`}
+                >
+                  Educação
+                </button>
+              </motion.div>
+            )}
+          </div>
           
           <div className="space-y-1">
             {canSee('Aquisição') && <SidebarItem icon={Briefcase} label="Aquisição" active={activeTab === 'Aquisição'} onClick={() => { setActiveTab('Aquisição'); setAquisicaoSubTab('CRM'); }} />}
@@ -4464,7 +4589,15 @@ export default function App() {
                 className="ml-9 space-y-1"
               >
                 <div className="space-y-1">
-                  <button 
+                  {canSee('Dashboard') && (
+                    <button
+                      onClick={() => setAquisicaoSubTab('Dashboard')}
+                      className={`w-full text-left px-4 py-2 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all ${aquisicaoSubTab === 'Dashboard' ? 'text-brand-primary bg-white/5' : 'text-gray-500 hover:text-white'}`}
+                    >
+                      Dashboard
+                    </button>
+                  )}
+                  <button
                     onClick={() => setAquisicaoSubTab('CRM')}
                     className={`w-full text-left px-4 py-2 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all ${aquisicaoSubTab === 'CRM' ? 'text-brand-primary bg-white/5' : 'text-gray-500 hover:text-white'}`}
                   >
@@ -4476,7 +4609,14 @@ export default function App() {
                   >
                     Relatório
                   </button>
-
+                  {canSee('Playbooks') && (
+                    <button
+                      onClick={() => setAquisicaoSubTab('Playbooks')}
+                      className={`w-full text-left px-4 py-2 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all ${aquisicaoSubTab === 'Playbooks' ? 'text-brand-primary bg-white/5' : 'text-gray-500 hover:text-white'}`}
+                    >
+                      Playbooks
+                    </button>
+                  )}
                 </div>
               </motion.div>
             )}
@@ -4545,7 +4685,17 @@ export default function App() {
             {activeTab === 'Aquisição' && (
               <>
                 <ChevronRight size={14} className="text-gray-700" />
-                <span className="text-xs font-bold text-white">{aquisicaoSubTab === 'CRM' ? 'CRM' : 'Relatório'}</span>
+                <span className="text-xs font-bold text-white">
+                  {aquisicaoSubTab === 'CRM' ? 'CRM' : aquisicaoSubTab === 'Relatorio' ? 'Relatório' : aquisicaoSubTab === 'Dashboard' ? 'Dashboard' : 'Playbooks'}
+                </span>
+              </>
+            )}
+            {activeTab === 'Entrega' && (
+              <>
+                <ChevronRight size={14} className="text-gray-700" />
+                <span className="text-xs font-bold text-white">
+                  {entregaSubTab === 'Kanban' ? 'Kanban de Operação' : entregaSubTab === 'Demandas' ? 'Demandas' : entregaSubTab === 'AreaCliente' ? 'Área do Cliente' : 'Educação'}
+                </span>
               </>
             )}
           </div>
@@ -4596,9 +4746,9 @@ export default function App() {
             >
               {activeTab === 'Dashboard' && renderDashboard()}
               {activeTab === 'Clientes' && renderClientes()}
-              {activeTab === 'Kanban de Operação' && renderKanban()}
+              {activeTab === 'Kanban de Operação' && !canSee('Entrega') && renderKanban()}
               {activeTab === 'Equipe' && renderEquipe()}
-              {activeTab === 'Demandas' && renderDemandas()}
+              {activeTab === 'Demandas' && !canSee('Entrega') && renderDemandas()}
               {activeTab === 'Configurações' && (
                 <SettingsView 
                   config={agencyConfig} 
@@ -4617,8 +4767,20 @@ export default function App() {
                 />
               )}
               {activeTab === 'Relatórios' && <ReportsView clients={clients} config={agencyConfig} />}
-              {activeTab === 'Playbooks' && <PlaybooksView />}
-              {activeTab === 'CRM Clientes' && <ClientCRMView clients={clients} selectedTenantId={selectedCrmTenantId} onBack={() => setSelectedCrmTenantId(null)} />}
+              {activeTab === 'Educação' && !canSee('Entrega') && <EducacaoView userEmail={userSession.email} isAdmin={userSession.role.toLowerCase() === 'admin'} />}
+              {activeTab === 'Playbooks' && !canSee('Aquisição') && !canSee('Entrega') && <PlaybooksView />}
+              {activeTab === 'Área do Cliente' && !canSee('Entrega') && <ClientCRMView clients={clients} selectedTenantId={selectedCrmTenantId} onBack={() => setSelectedCrmTenantId(null)} />}
+              {activeTab === 'Entrega' && entregaSubTab === 'Kanban' && renderKanban()}
+              {activeTab === 'Entrega' && entregaSubTab === 'Demandas' && renderDemandas()}
+              {activeTab === 'Entrega' && entregaSubTab === 'AreaCliente' && (
+                <ClientCRMView clients={clients} selectedTenantId={selectedCrmTenantId} onBack={() => setSelectedCrmTenantId(null)} />
+              )}
+              {activeTab === 'Entrega' && entregaSubTab === 'Educacao' && (
+                <EducacaoView userEmail={userSession.email} isAdmin={userSession.role.toLowerCase() === 'admin'} />
+              )}
+              {activeTab === 'Aquisição' && aquisicaoSubTab === 'Dashboard' && (
+                <DashboardView userSession={userSession} />
+              )}
               {activeTab === 'Aquisição' && aquisicaoSubTab === 'CRM' && (
                 <div className="glass-card p-6">
                   <CRMView userSession={userSession} teamMembers={teamMembers} openLeadByName={openCRMLeadName} onLeadOpened={() => setOpenCRMLeadName('')} />
@@ -4630,6 +4792,9 @@ export default function App() {
                   userSession={userSession}
                   onOpenInCRM={(name) => { setOpenCRMLeadName(name); setAquisicaoSubTab('CRM'); }}
                 />
+              )}
+              {activeTab === 'Aquisição' && aquisicaoSubTab === 'Playbooks' && (
+                <PlaybooksView />
               )}
             </motion.div>
           </AnimatePresence>
@@ -4696,7 +4861,7 @@ export default function App() {
             onSaveTag={handleSaveTag}
             onDeleteTag={handleDeleteTag}
             userSession={userSession!}
-            onOpenClientCrm={(tenantId) => { setSelectedCrmTenantId(tenantId); setActiveTab('CRM Clientes'); }}
+            onOpenClientCrm={(tenantId) => { setSelectedCrmTenantId(tenantId); setActiveTab('Área do Cliente'); }}
             onCreateDemand={async (demand) => {
               try {
                 const saved = await createDemand(demand);
