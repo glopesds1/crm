@@ -995,10 +995,17 @@ function PageSemanal({ data, userSession }: { data: any; userSession: any }) {
 function PageReunioes({ data }: { data: any }) {
   const dia: any[] = Array.isArray(data?.dia) ? data.dia : data?.dia ? [data.dia] : [];
 
-  const statusColor: Record<string, string> = {
-    'Reunião Marcada': 'text-yellow-400',
-    'No-show': 'text-red-400',
-    'Venda': 'text-brand-primary',
+  const statusStyle: Record<string, React.CSSProperties> = {
+    'Pendente': { color: '#d4af37' },
+    'Reunião Marcada': { color: '#d4af37' },
+    'Compareceu': { color: '#4ade80' },
+    'Reunião Realizada': { color: '#4ade80' },
+    'Venda': { color: '#22c55e', fontWeight: 600 },
+    'No-show': { color: '#ef4444' },
+    'Não compareceu': { color: '#ef4444' },
+    'Perdido': { color: '#dc2626', fontWeight: 600 },
+    'Reagendou': { color: '#60a5fa' },
+    'Reagendado': { color: '#60a5fa' },
   };
 
   const STATUS_LABEL: Record<string, string> = {
@@ -1009,6 +1016,9 @@ function PageReunioes({ data }: { data: any }) {
     'Venda': 'Venda',
     'Perdido': 'Perdido',
     'Reagendado': 'Reagendado',
+    'Compareceu': 'Compareceu',
+    'Não compareceu': 'Não compareceu',
+    'Reagendou': 'Reagendou',
   };
 
   return (
@@ -1026,7 +1036,7 @@ function PageReunioes({ data }: { data: any }) {
                 r.lead,
                 r.telefone ?? '—',
                 r.horario ?? '—',
-                <span className={statusColor[label] ?? 'text-gray-400'}>{label}</span>,
+                <span style={statusStyle[label] ?? statusStyle[r.status] ?? { color: '#aaa' }}>{label}</span>,
                 r.tp ?? '—',
                 r.vendedor ?? '—',
                 r.sdr ?? '—',
