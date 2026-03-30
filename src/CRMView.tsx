@@ -646,31 +646,6 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
             }
           } catch (err) { console.error('Failed to create client:', err); }
 
-          // Notify Juliana via n8n (fire-and-forget)
-          try {
-            fetch('https://webhook.m2black.com/webhook/venda-fechada', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                nome: leadName,
-                telefone: leadObj?.telefone,
-                programa: vendaPrograma,
-                valor_contrato: valorContrato ? parseFloat(valorContrato) : null,
-                valor_cc: valorCc ? parseFloat(valorCc) : null,
-                valor_mrr: prazoMeses && valorContrato ? parseFloat(valorContrato) / parseInt(prazoMeses) : null,
-                responsavel: responsavelAtividade || leadObj?.responsavel,
-                razao_social: razaoSocial,
-                cnpj: cpfCnpj,
-                responsavel_empresa: nomeResponsavel,
-                email_contato: emailContato,
-                telefone_contato: telefoneContato,
-                endereco: endereco,
-                forma_pagamento: formaPagamento,
-                tempo_contrato: tempoContrato,
-                data_onboarding: dataOnboarding,
-              }),
-            }).catch(e => console.warn('Webhook venda-fechada (CORS em dev):', e.message));
-          } catch (e) { console.warn('Webhook venda-fechada:', e); }
 
         } else if (resultado === 'Perdido') {
           await supabase.from('crm_leads').update({
@@ -1872,25 +1847,6 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
         await supabase.from('clients').insert(clienteData);
       } catch (err) { console.error('Failed to create client:', err); }
 
-      // Notify Juliana via n8n (fire-and-forget)
-      try {
-        fetch('https://webhook.m2black.com/webhook/venda-fechada', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            nome: lead.nome,
-            telefone: lead.telefone,
-            programa: lead.programa_apresentado,
-            valor_contrato: rrValorContrato ? parseFloat(rrValorContrato) : null,
-            valor_cc: rrValorCc ? parseFloat(rrValorCc) : null,
-            valor_mrr: computedMrr,
-            responsavel: lead.responsavel,
-            razao_social: rrRazaoSocial,
-            cnpj: rrCpfCnpj,
-            responsavel_empresa: rrNomeResponsavel,
-          }),
-        }).catch(e => console.warn('Webhook venda-fechada (CORS em dev):', e.message));
-      } catch (e) { console.warn('Webhook venda-fechada:', e); }
     }
 
     // 3. comercial_tasks
