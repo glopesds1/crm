@@ -771,16 +771,6 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
         const currentTP = resolvedTP;
 
         if (statusReuniao === 'Não compareceu') {
-          // Bloco 6: UPDATE reunião → No-show
-          syncPostgres(leadObj?.lead_externo_id, {
-            reuniao_action: 'resultado',
-            crm_lead_id: leadId,
-            reuniao_tp: currentTP,
-            reuniao_status: 'No-show',
-            reuniao_resultado: 'No-show',
-            Data_Reuniao_Realizada: hoje,
-            closer,
-          });
           // Cancelar touchpoints pendentes
           fetch(`${WEBHOOK_BASE}/webhook/cancelar-touchpoints`, {
             method: 'POST',
@@ -789,15 +779,19 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
           }).catch(() => {});
 
           if (reagendarNoShow && dataReagendamento) {
-            // INSERT nova reunião MESMO TP
+            // Bloco 6 + reagendamento: UPDATE No-show + INSERT nova Pendente (atômico)
             const horaReag = new Date(dataReagendamento).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: SP_TZ });
             syncPostgres(leadObj?.lead_externo_id, {
-              reuniao_action: 'agendar',
+              reuniao_action: 'resultado_e_reagendar',
               crm_lead_id: leadId,
               reuniao_tp: currentTP,
-              Data_Reuniao_Marcada: new Date(dataReagendamento).toISOString().split('T')[0],
-              hora_marcada: horaReag,
+              reuniao_status: 'No-show',
+              reuniao_resultado: 'No-show',
+              Data_Reuniao_Realizada: hoje,
               closer,
+              nova_data_marcada: new Date(dataReagendamento).toISOString().split('T')[0],
+              nova_hora_marcada: horaReag,
+              novo_tp: currentTP,
             });
             // Calendar + WhatsApp
             fetch(`${WEBHOOK_BASE}/webhook/agendar-reuniao`, {
@@ -831,7 +825,17 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
               onLeadUpdated?.({ etapa: 'rm_marcada' });
             } catch { /* silent */ }
           } else {
-            // Sem reagendamento — mover para fup_ativa
+            // Sem reagendamento: apenas No-show
+            syncPostgres(leadObj?.lead_externo_id, {
+              reuniao_action: 'resultado',
+              crm_lead_id: leadId,
+              reuniao_tp: currentTP,
+              reuniao_status: 'No-show',
+              reuniao_resultado: 'No-show',
+              Data_Reuniao_Realizada: hoje,
+              closer,
+            });
+            // Mover para fup_ativa
             try {
               await supabase.from('crm_leads').update({ etapa: 'fup_ativa', etapa_desde: now, updated_at: now }).eq('id', leadId);
               onLeadUpdated?.({ etapa: 'fup_ativa' });
@@ -868,25 +872,20 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
               });
             }
           } else if (resultado === 'Reagendou') {
-            // Bloco 7: UPDATE reunião → Reagendou + INSERT mesma TP
-            syncPostgres(leadObj?.lead_externo_id, {
-              reuniao_action: 'resultado',
-              crm_lead_id: leadId,
-              reuniao_tp: currentTP,
-              reuniao_status: 'Reagendou',
-              reuniao_resultado: 'Reagendou',
-              Data_Reuniao_Realizada: hoje,
-              closer,
-            });
+            // Bloco 7: UPDATE Reagendou + INSERT mesma TP (atômico)
             if (proximaReuniao) {
               const horaReag = new Date(proximaReuniao).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: SP_TZ });
               syncPostgres(leadObj?.lead_externo_id, {
-                reuniao_action: 'agendar',
+                reuniao_action: 'resultado_e_reagendar',
                 crm_lead_id: leadId,
                 reuniao_tp: currentTP,
-                Data_Reuniao_Marcada: new Date(proximaReuniao).toISOString().split('T')[0],
-                hora_marcada: horaReag,
+                reuniao_status: 'Reagendou',
+                reuniao_resultado: 'Reagendou',
+                Data_Reuniao_Realizada: hoje,
                 closer,
+                nova_data_marcada: new Date(proximaReuniao).toISOString().split('T')[0],
+                nova_hora_marcada: horaReag,
+                novo_tp: currentTP,
               });
             }
           } else if (resultado === 'Venda') {
@@ -2078,25 +2077,20 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
             });
           }
         } else if (rrResultado === 'Reagendou') {
-          // Bloco 7: UPDATE reunião → Reagendou + INSERT mesma TP
-          syncPostgres(lead.lead_externo_id, {
-            reuniao_action: 'resultado',
-            crm_lead_id: lead.id,
-            reuniao_tp: currentTP,
-            reuniao_status: 'Reagendou',
-            reuniao_resultado: 'Reagendou',
-            Data_Reuniao_Realizada: hoje,
-            closer,
-          });
+          // Bloco 7: UPDATE Reagendou + INSERT mesma TP (atômico)
           if (rrProximaReuniao) {
             const horaReag = new Date(rrProximaReuniao).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: SP_TZ });
             syncPostgres(lead.lead_externo_id, {
-              reuniao_action: 'agendar',
+              reuniao_action: 'resultado_e_reagendar',
               crm_lead_id: lead.id,
               reuniao_tp: currentTP,
-              Data_Reuniao_Marcada: new Date(rrProximaReuniao).toISOString().split('T')[0],
-              hora_marcada: horaReag,
+              reuniao_status: 'Reagendou',
+              reuniao_resultado: 'Reagendou',
+              Data_Reuniao_Realizada: hoje,
               closer,
+              nova_data_marcada: new Date(rrProximaReuniao).toISOString().split('T')[0],
+              nova_hora_marcada: horaReag,
+              novo_tp: currentTP,
             });
           }
         } else if (rrResultado === 'Venda') {
