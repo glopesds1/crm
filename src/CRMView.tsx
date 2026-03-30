@@ -1653,7 +1653,8 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
     }
 
     // Sync mudança de etapa → Railway via n8n (fire-and-forget)
-    if (lead.lead_externo_id && etapa !== lead.etapa) {
+    // Pular rm_marcada: o syncPostgres correto (com Data_Reuniao_Marcada) já é disparado pelo formulário de atividade
+    if (lead.lead_externo_id && etapa !== lead.etapa && etapa !== 'rm_marcada') {
       syncPostgres(lead.lead_externo_id, { etapa, closer: responsavel || null });
     }
 
