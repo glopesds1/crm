@@ -243,9 +243,9 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
   const [erroMotivo, setErroMotivo] = useState(false);
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
-  // Reunião extra fields
-  const [valorContrato, setValorContrato] = useState('');
-  const [valorCc, setValorCc] = useState('');
+  // Reunião extra fields — pre-fill with existing lead data
+  const [valorContrato, setValorContrato] = useState(leadObj?.valor_contrato ? String(leadObj.valor_contrato) : '');
+  const [valorCc, setValorCc] = useState(leadObj?.valor_cc ? String(leadObj.valor_cc) : '');
   const [prazoMeses, setPrazoMeses] = useState('');
   const [resumo, setResumo] = useState('');
   const [razaoSocial, setRazaoSocial] = useState('');
@@ -614,6 +614,13 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
 
       // Auto-create task for R2+ / Reagendou
       if ((resultado === 'Marcou R2+' || resultado === 'Reagendou') && proximaReuniao) {
+        // Compute TP for webhook and syncPostgres
+        const currentTP_naf = (leadObj as any)?.tp || (leadObj as any)?.TP || '';
+        const tpMap_naf: Record<string, string> = {'': 'R2', 'R1': 'R2', 'R2': 'R3', 'R3': 'R4+'};
+        const nextTP_naf = tpMap_naf[currentTP_naf] || 'R4+';
+        const reagendaTP_naf = currentTP_naf || 'R1';
+        const webhookTipoReuniao_naf = resultado === 'Reagendou' ? reagendaTP_naf : nextTP_naf;
+
         try {
           const { data: r2Task } = await supabase.from('crm_tarefas').insert({
             lead_id: leadId,
@@ -627,6 +634,40 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
         } catch (err) {
           console.error('Failed to create R2+ task:', err);
         }
+
+        // Send agendar-reuniao webhook for R2+ / Reagendou (Google Calendar + WhatsApp)
+        try {
+          const rrResp_naf = await fetch(`${WEBHOOK_BASE}/webhook/agendar-reuniao`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              lead_nome: leadName,
+              lead_telefone: leadObj?.telefone ?? '',
+              lead_externo_id: leadObj?.lead_externo_id ?? leadId,
+              closer: responsavelAtividade || leadObj?.responsavel || '',
+              data_hora: new Date(proximaReuniao).toISOString(),
+              tipo_reuniao: webhookTipoReuniao_naf,
+              duracao_min: 60,
+              reagendamento: resultado === 'Reagendou',
+            }),
+          }).catch(e => { console.warn('[agendar-reuniao R2+ NAF]', e.message); return null; });
+          // Fire-and-forget: agendar touchpoints
+          try {
+            let meetLink_naf = '';
+            try { if (rrResp_naf?.ok) { const rj = await rrResp_naf.json(); meetLink_naf = rj.meet_link ?? ''; } } catch { /* no json */ }
+            fetch(`${WEBHOOK_BASE}/webhook/agendar-touchpoints`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                lead_id: leadObj?.lead_externo_id ?? leadId,
+                lead_nome: leadName,
+                lead_telefone: leadObj?.telefone ?? '',
+                data_hora: new Date(proximaReuniao).toISOString(),
+                meet_link: meetLink_naf,
+              }),
+            }).catch(() => {});
+          } catch { /* silent */ }
+        } catch (err) { console.error('Failed to send agendar-reuniao webhook (NAF):', err); }
       }
 
       // Sync Postgres → Railway via n8n (fire-and-forget)
@@ -647,9 +688,32 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
             const currentTP = (leadObj as any)?.tp || (leadObj as any)?.TP || '';
             const tpMap: Record<string, string> = {'': 'R2', 'R1': 'R2', 'R2': 'R3', 'R3': 'R4+'};
             const nextTP = tpMap[currentTP] || 'R4+';
-            syncPostgres(leadObj?.lead_externo_id, { Status_TP: 'Pendente', TP: nextTP, reuniao_tp: leadTP, Data_Reuniao_Realizada: hoje, Data_TP: hoje, closer });
+            // Sync current meeting (realizada)
+            syncPostgres(leadObj?.lead_externo_id, { Status_TP: 'Pendente', TP: nextTP, reuniao_tp: currentTP || 'R1', Data_Reuniao_Realizada: hoje, Data_TP: proximaReuniao ? new Date(proximaReuniao).toISOString().split('T')[0] : hoje, closer });
+            // Sync next meeting scheduling (Data_Reuniao_Marcada + hora_marcada)
+            if (proximaReuniao) {
+              syncPostgres(leadObj?.lead_externo_id, {
+                reuniao_tp: nextTP,
+                Data_Reuniao_Marcada: new Date(proximaReuniao).toISOString().split('T')[0],
+                hora_marcada: new Date(proximaReuniao).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: SP_TZ }),
+                TP: nextTP,
+                closer,
+              });
+            }
           } else if (resultado === 'Reagendou') {
-            syncPostgres(leadObj?.lead_externo_id, { Status_TP: 'Reagendou', reuniao_tp: leadTP, Data_Reuniao_Realizada: hoje, Data_TP: hoje, closer });
+            const reagendaTP = leadTP;
+            // Sync current meeting (reagendamento)
+            syncPostgres(leadObj?.lead_externo_id, { Status_TP: 'Reagendou', reuniao_tp: reagendaTP, Data_Reuniao_Realizada: hoje, Data_TP: proximaReuniao ? new Date(proximaReuniao).toISOString().split('T')[0] : hoje, closer });
+            // Sync rescheduled meeting (Data_Reuniao_Marcada + hora_marcada)
+            if (proximaReuniao) {
+              syncPostgres(leadObj?.lead_externo_id, {
+                reuniao_tp: reagendaTP,
+                Data_Reuniao_Marcada: new Date(proximaReuniao).toISOString().split('T')[0],
+                hora_marcada: new Date(proximaReuniao).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: SP_TZ }),
+                Status_TP: 'Reagendou',
+                closer,
+              });
+            }
           } else if (resultado === 'Venda') {
             syncPostgres(leadObj?.lead_externo_id, {
               status: 'ganho', etapa: 'fechado', reuniao_tp: leadTP,
@@ -1265,8 +1329,8 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
   const [reuniaoRealizada, setReuniaoRealizada] = useState(false);
   const [rrStatusReuniao, setRrStatusReuniao] = useState<'Compareceu' | 'Não compareceu' | null>(null);
   const [rrResultado, setRrResultado] = useState('');
-  const [rrValorContrato, setRrValorContrato] = useState('');
-  const [rrValorCc, setRrValorCc] = useState('');
+  const [rrValorContrato, setRrValorContrato] = useState(lead.valor_contrato ? String(lead.valor_contrato) : '');
+  const [rrValorCc, setRrValorCc] = useState(lead.valor_cc ? String(lead.valor_cc) : '');
   const [rrPrazoMeses, setRrPrazoMeses] = useState('');
   const [rrResumo, setRrResumo] = useState('');
   const [rrMotivoPerda, setRrMotivoPerda] = useState('');
@@ -1590,6 +1654,13 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
 
     // 4. Auto-create task for R2+ / Reagendou
     if ((rrResultado === 'Marcou R2+' || rrResultado === 'Reagendou') && rrProximaReuniao) {
+      // Compute TP for webhook and syncPostgres
+      const currentTP_rr = (lead as any).tp || (lead as any).TP || '';
+      const tpMap_rr: Record<string, string> = {'': 'R2', 'R1': 'R2', 'R2': 'R3', 'R3': 'R4+'};
+      const nextTP_rr = tpMap_rr[currentTP_rr] || 'R4+';
+      const reagendaTP_rr = currentTP_rr || 'R1';
+      const webhookTipoReuniao = rrResultado === 'Reagendou' ? reagendaTP_rr : nextTP_rr;
+
       try {
         const { data: rrTask } = await supabase.from('crm_tarefas').insert({
           lead_id: lead.id, titulo: `R2+ - ${lead.nome}`,
@@ -1610,7 +1681,7 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
             lead_telefone: lead.telefone ?? '',
             lead_externo_id: lead.lead_externo_id ?? lead.id,
             closer: responsavel || userSession?.name || '',
-            tipo_reuniao: 'R2',
+            tipo_reuniao: webhookTipoReuniao,
             data_hora: new Date(rrProximaReuniao).toISOString(),
             duracao_min: 60,
             reagendamento: rrResultado === 'Reagendou',
@@ -1660,9 +1731,32 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
           const currentTP = (lead as any).tp || (lead as any).TP || '';
           const tpMap: Record<string, string> = {'': 'R2', 'R1': 'R2', 'R2': 'R3', 'R3': 'R4+'};
           const nextTP = tpMap[currentTP] || 'R4+';
-          syncPostgres(lead.lead_externo_id, { Status_TP: 'Pendente', TP: nextTP, reuniao_tp: leadTP, Data_Reuniao_Realizada: hoje, Data_TP: hoje, closer });
+          // Sync current meeting (realizada)
+          syncPostgres(lead.lead_externo_id, { Status_TP: 'Pendente', TP: nextTP, reuniao_tp: currentTP || 'R1', Data_Reuniao_Realizada: hoje, Data_TP: rrProximaReuniao ? new Date(rrProximaReuniao).toISOString().split('T')[0] : hoje, closer });
+          // Sync next meeting scheduling (Data_Reuniao_Marcada + hora_marcada)
+          if (rrProximaReuniao) {
+            syncPostgres(lead.lead_externo_id, {
+              reuniao_tp: nextTP,
+              Data_Reuniao_Marcada: new Date(rrProximaReuniao).toISOString().split('T')[0],
+              hora_marcada: new Date(rrProximaReuniao).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: SP_TZ }),
+              TP: nextTP,
+              closer,
+            });
+          }
         } else if (rrResultado === 'Reagendou') {
-          syncPostgres(lead.lead_externo_id, { Status_TP: 'Reagendou', reuniao_tp: leadTP, Data_Reuniao_Realizada: hoje, Data_TP: hoje, closer });
+          const reagendaTP = leadTP;
+          // Sync current meeting (reagendamento)
+          syncPostgres(lead.lead_externo_id, { Status_TP: 'Reagendou', reuniao_tp: reagendaTP, Data_Reuniao_Realizada: hoje, Data_TP: rrProximaReuniao ? new Date(rrProximaReuniao).toISOString().split('T')[0] : hoje, closer });
+          // Sync rescheduled meeting (Data_Reuniao_Marcada + hora_marcada)
+          if (rrProximaReuniao) {
+            syncPostgres(lead.lead_externo_id, {
+              reuniao_tp: reagendaTP,
+              Data_Reuniao_Marcada: new Date(rrProximaReuniao).toISOString().split('T')[0],
+              hora_marcada: new Date(rrProximaReuniao).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: SP_TZ }),
+              Status_TP: 'Reagendou',
+              closer,
+            });
+          }
         } else if (rrResultado === 'Venda') {
           syncPostgres(lead.lead_externo_id, {
             status: 'ganho', etapa: 'fechado', reuniao_tp: leadTP,
