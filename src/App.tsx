@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { 
   LayoutDashboard, BookOpen, 
   Users, 
@@ -3586,6 +3586,68 @@ export default function App() {
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [kanbanFilters, setKanbanFilters] = useState({ plans: [] as string[], responsible: 'all', status: 'Ativo' });
 
+  // --- Global Task Alarm System ---
+  const [tarefaAlarme, setTarefaAlarme] = useState<any>(null);
+  const notificadosRef = useRef<Set<string>>(new Set());
+
+  const playAlarm = () => {
+    try {
+      const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+      for (let i = 0; i < 2; i++) {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.frequency.value = 880;
+        gain.gain.setValueAtTime(0.3, ctx.currentTime + i * 0.3);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + i * 0.3 + 0.2);
+        osc.start(ctx.currentTime + i * 0.3);
+        osc.stop(ctx.currentTime + i * 0.3 + 0.2);
+      }
+    } catch (e) { console.warn('[alarm sound]', e); }
+  };
+
+  useEffect(() => {
+    if (!userSession) return;
+
+    const checkTarefas = async () => {
+      try {
+        const agora = new Date();
+        const daquiUmMinuto = new Date(agora.getTime() + 60000);
+
+        const { data } = await supabase
+          .from('crm_tarefas')
+          .select('id, titulo, lead_id, data_agendada, responsavel')
+          .eq('concluida', false)
+          .lte('data_agendada', daquiUmMinuto.toISOString())
+          .order('data_agendada', { ascending: false })
+          .limit(10);
+
+        if (data && data.length > 0) {
+          for (const tarefa of data) {
+            if (notificadosRef.current.has(tarefa.id)) continue;
+            notificadosRef.current.add(tarefa.id);
+            setTarefaAlarme(tarefa);
+            playAlarm();
+            break;
+          }
+        }
+      } catch (e) { console.warn('[check tarefas]', e); }
+    };
+
+    checkTarefas();
+    const interval = setInterval(checkTarefas, 30000);
+    return () => clearInterval(interval);
+  }, [userSession]);
+
+  // Inject pulse animation for alarm
+  useEffect(() => {
+    const style = document.createElement('style');
+    style.textContent = `@keyframes alarmPulse { 0%, 100% { border-color: #d4af37; } 50% { border-color: #f0d060; } }`;
+    document.head.appendChild(style);
+    return () => { document.head.removeChild(style); };
+  }, []);
+
   // --- Persistence ---
   useEffect(() => {
     const loadData = async () => {
@@ -4574,8 +4636,46 @@ export default function App() {
         </div>
       </main>
 
+      {/* Global Task Alarm Popup */}
+      {tarefaAlarme && (
+        <div style={{ position: 'fixed', top: 16, right: 16, zIndex: 9999, maxWidth: 360, width: '100%' }}>
+          <div style={{
+            background: '#1a1a2e', border: '2px solid #d4af37', borderRadius: 12,
+            padding: '16px 20px', animation: 'alarmPulse 2s infinite',
+            boxShadow: '0 4px 24px rgba(0,0,0,0.4)',
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+              <span style={{ fontSize: 14, fontWeight: 600, color: '#d4af37' }}>Tarefa agendada</span>
+              <button onClick={() => setTarefaAlarme(null)}
+                style={{ background: 'none', border: 'none', color: '#888', cursor: 'pointer', fontSize: 18 }}>×</button>
+            </div>
+            <p style={{ fontSize: 15, fontWeight: 500, color: '#fff', margin: '0 0 4px' }}>{tarefaAlarme.titulo}</p>
+            <p style={{ fontSize: 12, color: '#aaa', margin: '0 0 12px' }}>
+              {new Date(tarefaAlarme.data_agendada).toLocaleString('pt-BR', {
+                day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit'
+              })}
+            </p>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button onClick={async () => {
+                await supabase.from('crm_tarefas').update({ concluida: true }).eq('id', tarefaAlarme.id);
+                setTarefaAlarme(null);
+              }} style={{
+                flex: 1, padding: '8px 12px', borderRadius: 8,
+                background: '#d4af37', color: '#000', border: 'none',
+                fontWeight: 600, cursor: 'pointer', fontSize: 13,
+              }}>Concluir</button>
+              <button onClick={() => setTarefaAlarme(null)} style={{
+                flex: 1, padding: '8px 12px', borderRadius: 8,
+                background: 'transparent', color: '#aaa',
+                border: '1px solid #333', cursor: 'pointer', fontSize: 13,
+              }}>Dispensar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Modals */}
-      <GlobalSearchModal 
+      <GlobalSearchModal
         isOpen={isSearchModalOpen} 
         onClose={() => setIsSearchModalOpen(false)} 
         clients={clients} 

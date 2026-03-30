@@ -740,6 +740,23 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
           }
         } catch { /* silent */ }
       }
+
+      // Auto-concluir tarefa de reunião pendente do lead
+      try {
+        const { data: tarefasPendentes } = await supabase
+          .from('crm_tarefas')
+          .select('id, titulo')
+          .eq('lead_id', leadId)
+          .eq('concluida', false)
+          .order('data_agendada', { ascending: false })
+          .limit(5);
+        if (tarefasPendentes && tarefasPendentes.length > 0) {
+          const tarefaReuniao = tarefasPendentes.find(t =>
+            /reuni|R\d|r\d/i.test(t.titulo || '')
+          ) || tarefasPendentes[0];
+          await supabase.from('crm_tarefas').update({ concluida: true }).eq('id', tarefaReuniao.id);
+        }
+      } catch (e) { console.warn('[auto-concluir tarefa NAF]', e); }
     }
 
     // Mirror to comercial_tasks (fire-and-forget)
@@ -1551,6 +1568,24 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
       realizado_por: userSession?.name ?? '', descricao: descJson,
       data_atividade: now, created_at: now,
     }).select().single();
+
+    // Auto-concluir tarefa de reunião pendente do lead
+    try {
+      const { data: tarefasPendentes } = await supabase
+        .from('crm_tarefas')
+        .select('id, titulo')
+        .eq('lead_id', lead.id)
+        .eq('concluida', false)
+        .order('data_agendada', { ascending: false })
+        .limit(5);
+      if (tarefasPendentes && tarefasPendentes.length > 0) {
+        const tarefaReuniao = tarefasPendentes.find(t =>
+          /reuni|R\d|r\d/i.test(t.titulo || '')
+        ) || tarefasPendentes[0];
+        await supabase.from('crm_tarefas').update({ concluida: true }).eq('id', tarefaReuniao.id);
+        setTarefas(prev => prev.map(t => t.id === tarefaReuniao.id ? { ...t, concluida: true } : t));
+      }
+    } catch (e) { console.warn('[auto-concluir tarefa]', e); }
 
     // 2. Update lead
     const leadUpd: Partial<CRMLead> = { updated_at: now, etapa_desde: now, programa_apresentado: programaApresentado || null };
@@ -2436,14 +2471,20 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
                           className="text-[10px] font-bold text-yellow-400 hover:text-white transition-colors cursor-pointer whitespace-nowrap"
                         >Reagendar</button>
                         <button onClick={() => {
-                          setConcluindoTarefaViaAtiv(t.id);
-                          setAtivFormTipo(t.tipo ?? undefined);
+                          const isReunionTask = /reuni|R\d|r\d/i.test(t.titulo || '');
+                          if (isReunionTask) {
+                            // Reunion tasks: open reunion form, auto-conclude via activity registration
+                            setAtivFormTipo('reuniao');
+                          } else {
+                            setConcluindoTarefaViaAtiv(t.id);
+                            setAtivFormTipo(t.tipo ?? undefined);
+                          }
                           setShowAtivForm(true);
                           setTab('timeline');
                           setReagendandoTarefa(null);
                         }}
                           className="text-[10px] font-bold text-brand-primary hover:text-white transition-colors cursor-pointer whitespace-nowrap"
-                        >Concluir</button>
+                        >{/reuni|R\d|r\d/i.test(t.titulo || '') ? 'Registrar resultado' : 'Concluir'}</button>
                       </div>
                     )}
                   </div>
