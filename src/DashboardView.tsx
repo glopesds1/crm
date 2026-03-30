@@ -993,7 +993,10 @@ function PageSemanal({ data, userSession }: { data: any; userSession: any }) {
 
 // ── PAGE: Reuniões ────────────────────────────────────────────
 function PageReunioes({ data }: { data: any }) {
+  console.log('[reunioes dia] raw data:', data);
+  console.log('[reunioes dia] data.dia:', data?.dia);
   const dia: any[] = Array.isArray(data?.dia) ? data.dia : data?.dia ? [data.dia] : [];
+  console.log('[reunioes dia] parsed array:', dia.length, dia);
 
   const statusStyle: Record<string, React.CSSProperties> = {
     'Pendente': { color: '#d4af37' },

@@ -3617,6 +3617,7 @@ export default function App() {
 
   useEffect(() => {
     if (!userSession) return;
+    const userName = userSession.name || '';
 
     const checkTarefas = async () => {
       try {
@@ -3627,6 +3628,7 @@ export default function App() {
           .from('crm_tarefas')
           .select('id, titulo, lead_id, data_agendada, responsavel, tipo')
           .eq('concluida', false)
+          .eq('responsavel', userName)
           .lte('data_agendada', daquiUmMinuto.toISOString())
           .order('data_agendada', { ascending: true })
           .limit(5);
