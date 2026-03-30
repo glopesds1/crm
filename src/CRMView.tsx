@@ -742,6 +742,7 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
               data_hora: new Date(proximaReuniao).toISOString(),
               tipo_reuniao: webhookTipoReuniao_naf,
               duracao_min: 60,
+              bant: { sdr: (leadObj as any)?.sdr || leadObj?.responsavel || '' },
               reagendamento: resultado === 'Reagendou',
             }),
           }).catch(e => { console.warn('[agendar-reuniao R2+ NAF]', e.message); return null; });
@@ -805,6 +806,7 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
                 data_hora: new Date(dataReagendamento).toISOString(),
                 tipo_reuniao: currentTP,
                 duracao_min: 60,
+                bant: { sdr: (leadObj as any)?.sdr || leadObj?.responsavel || '' },
               }),
             }).catch(e => console.warn('[reagendar no-show]', e.message));
             // Criar tarefa de lembrete
@@ -1748,6 +1750,7 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
             tipo_reuniao: agTitulo.includes('R2') ? 'R2' : 'R1',
             data_hora: new Date(agData).toISOString(),
             duracao_min: 60,
+            bant: { sdr: (lead as any).sdr || lead.responsavel || '' },
           };
           console.log('[agendar-reuniao] Tarefa tipo reuniao — enviando webhook:', JSON.stringify(agPayload, null, 2));
           const agResp = await fetch(`${webhookBase}/webhook/agendar-reuniao`, {
@@ -1995,6 +1998,7 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
             data_hora: new Date(rrProximaReuniao).toISOString(),
             duracao_min: 60,
             reagendamento: rrResultado === 'Reagendou',
+            bant: { sdr: (lead as any).sdr || lead.responsavel || '' },
           }),
         }).catch(e => { console.warn('Webhook agendar-reuniao (CORS em dev):', e.message); return null; });
         // Fire-and-forget: agendar touchpoints
@@ -2201,6 +2205,7 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
             data_hora: new Date(reagendarData).toISOString(),
             duracao_min: 60,
             reagendamento: true,
+            bant: { sdr: (lead as any).sdr || lead.responsavel || '' },
           }),
         }).catch(() => null);
         // Fire-and-forget: agendar touchpoints
@@ -3208,6 +3213,7 @@ export default function CRMView({ userSession, teamMembers, openLeadByName, onLe
           data_hora: new Date(novaData).toISOString(),
           duracao_min: 60,
           reagendamento: true,
+          bant: { sdr: (lead as any)?.sdr || lead?.responsavel || '' },
         }),
       }).catch(() => null);
       // Fire-and-forget: agendar touchpoints
@@ -3426,8 +3432,8 @@ export default function CRMView({ userSession, teamMembers, openLeadByName, onLe
   const sortLeads = (list: CRMLead[], order: 'newest' | 'oldest' | 'more_time' | 'less_time') => {
     return [...list].sort((a, b) => {
       let diff = 0;
-      if (order === 'newest')    diff = new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
-      else if (order === 'oldest')    diff = new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+      if (order === 'newest')    diff = new Date(b.created_at || (b as any).data || 0).getTime() - new Date(a.created_at || (a as any).data || 0).getTime();
+      else if (order === 'oldest')    diff = new Date(a.created_at || (a as any).data || 0).getTime() - new Date(b.created_at || (b as any).data || 0).getTime();
       else if (order === 'more_time') diff = new Date(a.etapa_desde ?? a.updated_at).getTime() - new Date(b.etapa_desde ?? b.updated_at).getTime();
       else if (order === 'less_time') diff = new Date(b.etapa_desde ?? b.updated_at).getTime() - new Date(a.etapa_desde ?? a.updated_at).getTime();
       if (diff !== 0) return diff;
