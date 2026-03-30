@@ -1511,7 +1511,7 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
   const [ativFormTipo, setAtivFormTipo] = useState<'ligacao' | 'reuniao' | undefined>(undefined);
   const [concluindoTarefaViaAtiv, setConcluindoTarefaViaAtiv] = useState<string | null>(null);
   const [showAgendarTarefa, setShowAgendarTarefa] = useState(false);
-  const [agTipo, setAgTipo] = useState<'ligacao' | 'reuniao' | null>(null);
+  const [agTipo, setAgTipo] = useState<'ligacao' | 'follow-up' | 'nota' | 'outro' | null>(null);
   const [agTitulo, setAgTitulo] = useState('');
   const [agData, setAgData] = useState('');
   const [agResponsavel, setAgResponsavel] = useState('');
@@ -1737,59 +1737,6 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
       if (agDate > new Date() && (!lead.proxima_reuniao || agDate < parseDateSP(lead.proxima_reuniao))) {
         await supabase.from('crm_leads').update({ proxima_reuniao: localDatetimeToISO(agData) }).eq('id', lead.id);
         onSave({ proxima_reuniao: localDatetimeToISO(agData) });
-      }
-      // Send agendar-reuniao webhook when scheduling a meeting task
-      if (agTipo === 'reuniao') {
-        try {
-          const webhookBase = import.meta.env.VITE_WEBHOOK_BASE?.replace('/webhook/dashboard', '') ?? 'https://webhook.m2black.com';
-          const agPayload = {
-            lead_nome: lead.nome,
-            lead_telefone: lead.telefone ?? '',
-            lead_externo_id: lead.lead_externo_id ?? lead.id,
-            closer: agResponsavel || lead.responsavel || '',
-            tipo_reuniao: agTitulo.includes('R2') ? 'R2' : 'R1',
-            data_hora: new Date(agData).toISOString(),
-            duracao_min: 60,
-            bant: { sdr: (lead as any).sdr || lead.responsavel || '' },
-          };
-          console.log('[agendar-reuniao] Tarefa tipo reuniao — enviando webhook:', JSON.stringify(agPayload, null, 2));
-          const agResp = await fetch(`${webhookBase}/webhook/agendar-reuniao`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(agPayload),
-          }).then(r => { console.log('[agendar-reuniao] Response:', r.status); return r; })
-            .catch(e => { console.warn('[agendar-reuniao] Fetch error:', e.message); return null; });
-          // Fire-and-forget: agendar touchpoints
-          try {
-            let meetLink = '';
-            try { if (agResp?.ok) { const rj = await agResp.json(); meetLink = rj.meet_link ?? ''; } } catch { /* no json */ }
-            fetch(`${webhookBase}/webhook/agendar-touchpoints`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                lead_id: lead.lead_externo_id ?? lead.id,
-                lead_nome: lead.nome,
-                lead_telefone: lead.telefone ?? '',
-                data_hora: new Date(agData).toISOString(),
-                meet_link: meetLink,
-              }),
-            }).catch(() => {});
-          } catch { /* silent */ }
-        } catch (err) { console.error('[agendar-reuniao] Failed:', err); }
-        // Sync Status_TP = Reunião Marcada → Railway (fire-and-forget)
-        {
-          const currentTP = (lead as any).tp || (lead as any).TP || '';
-          const tpMap: Record<string, string> = {'': 'R1', 'R1': 'R2', 'R2': 'R3', 'R3': 'R4+'};
-          const agendamentoTP = tpMap[currentTP] || 'R4+';
-          const horaAG = new Date(agData).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'America/Sao_Paulo' });
-          syncPostgres(lead.lead_externo_id, {
-            reuniao_tp: agendamentoTP,
-            Data_Reuniao_Marcada: new Date(agData).toISOString().split('T')[0],
-            hora_marcada: horaAG,
-            TP: agendamentoTP,
-            closer: lead.responsavel || null,
-          });
-        }
       }
       setShowAgendarTarefa(false);
       setAgTipo(null); setAgTitulo(''); setAgData(''); setAgResponsavel('');
@@ -2161,6 +2108,7 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
   const [tarefaImageFile, setTarefaImageFile] = useState<File | null>(null);
   const [tarefaImagePreview, setTarefaImagePreview] = useState<string | null>(null);
   const [tarefaUploading, setTarefaUploading] = useState(false);
+  const [tarefaObs, setTarefaObs] = useState('');
   const tarefaFileRef = useRef<HTMLInputElement>(null);
 
   // Estado para reagendar tarefa
@@ -2273,23 +2221,25 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
     setTarefas(prev => prev.map(x => x.id === t.id ? { ...x, concluida: true } : x));
 
     const now = new Date().toISOString();
-    const descricao = t.titulo + (t.data_agendada ? ` (agendada: ${fmtDateSP(t.data_agendada, { year: true })})` : '');
+    const tipoAtiv = (t as any).tipo || 'ligacao';
+    const descJson = JSON.stringify({ obs: tarefaObs || '', titulo: t.titulo, agendada: t.data_agendada ? fmtDateSP(t.data_agendada, { year: true }) : '' });
     // 1. crm_atividades (timeline)
     const { data: ativData } = await supabase.from('crm_atividades').insert({
-      lead_id: t.lead_id, tipo: 'tarefa', descricao,
+      lead_id: t.lead_id, tipo: tipoAtiv, descricao: descJson,
       imagem_url: imageUrl || null,
       data_atividade: now, realizado_por: userSession?.name ?? '', created_at: now,
     }).select().single();
     if (ativData) setAtividades(prev => [ativData, ...prev]);
 
-    // 2. comercial_tasks (relatório do responsável pela tarefa)
+    // 2. comercial_tasks (relatório)
     const collaborator = t.responsavel || lead.responsavel || userSession?.name || '';
+    const category = tipoAtiv === 'ligacao' ? 'Ligação' : 'Tarefa';
     try {
       await supabase.from('comercial_tasks').insert({
-        id: crypto.randomUUID(), type: 'PreVendas', category: 'Tarefa',
+        id: crypto.randomUUID(), type: 'PreVendas', category,
         collaborator, image_url: imageUrl || '',
         completion_time: new Date().toLocaleString('pt-BR', { timeZone: SP_TZ, day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
-        meeting_summary: descricao,
+        meeting_summary: t.titulo,
         created_at: now,
       });
     } catch { /* fire-and-forget */ }
@@ -2298,6 +2248,7 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
     setConcluindoTarefa(null);
     setTarefaImageFile(null);
     setTarefaImagePreview(null);
+    setTarefaObs('');
   };
 
   const etapaObj = ETAPA_MAP[etapa];
@@ -2740,20 +2691,19 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
                 <div className="space-y-3 bg-white/[0.02] border border-white/10 rounded-xl p-4">
                   <p className="text-[9px] font-bold uppercase tracking-widest text-brand-primary">Agendar Próxima Atividade</p>
                   {/* Tipo da atividade */}
-                  <div className="flex gap-2">
-                    <button onClick={() => setAgTipo('ligacao')}
-                      className={`flex-1 py-2 rounded-xl border text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer ${agTipo === 'ligacao' ? 'bg-brand-primary/20 border-brand-primary text-brand-primary' : 'bg-white/5 border-white/10 text-gray-500 hover:text-gray-300'}`}
-                    ><Phone size={14} /> Ligação</button>
-                    <button onClick={() => setAgTipo('reuniao')}
-                      className={`flex-1 py-2 rounded-xl border text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer ${agTipo === 'reuniao' ? 'bg-brand-primary/20 border-brand-primary text-brand-primary' : 'bg-white/5 border-white/10 text-gray-500 hover:text-gray-300'}`}
-                    ><Video size={14} /> Reunião</button>
+                  <div className="grid grid-cols-4 gap-1.5">
+                    {([['ligacao', 'Ligação'], ['follow-up', 'Follow-up'], ['nota', 'Nota'], ['outro', 'Outro']] as const).map(([key, label]) => (
+                      <button key={key} onClick={() => setAgTipo(key)}
+                        className={`py-2 rounded-xl border text-[10px] font-bold transition-all flex items-center justify-center cursor-pointer ${agTipo === key ? 'bg-brand-primary/20 border-brand-primary text-brand-primary' : 'bg-white/5 border-white/10 text-gray-500 hover:text-gray-300'}`}
+                      >{label}</button>
+                    ))}
                   </div>
                   {agTipo && (<>
                   <div>
                     <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">Título da tarefa <span className="text-red-400">*</span></label>
                     <input value={agTitulo} onChange={e => setAgTitulo(e.target.value)}
                       className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-1.5 text-sm text-white focus:outline-none focus:border-brand-primary"
-                      placeholder={agTipo === 'reuniao' ? 'Ex: Reunião R1 - Nome do lead' : 'Ex: Ligação de follow-up'}
+                      placeholder="Ex: Ligação de follow-up"
                     />
                   </div>
                   <div>
@@ -2811,20 +2761,14 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
                           className="text-[10px] font-bold text-yellow-400 hover:text-white transition-colors cursor-pointer whitespace-nowrap"
                         >Reagendar</button>
                         <button onClick={() => {
-                          const isReunionTask = /reuni|R\d|r\d/i.test(t.titulo || '');
-                          if (isReunionTask) {
-                            // Reunion tasks: open reunion form, auto-conclude via activity registration
-                            setAtivFormTipo('reuniao');
-                          } else {
-                            setConcluindoTarefaViaAtiv(t.id);
-                            setAtivFormTipo(t.tipo ?? undefined);
-                          }
-                          setShowAtivForm(true);
-                          setTab('timeline');
+                          setConcluindoTarefa(t.id);
+                          setTarefaImageFile(null);
+                          setTarefaImagePreview(null);
+                          setTarefaObs('');
                           setReagendandoTarefa(null);
                         }}
                           className="text-[10px] font-bold text-brand-primary hover:text-white transition-colors cursor-pointer whitespace-nowrap"
-                        >{/reuni|R\d|r\d/i.test(t.titulo || '') ? 'Registrar resultado' : 'Concluir'}</button>
+                        >Concluir</button>
                       </div>
                     )}
                   </div>
@@ -2842,6 +2786,36 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
                           {reagendarSaving ? <Loader2 size={12} className="animate-spin" /> : <Calendar size={12} />} Confirmar
                         </button>
                         <button onClick={() => { setReagendandoTarefa(null); setReagendarData(''); }}
+                          className="py-2 px-3 rounded-lg bg-white/5 border border-white/10 text-[11px] font-bold text-gray-400 hover:text-white transition-colors cursor-pointer"
+                        >Cancelar</button>
+                      </div>
+                    </div>
+                  )}
+                  {/* Painel de concluir tarefa */}
+                  {concluindoTarefa === t.id && !t.concluida && (
+                    <div className="px-3 pb-3 space-y-2 border-t border-white/5 pt-2 mx-3">
+                      <p className="text-[9px] font-bold uppercase tracking-widest text-brand-primary">Concluir: {t.titulo}</p>
+                      <div>
+                        <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">Print da tela <span className="text-red-400">*</span></label>
+                        <input type="file" accept="image/*" onChange={handleTarefaImage}
+                          className="w-full text-xs text-gray-400 file:mr-2 file:py-1 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-white/10 file:text-gray-300 hover:file:bg-white/20"
+                        />
+                        {tarefaImagePreview && <img src={tarefaImagePreview} alt="preview" className="mt-2 rounded-lg max-h-24 object-cover" />}
+                      </div>
+                      <div>
+                        <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">Observação</label>
+                        <textarea value={tarefaObs} onChange={e => setTarefaObs(e.target.value)} rows={2}
+                          className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-sm text-gray-300 focus:outline-none focus:border-brand-primary resize-none"
+                          placeholder="Observação opcional..."
+                        />
+                      </div>
+                      <div className="flex gap-2">
+                        <button onClick={() => concluirTarefa(t)} disabled={!tarefaImageFile || tarefaUploading}
+                          className={`flex-1 py-2 rounded-lg text-[11px] font-bold transition-colors flex items-center justify-center gap-1.5 ${tarefaImageFile ? 'bg-brand-primary/20 border border-brand-primary/30 text-brand-primary hover:bg-brand-primary/30 cursor-pointer' : 'bg-white/3 border border-white/10 text-gray-600 cursor-not-allowed'}`}
+                        >
+                          {tarefaUploading ? <Loader2 size={12} className="animate-spin" /> : <CheckCircle2 size={12} />} Concluir
+                        </button>
+                        <button onClick={() => { setConcluindoTarefa(null); setTarefaImageFile(null); setTarefaImagePreview(null); setTarefaObs(''); }}
                           className="py-2 px-3 rounded-lg bg-white/5 border border-white/10 text-[11px] font-bold text-gray-400 hover:text-white transition-colors cursor-pointer"
                         >Cancelar</button>
                       </div>
