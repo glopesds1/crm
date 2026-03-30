@@ -550,12 +550,13 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
         }
         // Move lead to rm_marcada + update closer as responsavel
         try {
-          const leadUpd: Partial<CRMLead> = {
+          const leadUpd: any = {
             etapa: 'rm_marcada',
             etapa_desde: now,
             proxima_reuniao: localDatetimeToISO(bantDataHora),
             faturamento: bantFaturamento || undefined,
             responsavel: bantCloser,
+            tp_atual: 'R1',
             updated_at: now,
           };
           await supabase.from('crm_leads').update(leadUpd).eq('id', leadId);
@@ -581,6 +582,25 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
         } catch (err) { console.error('Failed to create return task:', err); }
       }
     } else if (tipo === 'reuniao') {
+      // Resolver TP atual do lead (com fallback para última tarefa pendente)
+      let resolvedTP = (leadObj as any)?.tp_atual || (leadObj as any)?.tp || (leadObj as any)?.TP || '';
+      if (!resolvedTP) {
+        try {
+          const { data: lastTask } = await supabase
+            .from('crm_tarefas')
+            .select('titulo')
+            .eq('lead_id', leadId)
+            .eq('concluida', false)
+            .order('data_agendada', { ascending: false })
+            .limit(1);
+          if (lastTask && lastTask[0]) {
+            const match = lastTask[0].titulo?.match(/R(\d)/);
+            if (match) resolvedTP = 'R' + match[1];
+          }
+        } catch { /* silent */ }
+      }
+      if (!resolvedTP) resolvedTP = 'R1';
+
       try {
         if (resultado === 'Venda') {
           const vendaPrograma = programaApresentadoNAF || leadObj?.programa_apresentado || null;
@@ -677,9 +697,8 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
           }).eq('id', leadId);
         } else if (resultado === 'Marcou R2+' || resultado === 'Reagendou') {
           // Bloco 3: Atualizar lead para rm_realizada com tp_atual
-          const currentTP_upd = (leadObj as any)?.tp || (leadObj as any)?.TP || (leadObj as any)?.tp_atual || 'R1';
-          const tpMap_upd: Record<string, string> = {'': 'R2', 'R1': 'R2', 'R2': 'R3', 'R3': 'R4+'};
-          const nextTP_upd = resultado === 'Marcou R2+' ? (tpMap_upd[currentTP_upd] || 'R4+') : currentTP_upd;
+          const tpMap_upd: Record<string, string> = {'R1': 'R2', 'R2': 'R3', 'R3': 'R4+'};
+          const nextTP_upd = resultado === 'Marcou R2+' ? (tpMap_upd[resolvedTP] || 'R4+') : resolvedTP;
           const leadUpdR2: Partial<CRMLead> = {
             etapa: 'rm_realizada',
             etapa_desde: now,
@@ -705,11 +724,10 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
 
       // Auto-create task for R2+ / Reagendou
       if ((resultado === 'Marcou R2+' || resultado === 'Reagendou') && proximaReuniao) {
-        // Compute TP for webhook and syncPostgres
-        const currentTP_naf = (leadObj as any)?.tp || (leadObj as any)?.TP || (leadObj as any)?.tp_atual || 'R1';
-        const tpMap_naf: Record<string, string> = {'': 'R2', 'R1': 'R2', 'R2': 'R3', 'R3': 'R4+'};
-        const nextTP_naf = tpMap_naf[currentTP_naf] || 'R4+';
-        const reagendaTP_naf = currentTP_naf || 'R1';
+        // Compute TP for webhook and syncPostgres (using resolvedTP)
+        const tpMap_naf: Record<string, string> = {'R1': 'R2', 'R2': 'R3', 'R3': 'R4+'};
+        const nextTP_naf = tpMap_naf[resolvedTP] || 'R4+';
+        const reagendaTP_naf = resolvedTP;
         const webhookTipoReuniao_naf = resultado === 'Reagendou' ? reagendaTP_naf : nextTP_naf;
 
         try {
@@ -767,7 +785,7 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
       {
         const hoje = new Date().toISOString().split('T')[0];
         const closer = responsavelAtividade || leadObj?.responsavel || null;
-        const leadTP = (leadObj as any)?.tp || (leadObj as any)?.TP || 'R1';
+        const leadTP = resolvedTP;
         if (statusReuniao === 'Não compareceu') {
           // Cancelar touchpoints pendentes
           fetch(`${WEBHOOK_BASE}/webhook/cancelar-touchpoints`, {
@@ -835,12 +853,11 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
           }
         } else if (statusReuniao === 'Compareceu') {
           if (resultado === 'Marcou R2+') {
-            const currentTP = (leadObj as any)?.tp || (leadObj as any)?.TP || (leadObj as any)?.tp_atual || 'R1';
-            const tpMap: Record<string, string> = {'': 'R2', 'R1': 'R2', 'R2': 'R3', 'R3': 'R4+'};
-            const nextTP = tpMap[currentTP] || 'R4+';
+            const tpMap_sync: Record<string, string> = {'R1': 'R2', 'R2': 'R3', 'R3': 'R4+'};
+            const nextTP = tpMap_sync[resolvedTP] || 'R4+';
             // Sync current meeting (realizada)
             syncPostgres(leadObj?.lead_externo_id, {
-              reuniao_tp: currentTP || 'R1',
+              reuniao_tp: resolvedTP,
               Status_TP: 'Compareceu',
               Data_Reuniao_Realizada: hoje,
               Data_TP: proximaReuniao ? new Date(proximaReuniao).toISOString().split('T')[0] : hoje,
@@ -1765,6 +1782,25 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
     setRrSaving(true);
     const now = new Date().toISOString();
 
+    // Resolver TP atual do lead (com fallback para última tarefa pendente)
+    let resolvedTP_rr = (lead as any).tp_atual || (lead as any).tp || (lead as any).TP || '';
+    if (!resolvedTP_rr) {
+      try {
+        const { data: lastTask } = await supabase
+          .from('crm_tarefas')
+          .select('titulo')
+          .eq('lead_id', lead.id)
+          .eq('concluida', false)
+          .order('data_agendada', { ascending: false })
+          .limit(1);
+        if (lastTask && lastTask[0]) {
+          const match = lastTask[0].titulo?.match(/R(\d)/);
+          if (match) resolvedTP_rr = 'R' + match[1];
+        }
+      } catch { /* silent */ }
+    }
+    if (!resolvedTP_rr) resolvedTP_rr = 'R1';
+
     // Upload image (non-blocking)
     let uploadedUrl: string | null = null;
     try {
@@ -1926,10 +1962,9 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
     // 4. Auto-create task for R2+ / Reagendou
     if ((rrResultado === 'Marcou R2+' || rrResultado === 'Reagendou') && rrProximaReuniao) {
       // Compute TP for webhook and syncPostgres
-      const currentTP_rr = (lead as any).tp || (lead as any).TP || '';
-      const tpMap_rr: Record<string, string> = {'': 'R2', 'R1': 'R2', 'R2': 'R3', 'R3': 'R4+'};
-      const nextTP_rr = tpMap_rr[currentTP_rr] || 'R4+';
-      const reagendaTP_rr = currentTP_rr || 'R1';
+      const tpMap_rr: Record<string, string> = {'R1': 'R2', 'R2': 'R3', 'R3': 'R4+'};
+      const nextTP_rr = tpMap_rr[resolvedTP_rr] || 'R4+';
+      const reagendaTP_rr = resolvedTP_rr;
       const webhookTipoReuniao = rrResultado === 'Reagendou' ? reagendaTP_rr : nextTP_rr;
 
       try {
@@ -1988,7 +2023,7 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
     {
       const hoje = new Date().toISOString().split('T')[0];
       const closer = responsavel || null;
-      const leadTP = (lead as any).tp || (lead as any).TP || 'R1';
+      const leadTP = resolvedTP_rr;
       if (rrStatusReuniao === 'Não compareceu') {
         syncPostgres(lead.lead_externo_id, { Status_TP: 'No-show', reuniao_tp: leadTP, closer });
         // Cancelar touchpoints pendentes
@@ -1999,11 +2034,10 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
         }).catch(() => {});
       } else if (rrStatusReuniao === 'Compareceu') {
         if (rrResultado === 'Marcou R2+') {
-          const currentTP = (lead as any).tp || (lead as any).TP || '';
-          const tpMap: Record<string, string> = {'': 'R2', 'R1': 'R2', 'R2': 'R3', 'R3': 'R4+'};
-          const nextTP = tpMap[currentTP] || 'R4+';
+          const tpMap_ld: Record<string, string> = {'R1': 'R2', 'R2': 'R3', 'R3': 'R4+'};
+          const nextTP = tpMap_ld[resolvedTP_rr] || 'R4+';
           // Sync current meeting (realizada)
-          syncPostgres(lead.lead_externo_id, { Status_TP: 'Compareceu', TP: nextTP, reuniao_tp: currentTP || 'R1', Data_Reuniao_Realizada: hoje, Data_TP: rrProximaReuniao ? new Date(rrProximaReuniao).toISOString().split('T')[0] : hoje, closer });
+          syncPostgres(lead.lead_externo_id, { Status_TP: 'Compareceu', TP: nextTP, reuniao_tp: resolvedTP_rr, Data_Reuniao_Realizada: hoje, Data_TP: rrProximaReuniao ? new Date(rrProximaReuniao).toISOString().split('T')[0] : hoje, closer });
           // Sync next meeting scheduling (Data_Reuniao_Marcada + hora_marcada)
           if (rrProximaReuniao) {
             syncPostgres(lead.lead_externo_id, {
