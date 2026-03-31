@@ -56,6 +56,7 @@ export type TeamMember = {
   photoUrl?: string;
   phone?: string;
   webhookKentro?: string;
+  auth_user_id?: string;
 };
 
 export type Client = {

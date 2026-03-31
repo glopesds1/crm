@@ -1,4 +1,4 @@
-import { supabase } from './supabase';
+import { supabase, supabaseAdmin } from './supabase';
 import type { Client, TeamMember, AgencyConfig, Tag, ComercialTask, Demand, CrmClientTarefa, EducacaoModulo, EducacaoAula, EducacaoProgresso } from '../types';
 
 // --- Mappers Client camelCase <-> snake_case ---
@@ -100,6 +100,7 @@ function dbToMember(row: Record<string, unknown>): TeamMember {
     photoUrl: (row.photo_url as string) || '',
     phone: (row.phone as string) || '',
     webhookKentro: (row.webhook_kentro as string) || '',
+    auth_user_id: (row.auth_user_id as string) || '',
   };
 }
 
@@ -168,6 +169,14 @@ export async function updateTeamMember(member: TeamMember): Promise<TeamMember> 
     .select()
     .single();
   if (error) throw error;
+
+  // Se tiver auth_user_id e senha, sincroniza a senha no Supabase Auth
+  if (member.auth_user_id && member.password && supabaseAdmin) {
+    await supabaseAdmin.auth.admin.updateUserById(member.auth_user_id, {
+      password: member.password,
+    });
+  }
+
   return dbToMember(data as Record<string, unknown>);
 }
 
