@@ -2792,11 +2792,14 @@ function NewLeadModal({ onClose, onSave, userSession, teamMembers }: {
   onClose: () => void; onSave: (lead: Partial<CRMLead>) => Promise<void>; userSession: any; teamMembers: TeamMember[];
 }) {
   const [form, setForm] = useState({ nome: '', telefone: '', empresa: '', faturamento: '', area: '', responsavel: '' });
+  const [origem, setOrigem] = useState('');
+  const [origemCustom, setOrigemCustom] = useState('');
   const [saving, setSaving] = useState(false);
+  const origemFinal = origem === 'Outro' ? origemCustom.trim() : origem;
   const handleSave = async () => {
-    if (!form.nome.trim()) return;
+    if (!form.nome.trim() || !origemFinal) return;
     setSaving(true);
-    await onSave({ ...form, etapa: 'base', status: 'ativo', origem: 'manual' });
+    await onSave({ ...form, etapa: 'base', status: 'ativo', origem: origemFinal, anuncio: origemFinal });
     setSaving(false);
     onClose();
   };
@@ -2826,6 +2829,26 @@ function NewLeadModal({ onClose, onSave, userSession, teamMembers }: {
             </div>
           ))}
           <div>
+            <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">Origem *</label>
+            <select value={origem} onChange={e => { setOrigem(e.target.value); if (e.target.value !== 'Outro') setOrigemCustom(''); }}
+              className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-brand-primary appearance-none"
+            >
+              <option value="" className="bg-bg-main">Selecione a origem</option>
+              {['NT', 'SS', 'Indicação', 'SE', 'Site', 'Evento', 'Prospecção Ativa', 'Outro'].map(o => (
+                <option key={o} value={o} className="bg-bg-main">{o}</option>
+              ))}
+            </select>
+          </div>
+          {origem === 'Outro' && (
+            <div>
+              <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">Origem (personalizada) *</label>
+              <input value={origemCustom} onChange={e => setOrigemCustom(e.target.value)}
+                placeholder="Digite a origem"
+                className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm text-white placeholder-gray-700 focus:outline-none focus:border-brand-primary"
+              />
+            </div>
+          )}
+          <div>
             <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">Responsável</label>
             <select value={form.responsavel} onChange={e => setForm(p => ({ ...p, responsavel: e.target.value }))}
               className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-brand-primary appearance-none"
@@ -2839,7 +2862,7 @@ function NewLeadModal({ onClose, onSave, userSession, teamMembers }: {
           </div>
           <div className="flex gap-3 pt-2">
             <button onClick={onClose} className="flex-1 px-4 py-2 rounded-xl bg-white/5 border border-white/10 text-sm text-gray-400 hover:text-white transition-colors">Cancelar</button>
-            <button onClick={handleSave} disabled={saving || !form.nome.trim()}
+            <button onClick={handleSave} disabled={saving || !form.nome.trim() || !origemFinal}
               className="flex-1 px-4 py-2 rounded-xl bg-brand-primary text-black text-sm font-bold hover:bg-brand-primary/80 disabled:opacity-40 transition-colors flex items-center justify-center gap-2"
             >
               {saving && <Loader2 size={14} className="animate-spin" />} Adicionar
@@ -3337,6 +3360,7 @@ export default function CRMView({ userSession, teamMembers, openLeadByName, onLe
             area: lead.area ?? '',
             faturamento: lead.faturamento ?? '',
             responsavel: lead.responsavel ?? '',
+            anuncio: lead.anuncio ?? lead.origem ?? '',
           }),
         });
         if (res.ok) {
