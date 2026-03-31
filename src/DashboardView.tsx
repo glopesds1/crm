@@ -802,78 +802,15 @@ function PageMetas({ data, userSession, range }: { data: any; userSession: any; 
         {closers.length > 0 && (
           <div className="glass-card p-6">
             <h3 className="text-sm font-bold uppercase tracking-widest text-brand-primary mb-4">Performance por Closer</h3>
-            {(() => {
-              const tpColors: Record<string, string> = { R1: '#fff', R2: '#d4af37', R3: '#ef9f27', 'R4+': '#ef4444' };
-              // Agrupar por closer
-              const closerMap: Record<string, any[]> = {};
-              closers.forEach(row => {
-                const name = row.closer ?? 'Sem nome';
-                if (!closerMap[name]) closerMap[name] = [];
-                closerMap[name].push(row);
-              });
-              return (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-xs">
-                    <thead>
-                      <tr className="border-b border-white/10">
-                        {['Closer', 'TP', 'Marcadas', 'Show', 'Realizadas', 'Conv.', 'Vendas', 'Contrato', 'CC'].map(h => (
-                          <th key={h} className="py-2 px-2 text-[9px] font-bold uppercase tracking-widest text-center" style={{ color: '#aaa' }}>{h}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {Object.entries(closerMap).map(([name, rows], ci) => {
-                        const totM = rows.reduce((s, r) => s + (Number(r.marcadas ?? r.rm) || 0), 0);
-                        const totR = rows.reduce((s, r) => s + (Number(r.realizadas ?? r.rr) || 0), 0);
-                        const totV = rows.reduce((s, r) => s + (Number(r.vendas) || 0), 0);
-                        const totContrato = rows.reduce((s, r) => s + (Number(r.total_contrato) || 0), 0);
-                        const totCC = rows.reduce((s, r) => s + (Number(r.total_cc) || 0), 0);
-                        const totShow = totM > 0 ? (totR / totM * 100).toFixed(1) + '%' : '—';
-                        const totConv = totR > 0 ? (totV / totR * 100).toFixed(1) + '%' : '—';
-                        return (
-                          <React.Fragment key={name}>
-                            {/* Header do closer */}
-                            <tr className="bg-white/5 border-b border-white/10">
-                              <td className="py-2 px-2 text-[13px] font-bold text-white">{ci + 1}. {name}</td>
-                              <td className="py-2 px-2 text-center text-[10px] text-gray-500">Total</td>
-                              <td className="py-2 px-2 text-center font-bold text-white">{fmt(totM)}</td>
-                              <td className="py-2 px-2 text-center text-white">{totShow}</td>
-                              <td className="py-2 px-2 text-center font-bold text-white">{fmt(totR)}</td>
-                              <td className="py-2 px-2 text-center text-white">{totConv}</td>
-                              <td className="py-2 px-2 text-center font-bold text-white">{fmt(totV)}</td>
-                              <td className="py-2 px-2 text-center text-white">{fmtBRL(totContrato)}</td>
-                              <td className="py-2 px-2 text-center text-white">{fmtBRL(totCC)}</td>
-                            </tr>
-                            {/* Sub-linhas por TP */}
-                            {rows.map(r => {
-                              const tp = r.tp_group ?? 'R1';
-                              const marc = Number(r.marcadas ?? r.rm) || 0;
-                              const real = Number(r.realizadas ?? r.rr) || 0;
-                              const vend = Number(r.vendas) || 0;
-                              const show = marc > 0 ? (real / marc * 100).toFixed(1) + '%' : '—';
-                              const conv = real > 0 ? (vend / real * 100).toFixed(1) + '%' : '—';
-                              return (
-                                <tr key={`${name}-${tp}`} className="border-b border-white/5">
-                                  <td className="py-1.5 px-2 pl-8 text-[11px] text-gray-500" />
-                                  <td className="py-1.5 px-2 text-center text-[11px] font-semibold" style={{ color: tpColors[tp] ?? '#fff' }}>{tp}</td>
-                                  <td className="py-1.5 px-2 text-center text-[11px] text-gray-300">{fmt(marc)}</td>
-                                  <td className="py-1.5 px-2 text-center text-[11px] text-gray-300">{show}</td>
-                                  <td className="py-1.5 px-2 text-center text-[11px] text-gray-300">{fmt(real)}</td>
-                                  <td className="py-1.5 px-2 text-center text-[11px] text-gray-300">{conv}</td>
-                                  <td className="py-1.5 px-2 text-center text-[11px] text-gray-300">{fmt(vend)}</td>
-                                  <td className="py-1.5 px-2 text-center text-[11px] text-gray-300">{fmtBRL(r.total_contrato)}</td>
-                                  <td className="py-1.5 px-2 text-center text-[11px] text-gray-300">{fmtBRL(r.total_cc)}</td>
-                                </tr>
-                              );
-                            })}
-                          </React.Fragment>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              );
-            })()}
+            <Table
+              cols={['Closer', 'RM', 'RR', 'Vendas', 'Contrato', 'CC', 'Ticket Médio', 'Show Rate', 'Fechamento']}
+              rows={closers.map((c, i) => [
+                `${i + 1}. ${c.closer}`,
+                c.rm, c.rr, c.vendas,
+                fmtBRL(c.total_contrato), fmtBRL(c.total_cc), fmtBRL(c.ticket_medio),
+                fmtPct(c.tx_show), fmtPct(c.tx_fechamento)
+              ])}
+            />
           </div>
         )}
         {sdrs.length > 0 && (
