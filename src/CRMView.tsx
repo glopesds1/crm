@@ -66,6 +66,21 @@ function fmtDateSP(iso: string, opts?: { year?: boolean }): string {
   } catch { return '—'; }
 }
 
+/** Formata data/hora, mas omite hora se for exatamente 00:00 (DATE sem hora). */
+function fmtDateSmartSP(iso: string, opts?: { year?: boolean }): string {
+  if (!iso) return '—';
+  try {
+    const d = parseDateSP(iso);
+    if (isNaN(d.getTime())) return '—';
+    const h = Number(d.toLocaleString('pt-BR', { timeZone: SP_TZ, hour: '2-digit', hour12: false }));
+    const m = Number(d.toLocaleString('pt-BR', { timeZone: SP_TZ, minute: '2-digit' }));
+    if (h === 0 && m === 0) {
+      return d.toLocaleDateString('pt-BR', { timeZone: SP_TZ, day: '2-digit', month: '2-digit', ...(opts?.year ? { year: '2-digit' } : {}) });
+    }
+    return fmtDateSP(iso, opts);
+  } catch { return '—'; }
+}
+
 // ── Types ─────────────────────────────────────────────────────
 interface CRMLead {
   id: string;
@@ -231,7 +246,7 @@ function LeadCard({ lead, proximaTarefa, onClick }: { key?: React.Key; lead: CRM
         </div>
       )}
       <div className="text-[9px] text-gray-600 pt-1.5 mt-1 border-t border-white/8">
-        {lead.created_at ? fmtDateSP(lead.created_at, { year: true }) : '—'}
+        {lead.created_at ? fmtDateSmartSP(lead.created_at, { year: true }) : '—'}
       </div>
     </motion.div>
   );
@@ -2278,7 +2293,7 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
               )}
               {[
                 { label: 'Empresa', value: lead.empresa },
-                { label: 'Origem', value: lead.anuncio ?? lead.origem, extra: lead.created_at ? fmtDateSP(lead.created_at, { year: true }) : undefined },
+                { label: 'Origem', value: lead.anuncio ?? lead.origem, extra: lead.created_at ? fmtDateSmartSP(lead.created_at, { year: true }) : undefined },
               ].filter(f => f.value).map(f => (
                 <div key={f.label}>
                   <p className="text-[9px] font-bold uppercase tracking-widest text-gray-600 mb-0.5">{f.label}</p>
