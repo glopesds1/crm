@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { format, subDays, startOfMonth, startOfYear, endOfYear, addDays } from 'date-fns';
+import { format, subDays, startOfMonth, endOfMonth, startOfYear, endOfYear } from 'date-fns';
 import { supabase } from './lib/supabase';
 import {
   BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
@@ -139,7 +139,9 @@ export default function DashboardView({ userSession }: { userSession: any }) {
   const [error, setError] = useState<string | null>(null);
 
   const today = new Date();
-  const tomorrow = addDays(today, 1);
+  const todayStr = format(today, 'yyyy-MM-dd');
+  const endOfMonthStr = format(endOfMonth(today), 'yyyy-MM-dd');
+  const fimMes = todayStr < endOfMonthStr ? todayStr : endOfMonthStr;
   const [range, setRange] = useState<DateRange>({
     inicio: format(startOfYear(today), 'yyyy-MM-dd'),
     fim: format(endOfYear(today), 'yyyy-MM-dd'),
@@ -183,17 +185,15 @@ export default function DashboardView({ userSession }: { userSession: any }) {
     const yearStart   = format(startOfYear(today),  'yyyy-MM-dd');
     const yearEnd     = format(endOfYear(today),    'yyyy-MM-dd');
     const monthStart  = format(startOfMonth(today), 'yyyy-MM-dd');
-    const monthEnd    = format(tomorrow,             'yyyy-MM-dd');
     const days90Start = format(subDays(today, 90),  'yyyy-MM-dd');
-    const todayStr    = format(today, 'yyyy-MM-dd');
 
     const p = periodoPadraoAba[page] || 'mes';
     setPeriodo(p);
     if      (p === 'ano')     setRange({ inicio: yearStart,   fim: yearEnd });
-    else if (p === 'mes')     setRange({ inicio: monthStart,  fim: monthEnd });
+    else if (p === 'mes')     setRange({ inicio: monthStart,  fim: fimMes });
     else if (p === 'hoje')    setRange({ inicio: todayStr,    fim: todayStr });
-    else if (p === '90d')     setRange({ inicio: days90Start, fim: monthEnd });
-    else if (p === 'semanal') setRange({ inicio: monthStart,  fim: monthEnd });
+    else if (p === '90d')     setRange({ inicio: days90Start, fim: fimMes });
+    else if (p === 'semanal') setRange({ inicio: monthStart,  fim: fimMes });
   }, [page]); // eslint-disable-line
 
   useEffect(() => {
@@ -212,8 +212,8 @@ export default function DashboardView({ userSession }: { userSession: any }) {
 
   const PRESETS = [
     { id: 'ano', label: 'Este ano', inicio: format(startOfYear(today), 'yyyy-MM-dd'), fim: format(endOfYear(today), 'yyyy-MM-dd') },
-    { id: 'mes', label: 'Este mês', inicio: format(startOfMonth(today), 'yyyy-MM-dd'), fim: format(tomorrow, 'yyyy-MM-dd') },
-    { id: '90d', label: '90 dias', inicio: format(subDays(today, 90), 'yyyy-MM-dd'), fim: format(tomorrow, 'yyyy-MM-dd') },
+    { id: 'mes', label: 'Este mês', inicio: format(startOfMonth(today), 'yyyy-MM-dd'), fim: fimMes },
+    { id: '90d', label: '90 dias', inicio: format(subDays(today, 90), 'yyyy-MM-dd'), fim: fimMes },
   ];
 
   return (
@@ -802,15 +802,29 @@ function PageMetas({ data, userSession, range }: { data: any; userSession: any; 
         {closers.length > 0 && (
           <div className="glass-card p-6">
             <h3 className="text-sm font-bold uppercase tracking-widest text-brand-primary mb-4">Performance por Closer</h3>
-            <Table
-              cols={['Closer', 'RM', 'RR', 'Vendas', 'Contrato', 'CC', 'Ticket Médio', 'Show Rate', 'Fechamento']}
-              rows={closers.map((c, i) => [
-                `${i + 1}. ${c.closer}`,
-                c.rm, c.rr, c.vendas,
-                fmtBRL(c.total_contrato), fmtBRL(c.total_cc), fmtBRL(c.ticket_medio),
-                fmtPct(c.tx_show), fmtPct(c.tx_fechamento)
-              ])}
-            />
+            {(() => {
+              const txColor = (v: any) => {
+                const n = parseFloat(v ?? 0);
+                if (n >= 50) return 'text-green-400';
+                if (n >= 30) return 'text-yellow-400';
+                return 'text-red-400';
+              };
+              return (
+                <Table
+                  cols={['Closer', 'RM', 'Tx Show', 'RR', 'Tx Conv', 'Vendas', 'Contrato', 'CC']}
+                  rows={closers.map((c, i) => [
+                    `${i + 1}. ${c.closer}`,
+                    c.rm,
+                    <span className={txColor(c.tx_show)}>{fmtPct(c.tx_show)}</span>,
+                    c.rr,
+                    <span className={txColor(c.tx_fechamento)}>{fmtPct(c.tx_fechamento)}</span>,
+                    c.vendas,
+                    fmtBRL(c.total_contrato),
+                    fmtBRL(c.total_cc),
+                  ] as any)}
+                />
+              );
+            })()}
           </div>
         )}
         {sdrs.length > 0 && (
