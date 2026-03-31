@@ -896,7 +896,7 @@ function PageMetas({ data, userSession, range }: { data: any; userSession: any; 
           <Table
             cols={['Data', 'Lead', 'Closer', 'Programa', 'Contrato', 'CC', 'Etapa']}
             rows={vendasLista.map(v => {
-              const d = v.data_venda ? (() => { const p = v.data_venda.split('-'); return `${p[2]}/${p[1]}`; })() : '—';
+              const d = v.data_venda ? new Date(v.data_venda).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', timeZone: 'America/Sao_Paulo' }) : '—';
               return [
                 d,
                 v.nome ?? '—',
