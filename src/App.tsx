@@ -3952,7 +3952,7 @@ export default function App() {
           {clientTab === 'materiais' && <MateriaisClienteView tenantId={crmClientSession.tenant.id} />}
           {clientTab === 'documentos' && <DocumentosClienteView tenantId={crmClientSession.tenant.id} />}
           {clientTab === 'educacao' && <EducacaoView userEmail={crmClientSession.user.email} isAdmin={false} />}
-          {clientTab === 'analise' && <TranscricaoLigacaoView />}
+          {clientTab === 'analise' && <TranscricaoLigacaoView tenantId={crmClientSession.tenant.id} />}
         </div>
 
         {/* Botão flutuante do Consultor IA */}
