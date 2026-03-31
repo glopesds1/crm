@@ -306,7 +306,7 @@ export default function DashboardView({ userSession }: { userSession: any }) {
           {page === 'metas' && <PageMetas data={data} userSession={userSession} range={range} />}
           {page === 'semanal' && <PageSemanal data={data} userSession={userSession} />}
           {page === 'reunioes' && <PageReunioes data={data} />}
-          {page === 'analise' && <PageAnalise data={data} />}
+          {page === 'analise' && <PageAnalise data={data} range={range} />}
           {page === 'anuncios' && <PageAnuncios data={data} />}
           {page === 'sdr' && <PageSDR data={data} />}
         </>
@@ -721,58 +721,50 @@ function PageMetas({ data, userSession, range }: { data: any; userSession: any; 
       {/* Meio: Performance | Vendido & Negociando */}
       <div className="grid grid-cols-2 gap-4">
 
-        {/* Performance por TP */}
+        {/* Performance */}
         <div className="glass-card p-6">
           <h3 className="text-sm font-bold uppercase tracking-widest text-brand-primary mb-2">Performance</h3>
+          <div className="grid grid-cols-4 text-center mb-1">
+            <span />
+            <span className="text-[9px] font-bold uppercase tracking-widest" style={{ color: '#aaa' }}>Meta</span>
+            <div className="text-center space-y-0.5">
+              <div className="text-[9px] font-bold uppercase tracking-widest" style={{ color: '#aaa' }}>Conv. Meta</div>
+              <div className="text-[9px] font-bold uppercase tracking-widest text-brand-primary">Conv. Real</div>
+            </div>
+            <span className="text-[9px] font-bold uppercase tracking-widest" style={{ color: '#aaa' }}>Realizado</span>
+          </div>
           {(() => {
-            const porTp: { tp: string; marcadas: number; realizadas: number; show_rate: number; vendas: number; tx_conversao: number }[] =
-              typeof m.por_tp === 'string' ? JSON.parse(m.por_tp) : (m.por_tp || []);
-            const tpColors: Record<string, string> = { R1: '#fff', R2: '#d4af37', R3: '#ef9f27', 'R4+': '#ef4444' };
-            const totM = porTp.reduce((s, r) => s + (r.marcadas || 0), 0);
-            const totR = porTp.reduce((s, r) => s + (r.realizadas || 0), 0);
-            const totV = porTp.reduce((s, r) => s + (r.vendas || 0), 0);
-            const totShow = totM > 0 ? Math.round(totR / totM * 1000) / 10 : 0;
-            const totConv = totR > 0 ? Math.round(totV / totR * 1000) / 10 : 0;
-            const rows = [...porTp, { tp: 'TOTAL', marcadas: totM, realizadas: totR, show_rate: totShow, vendas: totV, tx_conversao: totConv }];
+            const porTp: any[] = typeof m.por_tp === 'string' ? JSON.parse(m.por_tp) : (m.por_tp || []);
+            const totalMarcadas = porTp.reduce((s: number, t: any) => s + (parseInt(t.marcadas) || 0), 0);
+            const totalRealizadas = porTp.reduce((s: number, t: any) => s + (parseInt(t.realizadas) || 0), 0);
+            const totalVendas = parseInt(m.vendas_realizado) || porTp.reduce((s: number, t: any) => s + (parseInt(t.vendas) || 0), 0);
             return (
-              <div className="overflow-x-auto">
-                <table className="w-full text-xs">
-                  <thead>
-                    <tr className="border-b border-white/10">
-                      {['TP', 'Marcadas', 'Realizadas', 'Show Rate', 'Vendas', 'Conversão'].map(h => (
-                        <th key={h} className="py-2 px-2 text-[9px] font-bold uppercase tracking-widest text-center" style={{ color: '#aaa' }}>{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {rows.map(r => {
-                      const isTotal = r.tp === 'TOTAL';
-                      const color = isTotal ? '#00FF88' : (tpColors[r.tp] ?? '#fff');
-                      return (
-                        <tr key={r.tp} className={`border-b border-white/5 ${isTotal ? 'bg-white/5' : ''}`}>
-                          <td className="py-2 px-2 text-center font-bold" style={{ color }}>{r.tp}</td>
-                          <td className="py-2 px-2 text-center text-white">{fmt(r.marcadas)}</td>
-                          <td className="py-2 px-2 text-center text-white">{fmt(r.realizadas)}</td>
-                          <td className="py-2 px-2 text-center text-white">{r.show_rate?.toFixed(1)}%</td>
-                          <td className="py-2 px-2 text-center text-white">{fmt(r.vendas)}</td>
-                          <td className="py-2 px-2 text-center text-white">{r.tx_conversao?.toFixed(1)}%</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
+              <>
+                <PerfRow
+                  label="Reuniões Marcadas"
+                  metaKey="meta_rm"
+                  metaVal={fmt(metasEdit.meta_rm || m.meta_rm)}
+                  realizado={fmt(totalMarcadas || m.rm_realizado)}
+                />
+                <PerfRow
+                  label="Reuniões Realizadas"
+                  metaKey="meta_rr"
+                  metaVal={fmt(metasEdit.meta_rr || m.meta_rr)}
+                  realizado={fmt(totalRealizadas || m.rr_realizado)}
+                  convMeta={metasEdit.meta_rr > 0 && metasEdit.meta_rm > 0 ? `${((metasEdit.meta_rr / metasEdit.meta_rm) * 100).toFixed(1)}%` : undefined}
+                  convReal={(totalMarcadas || m.rm_realizado) > 0 ? `${(((totalRealizadas || m.rr_realizado) / (totalMarcadas || m.rm_realizado)) * 100).toFixed(1)}%` : undefined}
+                />
+                <PerfRow
+                  label="Vendas"
+                  metaKey="meta_vendas"
+                  metaVal={fmt(metasEdit.meta_vendas || m.meta_vendas)}
+                  realizado={fmt(totalVendas)}
+                  convMeta={metasEdit.meta_vendas > 0 && metasEdit.meta_rr > 0 ? `${((metasEdit.meta_vendas / metasEdit.meta_rr) * 100).toFixed(1)}%` : undefined}
+                  convReal={(totalRealizadas || m.rr_realizado) > 0 ? `${((totalVendas / (totalRealizadas || m.rr_realizado)) * 100).toFixed(1)}%` : undefined}
+                />
+              </>
             );
           })()}
-          {/* Vendas — meta editável */}
-          <div className="mt-3 pt-3 border-t border-white/5">
-            <PerfRow
-              label="Vendas"
-              metaKey="meta_vendas"
-              metaVal={fmt(metasEdit.meta_vendas || m.meta_vendas)}
-              realizado={fmt(m.vendas_realizado)}
-            />
-          </div>
         </div>
 
         {/* Vendido & Negociando */}
@@ -1134,13 +1126,33 @@ function PageReunioes({ data }: { data: any }) {
 }
 
 // ── PAGE: Análise de Vendas ───────────────────────────────────
-function PageAnalise({ data }: { data: any }) {
+function PageAnalise({ data, range }: { data: any; range: DateRange }) {
   const toArr = (d: any) => Array.isArray(d) ? d : d ? [d] : [];
   const etapas     = toArr(data?.etapas).map((x: any) => ({ ...x, vendas: +x.vendas, ticket_medio: +x.ticket_medio, cc_medio: +x.cc_medio }));
   const etapaPizza = toArr(data?.etapa_pizza).map((x: any) => ({ ...x, vendas: +x.vendas, pct_total: +x.pct_total }));
   const programas  = toArr(data?.programas).map((x: any) => ({ ...x, vendas: +x.vendas, pct_total: +x.pct_total }));
   const motivos    = toArr(data?.motivos).map((x: any) => ({ ...x, quantidade: +x.quantidade, pct_total: +x.pct_total }));
   const closers    = toArr(data?.closers).map((x: any) => ({ ...x, vendas: +x.vendas }));
+
+  // Fetch dados de metas (por_tp + closers por TP)
+  const [metasData, setMetasData] = useState<any>(null);
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch(`${WEBHOOK_BASE}?page=metas&data_inicio=${range.inicio}&data_fim=${range.fim}`);
+        if (!res.ok) return;
+        const json = await res.json();
+        setMetasData(json);
+      } catch { /* silently fail */ }
+    })();
+  }, [range.inicio, range.fim]);
+
+  const metasM = Array.isArray(metasData?.metas) ? metasData.metas[0] : metasData?.metas;
+  const porTp: { tp: string; marcadas: number; realizadas: number; show_rate: number; vendas: number; tx_conversao: number }[] =
+    metasM ? (typeof metasM.por_tp === 'string' ? JSON.parse(metasM.por_tp) : (metasM.por_tp || [])) : [];
+  const metasClosers: any[] = Array.isArray(metasData?.closers) ? metasData.closers : metasData?.closers ? [metasData.closers] : [];
+
+  const tpColors: Record<string, string> = { R1: '#fff', R2: '#d4af37', R3: '#ef9f27', 'R4+': '#ef4444' };
 
   const PizzaLegend = ({ items, nameKey, valueKey }: { items: any[]; nameKey: string; valueKey: string }) => (
     <div className="space-y-1 mt-2">
@@ -1158,6 +1170,116 @@ function PageAnalise({ data }: { data: any }) {
 
   return (
     <div className="space-y-4">
+
+      {/* Performance por etapa de reunião (por_tp) + Closer por TP */}
+      <div className="grid grid-cols-2 gap-4">
+        <div className="glass-card p-6">
+          <h3 className="text-sm font-bold uppercase tracking-widest text-brand-primary mb-3">Performance por Etapa de Reunião</h3>
+          {porTp.length === 0 ? <Empty /> : (() => {
+            const totM = porTp.reduce((s, r) => s + (Number(r.marcadas) || 0), 0);
+            const totR = porTp.reduce((s, r) => s + (Number(r.realizadas) || 0), 0);
+            const totV = porTp.reduce((s, r) => s + (Number(r.vendas) || 0), 0);
+            const totShow = totM > 0 ? (totR / totM * 100).toFixed(1) : '0.0';
+            const totConv = totR > 0 ? (totV / totR * 100).toFixed(1) : '0.0';
+            const rows = [...porTp, { tp: 'TOTAL', marcadas: totM, realizadas: totR, show_rate: parseFloat(totShow), vendas: totV, tx_conversao: parseFloat(totConv) }];
+            return (
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="border-b border-white/10">
+                    {['TP', 'Marcadas', 'Realizadas', 'Show Rate', 'Vendas', 'Conversão'].map(h => (
+                      <th key={h} className="py-2 px-2 text-[9px] font-bold uppercase tracking-widest text-center" style={{ color: '#aaa' }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map(r => {
+                    const isTotal = r.tp === 'TOTAL';
+                    const color = isTotal ? '#00FF88' : (tpColors[r.tp] ?? '#fff');
+                    return (
+                      <tr key={r.tp} className={`border-b border-white/5 ${isTotal ? 'bg-white/5' : ''}`}>
+                        <td className="py-2 px-2 text-center font-bold" style={{ color }}>{r.tp}</td>
+                        <td className="py-2 px-2 text-center text-white">{fmt(r.marcadas)}</td>
+                        <td className="py-2 px-2 text-center text-white">{fmt(r.realizadas)}</td>
+                        <td className="py-2 px-2 text-center text-white">{r.show_rate?.toFixed(1)}%</td>
+                        <td className="py-2 px-2 text-center text-white">{fmt(r.vendas)}</td>
+                        <td className="py-2 px-2 text-center text-white">{r.tx_conversao?.toFixed(1)}%</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            );
+          })()}
+        </div>
+
+        {metasClosers.length > 0 && (
+          <div className="glass-card p-6">
+            <h3 className="text-sm font-bold uppercase tracking-widest text-brand-primary mb-3">Performance por Closer</h3>
+            {(() => {
+              const closerMap: Record<string, any[]> = {};
+              metasClosers.forEach(row => {
+                const name = row.closer ?? 'Sem nome';
+                if (!closerMap[name]) closerMap[name] = [];
+                closerMap[name].push(row);
+              });
+              return (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="border-b border-white/10">
+                        {['Closer', 'TP', 'Marcadas', 'Show', 'Realizadas', 'Conv.', 'Vendas'].map(h => (
+                          <th key={h} className="py-2 px-2 text-[9px] font-bold uppercase tracking-widest text-center" style={{ color: '#aaa' }}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {Object.entries(closerMap).map(([name, rows], ci) => {
+                        const totM = rows.reduce((s, r) => s + (Number(r.marcadas ?? r.rm) || 0), 0);
+                        const totR = rows.reduce((s, r) => s + (Number(r.realizadas ?? r.rr) || 0), 0);
+                        const totV = rows.reduce((s, r) => s + (Number(r.vendas) || 0), 0);
+                        const totShow = totM > 0 ? (totR / totM * 100).toFixed(1) + '%' : '—';
+                        const totConv = totR > 0 ? (totV / totR * 100).toFixed(1) + '%' : '—';
+                        return (
+                          <React.Fragment key={name}>
+                            <tr className="bg-white/5 border-b border-white/10">
+                              <td className="py-2 px-2 text-[13px] font-bold text-white">{ci + 1}. {name}</td>
+                              <td className="py-2 px-2 text-center text-[10px] text-gray-500">Total</td>
+                              <td className="py-2 px-2 text-center font-bold text-white">{fmt(totM)}</td>
+                              <td className="py-2 px-2 text-center text-white">{totShow}</td>
+                              <td className="py-2 px-2 text-center font-bold text-white">{fmt(totR)}</td>
+                              <td className="py-2 px-2 text-center text-white">{totConv}</td>
+                              <td className="py-2 px-2 text-center font-bold text-white">{fmt(totV)}</td>
+                            </tr>
+                            {rows.map(r => {
+                              const tp = r.tp_group ?? 'R1';
+                              const marc = Number(r.marcadas ?? r.rm) || 0;
+                              const real = Number(r.realizadas ?? r.rr) || 0;
+                              const vend = Number(r.vendas) || 0;
+                              const show = marc > 0 ? (real / marc * 100).toFixed(1) + '%' : '—';
+                              const conv = real > 0 ? (vend / real * 100).toFixed(1) + '%' : '—';
+                              return (
+                                <tr key={`${name}-${tp}`} className="border-b border-white/5">
+                                  <td className="py-1.5 px-2 pl-8 text-[11px] text-gray-500" />
+                                  <td className="py-1.5 px-2 text-center text-[11px] font-semibold" style={{ color: tpColors[tp] ?? '#fff' }}>{tp}</td>
+                                  <td className="py-1.5 px-2 text-center text-[11px] text-gray-300">{fmt(marc)}</td>
+                                  <td className="py-1.5 px-2 text-center text-[11px] text-gray-300">{show}</td>
+                                  <td className="py-1.5 px-2 text-center text-[11px] text-gray-300">{fmt(real)}</td>
+                                  <td className="py-1.5 px-2 text-center text-[11px] text-gray-300">{conv}</td>
+                                  <td className="py-1.5 px-2 text-center text-[11px] text-gray-300">{fmt(vend)}</td>
+                                </tr>
+                              );
+                            })}
+                          </React.Fragment>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              );
+            })()}
+          </div>
+        )}
+      </div>
 
       {/* Linha 1: Ticket/CC por Etapa (barras) | Ticket/CC por Closer (tabela) */}
       <div className="grid grid-cols-2 gap-4">
