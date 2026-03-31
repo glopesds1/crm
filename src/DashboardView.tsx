@@ -753,33 +753,33 @@ function PageMetas({ data, userSession, range }: { data: any; userSession: any; 
             <span className="text-[9px] font-bold uppercase tracking-widest" style={{ color: '#aaa' }}>Realizado</span>
           </div>
           {(() => {
-            const porTp: any[] = typeof m.por_tp === 'string' ? JSON.parse(m.por_tp) : (m.por_tp || []);
-            const totalMarcadas = porTp.reduce((s: number, t: any) => s + (parseInt(t.marcadas) || 0), 0);
-            const totalRealizadas = porTp.reduce((s: number, t: any) => s + (parseInt(t.realizadas) || 0), 0);
-            const totalVendas = parseInt(m.vendas_realizado) || porTp.reduce((s: number, t: any) => s + (parseInt(t.vendas) || 0), 0);
+            const rmRealizado = parseInt(m.rm_realizado) || 0;
+            const rrRealizado = parseInt(m.rr_realizado) || 0;
+            const vendasRealizado = parseInt(m.vendas_realizado) || 0;
+            console.log('[metas] rm_realizado:', m.rm_realizado, 'rr_realizado:', m.rr_realizado);
             return (
               <>
                 <PerfRow
                   label="Reuniões Marcadas"
                   metaKey="meta_rm"
                   metaVal={fmt(metasEdit.meta_rm || m.meta_rm)}
-                  realizado={fmt(totalMarcadas || m.rm_realizado)}
+                  realizado={fmt(rmRealizado)}
                 />
                 <PerfRow
                   label="Reuniões Realizadas"
                   metaKey="meta_rr"
                   metaVal={fmt(metasEdit.meta_rr || m.meta_rr)}
-                  realizado={fmt(totalRealizadas || m.rr_realizado)}
+                  realizado={fmt(rrRealizado)}
                   convMeta={metasEdit.meta_rr > 0 && metasEdit.meta_rm > 0 ? `${((metasEdit.meta_rr / metasEdit.meta_rm) * 100).toFixed(1)}%` : undefined}
-                  convReal={(totalMarcadas || m.rm_realizado) > 0 ? `${(((totalRealizadas || m.rr_realizado) / (totalMarcadas || m.rm_realizado)) * 100).toFixed(1)}%` : undefined}
+                  convReal={rmRealizado > 0 ? `${((rrRealizado / rmRealizado) * 100).toFixed(1)}%` : undefined}
                 />
                 <PerfRow
                   label="Vendas"
                   metaKey="meta_vendas"
                   metaVal={fmt(metasEdit.meta_vendas || m.meta_vendas)}
-                  realizado={fmt(totalVendas)}
+                  realizado={fmt(vendasRealizado)}
                   convMeta={metasEdit.meta_vendas > 0 && metasEdit.meta_rr > 0 ? `${((metasEdit.meta_vendas / metasEdit.meta_rr) * 100).toFixed(1)}%` : undefined}
-                  convReal={(totalRealizadas || m.rr_realizado) > 0 ? `${((totalVendas / (totalRealizadas || m.rr_realizado)) * 100).toFixed(1)}%` : undefined}
+                  convReal={rrRealizado > 0 ? `${((vendasRealizado / rrRealizado) * 100).toFixed(1)}%` : undefined}
                 />
               </>
             );
