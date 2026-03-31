@@ -675,7 +675,7 @@ function PageMetas({ data, userSession, range }: { data: any; userSession: any; 
       <span className="text-xs font-bold" style={{ color: '#aaa' }}>{label}</span>
       {/* Meta editável */}
       <div className="text-center">
-        {editKey === metaKey ? (
+        {metaKey && editKey === metaKey ? (
           <input
             autoFocus
             type="number"
@@ -687,9 +687,9 @@ function PageMetas({ data, userSession, range }: { data: any; userSession: any; 
           />
         ) : (
           <div
-            onClick={() => isAdmin ? (setEditKey(metaKey), setEditVal(String(metaVal))) : null}
-            className={`inline-block bg-white/10 rounded-xl px-3 py-1 ${isAdmin ? 'cursor-pointer hover:border hover:border-brand-primary/40 transition-all' : ''}`}
-            title={isAdmin ? 'Clique para editar' : ''}
+            onClick={() => isAdmin && metaKey ? (setEditKey(metaKey), setEditVal(String(metaVal))) : null}
+            className={`inline-block bg-white/10 rounded-xl px-3 py-1 ${isAdmin && metaKey ? 'cursor-pointer hover:border hover:border-brand-primary/40 transition-all' : ''}`}
+            title={isAdmin && metaKey ? 'Clique para editar' : ''}
           >
             <span className="text-lg font-black text-white">{metaVal}</span>
           </div>
@@ -734,18 +734,31 @@ function PageMetas({ data, userSession, range }: { data: any; userSession: any; 
             <span className="text-[9px] font-bold uppercase tracking-widest" style={{ color: '#aaa' }}>Realizado</span>
           </div>
           <PerfRow
-            label="Reuniões Marcadas"
+            label="RM (R1)"
             metaKey="meta_rm"
             metaVal={fmt(metasEdit.meta_rm || m.meta_rm)}
             realizado={fmt(m.rm_realizado)}
           />
           <PerfRow
-            label="Reuniões Realizadas"
+            label="RM (R2+)"
+            metaKey=""
+            metaVal="—"
+            realizado={<span className="text-amber-400">{fmt(m.rm_r2plus_realizado ?? 0)}</span>}
+          />
+          <PerfRow
+            label="RR (R1)"
             metaKey="meta_rr"
             metaVal={fmt(metasEdit.meta_rr || m.meta_rr)}
             realizado={fmt(m.rr_realizado)}
             convMeta={metasEdit.meta_rr > 0 && metasEdit.meta_rm > 0 ? `${((metasEdit.meta_rr / metasEdit.meta_rm) * 100).toFixed(1)}%` : undefined}
             convReal={m.rm_realizado > 0 ? `${((m.rr_realizado / m.rm_realizado) * 100).toFixed(1)}%` : undefined}
+          />
+          <PerfRow
+            label="RR (R2+)"
+            metaKey=""
+            metaVal="—"
+            realizado={<span className="text-amber-400">{fmt(m.rr_r2plus_realizado ?? 0)}</span>}
+            convReal={(m.rm_r2plus_realizado ?? 0) > 0 ? `${(((m.rr_r2plus_realizado ?? 0) / m.rm_r2plus_realizado) * 100).toFixed(1)}%` : undefined}
           />
           <PerfRow
             label="Vendas"
@@ -785,11 +798,11 @@ function PageMetas({ data, userSession, range }: { data: any; userSession: any; 
           <div className="glass-card p-6">
             <h3 className="text-sm font-bold uppercase tracking-widest text-brand-primary mb-4">Performance por Closer</h3>
             <Table
-              cols={['Closer', 'RM', '(%)', 'RR', '(%)', 'Vendas', 'Contrato', 'CC']}
+              cols={['Closer', 'RM', 'RM R2+', '(%)', 'RR', 'RR R2+', '(%)', 'Vendas', 'Contrato', 'CC']}
               rows={closers.map((c, i) => [
                 `${i + 1}. ${c.closer}`,
-                c.rm, fmtPct(c.tx_show),
-                c.rr, fmtPct(c.tx_fechamento),
+                c.rm, c.rm_r2plus ?? 0, fmtPct(c.tx_show),
+                c.rr, c.rr_r2plus ?? 0, fmtPct(c.tx_fechamento),
                 c.vendas, fmtBRL(c.total_contrato), fmtBRL(c.total_cc)
               ])}
             />
