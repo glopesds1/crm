@@ -2371,6 +2371,9 @@ const CrmClientSection = ({ clientId, clientName, onOpenCrm }: { clientId: strin
   const [newUserSenha, setNewUserSenha] = useState('');
   const [savingUser, setSavingUser] = useState(false);
   const [showPassFor, setShowPassFor] = useState<string | null>(null);
+  const [editingPassFor, setEditingPassFor] = useState<string | null>(null);
+  const [newPassValue, setNewPassValue] = useState('');
+  const [savingPass, setSavingPass] = useState(false);
 
   useEffect(() => {
     getTenantByClientId(clientId).then(t => {
@@ -2429,6 +2432,31 @@ const CrmClientSection = ({ clientId, clientName, onOpenCrm }: { clientId: strin
     if (!confirm('Remover acesso deste usuário?')) return;
     await deleteCrmUser(userId);
     setUsers(prev => prev.filter(u => u.id !== userId));
+  };
+
+  const handleResetPass = async (u: CrmClientUser) => {
+    if (!newPassValue.trim()) return;
+    setSavingPass(true);
+    try {
+      // Atualiza no Auth via admin
+      const { supabaseAdmin } = await import('./lib/supabase');
+      if (supabaseAdmin) {
+        // Busca auth_user_id pelo email
+        const { data: authUsers } = await supabaseAdmin.auth.admin.listUsers();
+        const authUser = authUsers?.users?.find((au: any) => au.email === u.email);
+        if (authUser) {
+          await supabaseAdmin.auth.admin.updateUserById(authUser.id, { password: newPassValue.trim() });
+        }
+      }
+      // Atualiza na tabela crm_client_users
+      const updated = await updateCrmUser({ ...u, senha: newPassValue.trim() });
+      setUsers(prev => prev.map(x => x.id === u.id ? updated : x));
+      setEditingPassFor(null);
+      setNewPassValue('');
+    } catch (err: any) {
+      alert('Erro ao redefinir senha: ' + (err.message || err));
+    }
+    setSavingPass(false);
   };
 
   if (tenant === undefined) return null;
@@ -2502,20 +2530,42 @@ const CrmClientSection = ({ clientId, clientName, onOpenCrm }: { clientId: strin
           ) : (
             <div className="space-y-2">
               {users.map(u => (
-                <div key={u.id} className="flex items-center justify-between bg-white/3 border border-white/5 rounded-xl px-4 py-3">
-                  <div>
-                    <p className="text-sm font-medium text-white">{u.nome}</p>
-                    <p className="text-xs text-gray-500">{u.email}</p>
+                <div key={u.id} className="bg-white/3 border border-white/5 rounded-xl px-4 py-3 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-medium text-white">{u.nome}</p>
+                      <p className="text-xs text-gray-500">{u.email}</p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button onClick={() => setShowPassFor(showPassFor === u.id ? null : u.id)}
+                        className="text-xs text-gray-500 hover:text-white bg-white/5 px-2 py-1 rounded-lg flex items-center gap-1">
+                        <Eye size={11} /> {showPassFor === u.id ? u.senha : '••••••'}
+                      </button>
+                      <button onClick={() => { setEditingPassFor(editingPassFor === u.id ? null : u.id); setNewPassValue(''); }}
+                        className="text-xs text-brand-primary/60 hover:text-brand-primary bg-white/5 px-2 py-1 rounded-lg flex items-center gap-1">
+                        <Edit2 size={11} /> Senha
+                      </button>
+                      <button onClick={() => handleDeleteUser(u.id)} className="text-red-400/60 hover:text-red-400 p-1.5 rounded-lg hover:bg-red-400/10">
+                        <Trash2 size={13} />
+                      </button>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <button onClick={() => setShowPassFor(showPassFor === u.id ? null : u.id)}
-                      className="text-xs text-gray-500 hover:text-white bg-white/5 px-2 py-1 rounded-lg flex items-center gap-1">
-                      <Eye size={11} /> {showPassFor === u.id ? u.senha : '••••••'}
-                    </button>
-                    <button onClick={() => handleDeleteUser(u.id)} className="text-red-400/60 hover:text-red-400 p-1.5 rounded-lg hover:bg-red-400/10">
-                      <Trash2 size={13} />
-                    </button>
-                  </div>
+                  {/* Form redefinir senha */}
+                  <AnimatePresence>
+                    {editingPassFor === u.id && (
+                      <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
+                        className="flex gap-2 overflow-hidden">
+                        <input placeholder="Nova senha *" type="text" value={newPassValue} onChange={e => setNewPassValue(e.target.value)}
+                          className="flex-1 bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-sm text-white placeholder-white/30 focus:outline-none focus:border-brand-primary/50" />
+                        <button onClick={() => handleResetPass(u)} disabled={savingPass || !newPassValue.trim()}
+                          className="bg-brand-primary text-black font-bold rounded-lg px-3 py-1.5 text-xs hover:brightness-110 disabled:opacity-50 flex items-center gap-1">
+                          {savingPass ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
+                          Salvar
+                        </button>
+                        <button onClick={() => { setEditingPassFor(null); setNewPassValue(''); }} className="px-3 py-1.5 text-xs text-gray-400 hover:text-white bg-white/5 rounded-lg">✕</button>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
                 </div>
               ))}
             </div>
