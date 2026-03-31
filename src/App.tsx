@@ -4824,10 +4824,14 @@ export default function App() {
                 onMarkRead={(id) => setNotifications(notifications.map(n => n.id === id ? { ...n, read: true } : n))}
               />
             </div>
-            {(() => { const me = teamMembers.find(t => t.name === userSession?.name); return me?.photoUrl ? (
-              <img src={me.photoUrl} alt={me.name} className="w-8 h-8 rounded-full object-cover" referrerPolicy="no-referrer" />
-            ) : (
-              <div className="w-8 h-8 rounded-full" style={{ backgroundColor: userSession.color }} />
+            {(() => { const me = teamMembers.find(t => t.name === userSession?.name); return (
+              <button onClick={() => setIsUserMenuOpen(!isUserMenuOpen)} className="relative">
+                {me?.photoUrl ? (
+                  <img src={me.photoUrl} alt={me.name} className="w-8 h-8 rounded-full object-cover ring-2 ring-transparent hover:ring-brand-primary transition-all" referrerPolicy="no-referrer" />
+                ) : (
+                  <div className="w-8 h-8 rounded-full hover:ring-2 hover:ring-brand-primary transition-all" style={{ backgroundColor: userSession.color }} />
+                )}
+              </button>
             ); })()}
           </div>
         </header>
