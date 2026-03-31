@@ -838,28 +838,28 @@ function PageMetas({ data, userSession, range }: { data: any; userSession: any; 
             })()}
           </div>
         )}
-        {sdrs.length > 0 && (
-          <div className="glass-card p-6">
-            <h3 className="text-sm font-bold uppercase tracking-widest text-brand-primary mb-4">Performance por SDR</h3>
-            {(() => {
-              const rateColor = (v: any, ref: number) => {
-                const n = parseFloat(v ?? 0);
-                if (n >= ref) return '#22c55e';
-                if (n >= ref * 0.6) return '#d4af37';
-                return '#ef4444';
-              };
-              return (
-                <Table
-                  cols={['SDR', 'RM', 'RR', 'Vendas', 'Show-rate']}
-                  rows={sdrs.map((s, i) => [
-                    `${i + 1}. ${s.sdr}`, s.rm, s.rr, s.vendas,
-                    <span style={{ color: rateColor(s.show_rate, 50) }}>{fmtPct(s.show_rate)}</span>,
-                  ] as any)}
-                />
-              );
-            })()}
-          </div>
-        )}
+        {(() => {
+          const sdrsFiltered = sdrs.filter(s => !['Gabriel Fonseca', 'Gabriel Moreira', 'Thalisson Gama'].includes(s.sdr));
+          if (sdrsFiltered.length === 0) return null;
+          const rateColor = (v: any, ref: number) => {
+            const n = parseFloat(v ?? 0);
+            if (n >= ref) return '#22c55e';
+            if (n >= ref * 0.6) return '#d4af37';
+            return '#ef4444';
+          };
+          return (
+            <div className="glass-card p-6" style={{ maxWidth: sdrsFiltered.length <= 2 ? '50%' : undefined }}>
+              <h3 className="text-sm font-bold uppercase tracking-widest text-brand-primary mb-4">Performance por SDR</h3>
+              <Table
+                cols={['SDR', 'RM', 'RR', 'Vendas', 'Show-rate']}
+                rows={sdrsFiltered.map((s, i) => [
+                  `${i + 1}. ${s.sdr}`, s.rm, s.rr, s.vendas,
+                  <span style={{ color: rateColor(s.show_rate, 50) }}>{fmtPct(s.show_rate)}</span>,
+                ] as any)}
+              />
+            </div>
+          );
+        })()}
       </div>
 
       {/* Vendas do Mês */}
