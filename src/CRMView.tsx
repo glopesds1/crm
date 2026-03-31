@@ -3222,10 +3222,30 @@ export default function CRMView({ userSession, teamMembers, openLeadByName, onLe
       seen.add(l.id);
       return true;
     });
-    setLeads(unique);
 
     // Load all tasks (only for active leads) + cleanup orphaned tasks
     const { data: t } = await supabase.from('crm_tarefas').select('*');
+
+    // Para não-admin: também carregar leads que tenham tarefas pendentes atribuídas ao usuário
+    // (permite abrir o card via alarme mesmo que o lead pertença a outro responsável)
+    if (!isAdmin && t) {
+      const loadedIds = new Set(unique.map(l => l.id));
+      const extraLeadIds = [...new Set(
+        t.filter(task => !task.concluida && (task.responsavel ?? '').toLowerCase() === (userSession?.name ?? '').toLowerCase() && !loadedIds.has(task.lead_id))
+          .map(task => task.lead_id)
+      )];
+      if (extraLeadIds.length > 0) {
+        const { data: extraLeads } = await supabase.from('crm_leads').select('*').is('deletado_em', null).in('id', extraLeadIds);
+        if (extraLeads) {
+          for (const el of extraLeads) {
+            if (!seen.has(el.id)) { seen.add(el.id); unique.push(el); }
+          }
+        }
+      }
+    }
+
+    setLeads(unique);
+
     const activeLeadIds = new Set(unique.map(l => l.id));
     const orphanIds = (t ?? []).filter(task => !activeLeadIds.has(task.lead_id)).map(task => task.id);
     if (orphanIds.length > 0) {
