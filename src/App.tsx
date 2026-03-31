@@ -3573,7 +3573,7 @@ export default function App() {
   const [agencyConfig, setAgencyConfig] = useState<AgencyConfig>(INITIAL_AGENCY_CONFIG);
   const [userSession, setUserSession] = useState<UserSession | null>(null);
   const [crmClientSession, setCrmClientSession] = useState<{ user: CrmClientUser; tenant: CrmClientTenant } | null>(null);
-  const [clientTab, setClientTab] = useState<'crm' | 'educacao' | 'materiais' | 'documentos'>('crm');
+  const [clientTab, setClientTab] = useState<'crm' | 'educacao' | 'materiais' | 'documentos' | 'analise'>('crm');
   const [showConsultorChat, setShowConsultorChat] = useState(false);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [demands, setDemands] = useState<Demand[]>([]);
@@ -3939,6 +3939,7 @@ export default function App() {
             <button onClick={() => setClientTab('materiais')} className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${clientTab === 'materiais' ? 'bg-brand-primary/10 text-brand-primary' : 'text-white/40 hover:text-white/60'}`}>Materiais</button>
             <button onClick={() => setClientTab('documentos')} className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${clientTab === 'documentos' ? 'bg-brand-primary/10 text-brand-primary' : 'text-white/40 hover:text-white/60'}`}>Documentos</button>
             <button onClick={() => setClientTab('educacao')} className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${clientTab === 'educacao' ? 'bg-brand-primary/10 text-brand-primary' : 'text-white/40 hover:text-white/60'}`}>Educação</button>
+            <button onClick={() => setClientTab('analise')} className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${clientTab === 'analise' ? 'bg-brand-primary/10 text-brand-primary' : 'text-white/40 hover:text-white/60'}`}>Análise de Ligação</button>
           </div>
           <div className="flex items-center gap-4">
             <span className="text-sm text-gray-400">{crmClientSession.user.nome}</span>
@@ -3951,6 +3952,7 @@ export default function App() {
           {clientTab === 'materiais' && <MateriaisClienteView tenantId={crmClientSession.tenant.id} />}
           {clientTab === 'documentos' && <DocumentosClienteView tenantId={crmClientSession.tenant.id} />}
           {clientTab === 'educacao' && <EducacaoView userEmail={crmClientSession.user.email} isAdmin={false} />}
+          {clientTab === 'analise' && <TranscricaoLigacaoView />}
         </div>
 
         {/* Botão flutuante do Consultor IA */}
@@ -4557,12 +4559,6 @@ export default function App() {
                       Playbooks
                     </button>
                   )}
-                  <button
-                    onClick={() => setAquisicaoSubTab('Transcricao')}
-                    className={`w-full text-left px-4 py-2 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all ${aquisicaoSubTab === 'Transcricao' ? 'text-brand-primary bg-white/5' : 'text-gray-500 hover:text-white'}`}
-                  >
-                    Análise de Ligação
-                  </button>
                 </div>
               </motion.div>
             )}
@@ -4741,9 +4737,6 @@ export default function App() {
               )}
               {activeTab === 'Aquisição' && aquisicaoSubTab === 'Playbooks' && (
                 <PlaybooksView />
-              )}
-              {activeTab === 'Aquisição' && aquisicaoSubTab === 'Transcricao' && (
-                <TranscricaoLigacaoView />
               )}
             </motion.div>
           </AnimatePresence>
