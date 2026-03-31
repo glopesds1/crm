@@ -56,6 +56,7 @@ export default function TranscricaoLigacaoView() {
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
+  const mimeTypeRef = useRef<string>('audio/webm');
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
 
@@ -79,7 +80,11 @@ export default function TranscricaoLigacaoView() {
       streamRef.current = stream;
       chunksRef.current = [];
 
-      const mr = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+      // Detecta o melhor formato suportado pelo navegador
+      const mimeType = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/mp4']
+        .find(m => MediaRecorder.isTypeSupported(m)) ?? '';
+      const mr = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+      mimeTypeRef.current = mimeType || 'audio/webm';
       mr.ondataavailable = e => { if (e.data.size > 0) chunksRef.current.push(e.data); };
       mr.start(1000);
       mediaRecorderRef.current = mr;
@@ -109,6 +114,10 @@ export default function TranscricaoLigacaoView() {
   };
 
   const finalizarGravacao = () => {
+    if (segundos < 5) {
+      setErro('Grave pelo menos 5 segundos antes de finalizar.');
+      return;
+    }
     if (timerRef.current) clearInterval(timerRef.current);
     setEstado('processando');
 
@@ -117,14 +126,14 @@ export default function TranscricaoLigacaoView() {
 
     mr.onstop = async () => {
       streamRef.current?.getTracks().forEach(t => t.stop());
-      const blob = new Blob(chunksRef.current, { type: 'audio/webm' });
-      await enviarParaGemini(blob);
+      const blob = new Blob(chunksRef.current, { type: mimeTypeRef.current });
+      await enviarParaGemini(blob, mimeTypeRef.current);
     };
 
     if (mr.state !== 'inactive') mr.stop();
   };
 
-  const enviarParaGemini = async (blob: Blob) => {
+  const enviarParaGemini = async (blob: Blob, mimeType = 'audio/webm') => {
     try {
       const base64 = await new Promise<string>((resolve, reject) => {
         const reader = new FileReader();
@@ -144,7 +153,7 @@ export default function TranscricaoLigacaoView() {
           body: JSON.stringify({
             contents: [{
               parts: [
-                { inline_data: { mime_type: 'audio/webm', data: base64 } },
+                { inline_data: { mime_type: mimeType.split(';')[0], data: base64 } },
                 { text: ANALISE_PROMPT }
               ]
             }],
@@ -153,19 +162,34 @@ export default function TranscricaoLigacaoView() {
         }
       );
 
-      if (!res.ok) throw new Error(`Erro na API: ${res.status}`);
+      if (!res.ok) {
+        const errBody = await res.json().catch(() => ({}));
+        console.error('Gemini API error:', res.status, errBody);
+        const msg = errBody?.error?.message ?? `Erro ${res.status}`;
+        throw new Error(msg);
+      }
       const data = await res.json();
+      console.log('Gemini response:', data);
+
+      // Verifica bloqueio por safety
+      const finishReason = data.candidates?.[0]?.finishReason;
+      if (finishReason === 'SAFETY' || finishReason === 'OTHER') {
+        throw new Error('O áudio foi bloqueado pelo filtro de segurança. Tente novamente.');
+      }
+
       const texto = data.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
+      if (!texto) throw new Error('Resposta vazia do Gemini. O áudio pode estar muito curto ou silencioso.');
 
       // Remove possíveis blocos de markdown
       const jsonLimpo = texto.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
       const resultado: Analise = JSON.parse(jsonLimpo);
       setAnalise(resultado);
       setEstado('resultado');
-    } catch (e) {
-      setErro('Erro ao processar o áudio. Tente novamente.');
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Erro ao processar o áudio.';
+      setErro(msg);
       setEstado('idle');
-      console.error(e);
+      console.error('TranscricaoLigacao error:', e);
     }
   };
 
