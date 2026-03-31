@@ -342,9 +342,29 @@ function LeadCard({ lead, proximaTarefa, onClick }: { key?: React.Key; lead: CRM
       {lead.area && <div className="flex items-center gap-1.5 text-[10px] text-gray-400"><MapPin size={9} className="text-gray-600" /><span className="truncate">{lead.area}</span></div>}
       {lead.faturamento && <div className="flex items-center gap-1.5 text-[10px] text-gray-500"><DollarSign size={9} className="text-gray-600" />{lead.faturamento}</div>}
       {lead.responsavel && <div className="flex items-center gap-1.5 text-[10px] text-gray-500"><User size={9} className="text-gray-600" />{lead.responsavel}</div>}
-      {lead.programa_apresentado && <div className={`text-[10px] ${getProgramaStyle(lead.programa_apresentado)}`}>{lead.programa_apresentado}</div>}
-      {lead.valor_contrato != null && lead.valor_contrato > 0 && (
-        <div className="text-[11px] text-gray-500">R$ {Number(lead.valor_contrato).toLocaleString('pt-BR')}</div>
+      {lead.programa_apresentado && (() => {
+        const p = (lead.programa_apresentado || '').toLowerCase();
+        const style = p.includes('pro') ? { background: '#d4af3722', color: '#d4af37', border: '1px solid #d4af3744' }
+          : p.includes('lite') ? { background: '#c0c0c022', color: '#c0c0c0', border: '1px solid #c0c0c044' }
+          : p.includes('basic') ? { background: '#60a5fa22', color: '#60a5fa', border: '1px solid #60a5fa44' }
+          : { background: '#ffffff11', color: '#fff', border: '1px solid #ffffff22' };
+        return <div style={{ fontSize: 13, fontWeight: 600, padding: '4px 12px', borderRadius: 6, display: 'inline-block', ...style }}>{lead.programa_apresentado}</div>;
+      })()}
+      {((lead.valor_contrato != null && lead.valor_contrato > 0) || (lead.valor_cc != null && lead.valor_cc > 0)) && (
+        <div style={{ display: 'flex', gap: 16, marginTop: 4 }}>
+          {lead.valor_contrato != null && lead.valor_contrato > 0 && (
+            <div>
+              <div style={{ fontSize: 10, color: '#888', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Contrato</div>
+              <div style={{ fontSize: 15, fontWeight: 600, color: '#d4af37' }}>R$ {Number(lead.valor_contrato).toLocaleString('pt-BR', { minimumFractionDigits: lead.valor_contrato % 1 ? 2 : 0 })}</div>
+            </div>
+          )}
+          {lead.valor_cc != null && lead.valor_cc > 0 && (
+            <div>
+              <div style={{ fontSize: 10, color: '#888', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Cash Collect</div>
+              <div style={{ fontSize: 15, fontWeight: 600, color: '#60a5fa' }}>R$ {Number(lead.valor_cc).toLocaleString('pt-BR', { minimumFractionDigits: lead.valor_cc % 1 ? 2 : 0 })}</div>
+            </div>
+          )}
+        </div>
       )}
       {proximaTarefa && !proximaTarefa.concluida && (() => {
         const isReuniao = proximaTarefa.titulo.startsWith('R1') || proximaTarefa.titulo.startsWith('R2');
@@ -736,14 +756,18 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
       try {
         if (resultado === 'Venda') {
           const vendaPrograma = programaApresentadoNAF || leadObj?.programa_apresentado || null;
+          const vendaContrato = valorContrato ? parseFloat(valorContrato) : null;
+          const vendaCc = valorCc ? parseFloat(valorCc) : null;
+          const vendaMrr = prazoMeses && valorContrato ? parseFloat(valorContrato) / parseInt(prazoMeses) : null;
           await supabase.from('crm_leads').update({
             etapa: 'fechado', status: 'ganho',
             programa_apresentado: vendaPrograma,
-            valor_contrato: valorContrato ? parseFloat(valorContrato) : null,
-            valor_cc: valorCc ? parseFloat(valorCc) : null,
-            valor_mrr: prazoMeses && valorContrato ? parseFloat(valorContrato) / parseInt(prazoMeses) : null,
+            valor_contrato: vendaContrato,
+            valor_cc: vendaCc,
+            valor_mrr: vendaMrr,
             updated_at: now, etapa_desde: now,
           }).eq('id', leadId);
+          onLeadUpdated?.({ etapa: 'fechado', status: 'ganho', programa_apresentado: vendaPrograma ?? undefined, valor_contrato: vendaContrato ?? undefined, valor_cc: vendaCc ?? undefined, valor_mrr: vendaMrr ?? undefined } as Partial<CRMLead>);
 
           // Auto-create client
           try {
@@ -802,6 +826,7 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
             motivo_perda: motivoPerda || null,
             updated_at: now, etapa_desde: now,
           }).eq('id', leadId);
+          onLeadUpdated?.({ etapa: 'perdido', status: 'perdido' });
         } else if (resultado === 'Marcou R2+' || resultado === 'Reagendou') {
           // Bloco 3: Atualizar lead para rm_realizada com tp_atual
           const tpMap_upd: Record<string, string> = {'R1': 'R2', 'R2': 'R3', 'R3': 'R4+'};
@@ -811,8 +836,8 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
             etapa_desde: now,
             proxima_reuniao: proximaReuniao ? localDatetimeToISO(proximaReuniao) : undefined,
             programa_apresentado: programaApresentadoNAF || leadObj?.programa_apresentado || undefined,
-            valor_contrato: valorContrato ? parseFloat(valorContrato) : leadObj?.valor_contrato ?? undefined,
-            valor_cc: valorCc ? parseFloat(valorCc) : leadObj?.valor_cc ?? undefined,
+            valor_contrato: valorContrato ? parseFloat(valorContrato) : undefined,
+            valor_cc: valorCc ? parseFloat(valorCc) : undefined,
             updated_at: now,
           };
           (leadUpdR2 as any).tp_atual = nextTP_upd;
@@ -961,10 +986,10 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
               Data_Reuniao_Realizada: hoje,
               closer,
             });
-            // Mover para fup_ativa
+            // Mover para rm_realizada
             try {
-              await supabase.from('crm_leads').update({ etapa: 'fup_ativa', etapa_desde: now, updated_at: now }).eq('id', leadId);
-              onLeadUpdated?.({ etapa: 'fup_ativa' });
+              await supabase.from('crm_leads').update({ etapa: 'rm_realizada', etapa_desde: now, updated_at: now }).eq('id', leadId);
+              onLeadUpdated?.({ etapa: 'rm_realizada' });
             } catch { /* silent */ }
           }
         } else if (statusReuniao === 'Compareceu') {
