@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { format, subDays, startOfMonth, endOfMonth, startOfYear, endOfYear } from 'date-fns';
 import { supabase } from './lib/supabase';
 import {
@@ -180,25 +180,37 @@ export default function DashboardView({ userSession }: { userSession: any }) {
   };
   const [periodo, setPeriodo] = useState(periodoPadraoAba[page] || 'mes');
 
-  // Set default range per page on switch
-  useEffect(() => {
+  // Calcula range a partir de um período
+  const calcRange = useCallback((p: string): DateRange => {
     const yearStart   = format(startOfYear(today),  'yyyy-MM-dd');
     const yearEnd     = format(endOfYear(today),    'yyyy-MM-dd');
     const monthStart  = format(startOfMonth(today), 'yyyy-MM-dd');
     const days90Start = format(subDays(today, 90),  'yyyy-MM-dd');
+    if (p === 'ano')     return { inicio: yearStart,   fim: yearEnd };
+    if (p === 'mes')     return { inicio: monthStart,  fim: fimMes };
+    if (p === 'hoje')    return { inicio: todayStr,    fim: todayStr };
+    if (p === '90d')     return { inicio: days90Start, fim: fimMes };
+    if (p === 'semanal') return { inicio: monthStart,  fim: fimMes };
+    return { inicio: monthStart, fim: fimMes };
+  }, []); // eslint-disable-line
 
+  // Ao trocar de aba: seta periodo padrão + range + fetch
+  useEffect(() => {
     const p = periodoPadraoAba[page] || 'mes';
     setPeriodo(p);
-    if      (p === 'ano')     setRange({ inicio: yearStart,   fim: yearEnd });
-    else if (p === 'mes')     setRange({ inicio: monthStart,  fim: fimMes });
-    else if (p === 'hoje')    setRange({ inicio: todayStr,    fim: todayStr });
-    else if (p === '90d')     setRange({ inicio: days90Start, fim: fimMes });
-    else if (p === 'semanal') setRange({ inicio: monthStart,  fim: fimMes });
+    const r = calcRange(p);
+    setRange(r);
+    fetchData(page, r);
   }, [page]); // eslint-disable-line
 
+  // Ao mudar range manualmente (date picker ou preset): fetch
+  const prevRangeRef = useRef(range);
   useEffect(() => {
-    fetchData(page, range);
-  }, [page, range, fetchData]);
+    if (prevRangeRef.current.inicio !== range.inicio || prevRangeRef.current.fim !== range.fim) {
+      prevRangeRef.current = range;
+      fetchData(page, range);
+    }
+  }, [range]); // eslint-disable-line
 
   const PAGES: { id: Page; label: string; icon: any }[] = [
     { id: 'overview', label: 'Overview', icon: TrendingUp },
@@ -802,11 +814,11 @@ function PageMetas({ data, userSession, range }: { data: any; userSession: any; 
           <div className="glass-card p-6">
             <h3 className="text-sm font-bold uppercase tracking-widest text-brand-primary mb-4">Performance por Closer</h3>
             {(() => {
-              const txColor = (v: any) => {
+              const rateColor = (v: any, ref: number) => {
                 const n = parseFloat(v ?? 0);
-                if (n >= 50) return 'text-green-400';
-                if (n >= 30) return 'text-yellow-400';
-                return 'text-red-400';
+                if (n >= ref) return '#22c55e';
+                if (n >= ref * 0.6) return '#d4af37';
+                return '#ef4444';
               };
               return (
                 <Table
@@ -814,9 +826,9 @@ function PageMetas({ data, userSession, range }: { data: any; userSession: any; 
                   rows={closers.map((c, i) => [
                     `${i + 1}. ${c.closer}`,
                     c.rm,
-                    <span className={txColor(c.tx_show)}>{fmtPct(c.tx_show)}</span>,
+                    <span style={{ color: rateColor(c.tx_show, 50) }}>{fmtPct(c.tx_show)}</span>,
                     c.rr,
-                    <span className={txColor(c.tx_fechamento)}>{fmtPct(c.tx_fechamento)}</span>,
+                    <span style={{ color: rateColor(c.tx_fechamento, 20) }}>{fmtPct(c.tx_fechamento)}</span>,
                     c.vendas,
                     fmtBRL(c.total_contrato),
                     fmtBRL(c.total_cc),
@@ -829,10 +841,23 @@ function PageMetas({ data, userSession, range }: { data: any; userSession: any; 
         {sdrs.length > 0 && (
           <div className="glass-card p-6">
             <h3 className="text-sm font-bold uppercase tracking-widest text-brand-primary mb-4">Performance por SDR</h3>
-            <Table
-              cols={['SDR', 'RM', 'RR', 'Vendas', 'Show-rate']}
-              rows={sdrs.map((s, i) => [`${i + 1}. ${s.sdr}`, s.rm, s.rr, s.vendas, fmtPct(s.show_rate)])}
-            />
+            {(() => {
+              const rateColor = (v: any, ref: number) => {
+                const n = parseFloat(v ?? 0);
+                if (n >= ref) return '#22c55e';
+                if (n >= ref * 0.6) return '#d4af37';
+                return '#ef4444';
+              };
+              return (
+                <Table
+                  cols={['SDR', 'RM', 'RR', 'Vendas', 'Show-rate']}
+                  rows={sdrs.map((s, i) => [
+                    `${i + 1}. ${s.sdr}`, s.rm, s.rr, s.vendas,
+                    <span style={{ color: rateColor(s.show_rate, 50) }}>{fmtPct(s.show_rate)}</span>,
+                  ] as any)}
+                />
+              );
+            })()}
           </div>
         )}
       </div>
