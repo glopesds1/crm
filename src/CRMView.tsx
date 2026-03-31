@@ -756,14 +756,18 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
       try {
         if (resultado === 'Venda') {
           const vendaPrograma = programaApresentadoNAF || leadObj?.programa_apresentado || null;
+          const vendaContrato = valorContrato ? parseFloat(valorContrato) : null;
+          const vendaCc = valorCc ? parseFloat(valorCc) : null;
+          const vendaMrr = prazoMeses && valorContrato ? parseFloat(valorContrato) / parseInt(prazoMeses) : null;
           await supabase.from('crm_leads').update({
             etapa: 'fechado', status: 'ganho',
             programa_apresentado: vendaPrograma,
-            valor_contrato: valorContrato ? parseFloat(valorContrato) : null,
-            valor_cc: valorCc ? parseFloat(valorCc) : null,
-            valor_mrr: prazoMeses && valorContrato ? parseFloat(valorContrato) / parseInt(prazoMeses) : null,
+            valor_contrato: vendaContrato,
+            valor_cc: vendaCc,
+            valor_mrr: vendaMrr,
             updated_at: now, etapa_desde: now,
           }).eq('id', leadId);
+          onLeadUpdated?.({ etapa: 'fechado', status: 'ganho', programa_apresentado: vendaPrograma ?? undefined, valor_contrato: vendaContrato ?? undefined, valor_cc: vendaCc ?? undefined, valor_mrr: vendaMrr ?? undefined } as Partial<CRMLead>);
 
           // Auto-create client
           try {
@@ -822,6 +826,7 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
             motivo_perda: motivoPerda || null,
             updated_at: now, etapa_desde: now,
           }).eq('id', leadId);
+          onLeadUpdated?.({ etapa: 'perdido', status: 'perdido' });
         } else if (resultado === 'Marcou R2+' || resultado === 'Reagendou') {
           // Bloco 3: Atualizar lead para rm_realizada com tp_atual
           const tpMap_upd: Record<string, string> = {'R1': 'R2', 'R2': 'R3', 'R3': 'R4+'};
@@ -831,8 +836,8 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
             etapa_desde: now,
             proxima_reuniao: proximaReuniao ? localDatetimeToISO(proximaReuniao) : undefined,
             programa_apresentado: programaApresentadoNAF || leadObj?.programa_apresentado || undefined,
-            valor_contrato: valorContrato ? parseFloat(valorContrato) : leadObj?.valor_contrato ?? undefined,
-            valor_cc: valorCc ? parseFloat(valorCc) : leadObj?.valor_cc ?? undefined,
+            valor_contrato: valorContrato ? parseFloat(valorContrato) : undefined,
+            valor_cc: valorCc ? parseFloat(valorCc) : undefined,
             updated_at: now,
           };
           (leadUpdR2 as any).tp_atual = nextTP_upd;
