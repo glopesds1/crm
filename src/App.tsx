@@ -2363,12 +2363,22 @@ const CrmClientSection = ({ clientId, clientName, onOpenCrm }: { clientId: strin
   const [tenant, setTenant] = useState<CrmClientTenant | null | undefined>(undefined);
   const [activating, setActivating] = useState(false);
   const [leadCount, setLeadCount] = useState(0);
+  const [users, setUsers] = useState<CrmClientUser[]>([]);
+  const [loadingUsers, setLoadingUsers] = useState(false);
+  const [showUserForm, setShowUserForm] = useState(false);
+  const [newUserNome, setNewUserNome] = useState('');
+  const [newUserEmail, setNewUserEmail] = useState('');
+  const [newUserSenha, setNewUserSenha] = useState('');
+  const [savingUser, setSavingUser] = useState(false);
+  const [showPassFor, setShowPassFor] = useState<string | null>(null);
 
   useEffect(() => {
     getTenantByClientId(clientId).then(t => {
       setTenant(t);
       if (t) {
         import('./lib/database').then(db => db.getClientLeads(t.id)).then(leads => setLeadCount(leads.length));
+        setLoadingUsers(true);
+        getCrmUsersByTenant(t.id).then(setUsers).catch(console.error).finally(() => setLoadingUsers(false));
       }
     }).catch(() => setTenant(null));
   }, [clientId]);
@@ -2385,34 +2395,131 @@ const CrmClientSection = ({ clientId, clientName, onOpenCrm }: { clientId: strin
     setActivating(false);
   };
 
-  if (tenant === undefined) return null; // loading
+  const handleCreateUser = async () => {
+    if (!tenant || !newUserNome.trim() || !newUserEmail.trim() || !newUserSenha.trim()) return;
+    setSavingUser(true);
+    try {
+      // Cria no Supabase Auth via admin
+      const { supabaseAdmin } = await import('./lib/supabase');
+      if (supabaseAdmin) {
+        const { error: authErr } = await supabaseAdmin.auth.admin.createUser({
+          email: newUserEmail.trim(),
+          password: newUserSenha.trim(),
+          email_confirm: true,
+          user_metadata: { tenant_id: tenant.id, nome: newUserNome.trim() },
+        });
+        if (authErr && !authErr.message.includes('already registered')) throw authErr;
+      }
+      // Cria na tabela crm_client_users
+      const created = await createCrmUser({
+        tenantId: tenant.id, nome: newUserNome.trim(),
+        email: newUserEmail.trim(), senha: newUserSenha.trim(),
+        role: 'member', ativo: true,
+      });
+      setUsers(prev => [...prev, created]);
+      setNewUserNome(''); setNewUserEmail(''); setNewUserSenha('');
+      setShowUserForm(false);
+    } catch (err: any) {
+      alert('Erro ao criar usuário: ' + (err.message || err));
+    }
+    setSavingUser(false);
+  };
+
+  const handleDeleteUser = async (userId: string) => {
+    if (!confirm('Remover acesso deste usuário?')) return;
+    await deleteCrmUser(userId);
+    setUsers(prev => prev.filter(u => u.id !== userId));
+  };
+
+  if (tenant === undefined) return null;
 
   return (
-    <section className="glass-card p-6 mb-6">
-      <h3 className="text-sm font-bold uppercase tracking-widest text-brand-primary mb-4">CRM do Cliente</h3>
+    <section className="glass-card p-6 mb-6 space-y-5">
+      <h3 className="text-sm font-bold uppercase tracking-widest text-brand-primary">Área do Cliente</h3>
+
+      {/* Status + botão acessar */}
       {!tenant ? (
         <div className="flex items-center justify-between">
-          <div>
-            <p className="text-sm text-gray-400">CRM não configurado para este cliente.</p>
-          </div>
+          <p className="text-sm text-gray-400">Área do cliente não configurada.</p>
           <button onClick={handleActivate} disabled={activating}
             className="bg-brand-primary text-black font-bold rounded-xl px-5 py-2.5 text-sm hover:brightness-110 transition-all disabled:opacity-50 flex items-center gap-2">
             {activating ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />}
-            {activating ? 'Ativando...' : 'Ativar CRM'}
+            {activating ? 'Ativando...' : 'Ativar'}
           </button>
         </div>
       ) : (
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <span className="flex items-center gap-1.5 text-sm">
-              <span className="w-2 h-2 rounded-full bg-green-400" /> Ativo
-            </span>
+            <span className="flex items-center gap-1.5 text-sm"><span className="w-2 h-2 rounded-full bg-green-400" /> Ativo</span>
             <span className="text-sm text-gray-400">{leadCount} leads</span>
           </div>
           <button onClick={() => onOpenCrm(tenant.id)}
             className="bg-brand-primary text-black font-bold rounded-xl px-5 py-2.5 text-sm hover:brightness-110 transition-all flex items-center gap-2">
-            <ExternalLink size={16} /> Acessar CRM
+            <ExternalLink size={16} /> Acessar
           </button>
+        </div>
+      )}
+
+      {/* Usuários — só aparece se tenant ativo */}
+      {tenant && (
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <p className="text-xs font-bold uppercase tracking-widest text-gray-500">Usuários com acesso</p>
+            <button onClick={() => setShowUserForm(p => !p)}
+              className="flex items-center gap-1.5 text-xs text-brand-primary hover:brightness-110 font-bold">
+              <Plus size={13} /> Adicionar
+            </button>
+          </div>
+
+          {/* Form novo usuário */}
+          <AnimatePresence>
+            {showUserForm && (
+              <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
+                className="bg-white/5 border border-white/10 rounded-xl p-4 space-y-3 overflow-hidden">
+                <input placeholder="Nome *" value={newUserNome} onChange={e => setNewUserNome(e.target.value)}
+                  className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder-white/30 focus:outline-none focus:border-brand-primary/50" />
+                <input placeholder="E-mail *" type="email" value={newUserEmail} onChange={e => setNewUserEmail(e.target.value)}
+                  className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder-white/30 focus:outline-none focus:border-brand-primary/50" />
+                <input placeholder="Senha *" type="text" value={newUserSenha} onChange={e => setNewUserSenha(e.target.value)}
+                  className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder-white/30 focus:outline-none focus:border-brand-primary/50" />
+                <div className="flex gap-2">
+                  <button onClick={handleCreateUser} disabled={savingUser || !newUserNome || !newUserEmail || !newUserSenha}
+                    className="flex-1 bg-brand-primary text-black font-bold rounded-lg py-2 text-sm hover:brightness-110 disabled:opacity-50 flex items-center justify-center gap-2">
+                    {savingUser ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
+                    {savingUser ? 'Criando...' : 'Criar acesso'}
+                  </button>
+                  <button onClick={() => setShowUserForm(false)} className="px-4 py-2 text-sm text-gray-400 hover:text-white bg-white/5 rounded-lg">Cancelar</button>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* Lista de usuários */}
+          {loadingUsers ? (
+            <div className="flex justify-center py-3"><Loader2 size={16} className="animate-spin text-brand-primary" /></div>
+          ) : users.length === 0 ? (
+            <p className="text-xs text-gray-500 text-center py-3">Nenhum usuário cadastrado ainda.</p>
+          ) : (
+            <div className="space-y-2">
+              {users.map(u => (
+                <div key={u.id} className="flex items-center justify-between bg-white/3 border border-white/5 rounded-xl px-4 py-3">
+                  <div>
+                    <p className="text-sm font-medium text-white">{u.nome}</p>
+                    <p className="text-xs text-gray-500">{u.email}</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button onClick={() => setShowPassFor(showPassFor === u.id ? null : u.id)}
+                      className="text-xs text-gray-500 hover:text-white bg-white/5 px-2 py-1 rounded-lg flex items-center gap-1">
+                      <Eye size={11} /> {showPassFor === u.id ? u.senha : '••••••'}
+                    </button>
+                    <button onClick={() => handleDeleteUser(u.id)} className="text-red-400/60 hover:text-red-400 p-1.5 rounded-lg hover:bg-red-400/10">
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </section>
