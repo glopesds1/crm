@@ -81,6 +81,123 @@ function fmtDateSmartSP(iso: string, opts?: { year?: boolean }): string {
   } catch { return '—'; }
 }
 
+// ── Slot Picker — Calendário de disponibilidade ──────────────
+const SLOT_HOURS = ['09:00','10:00','11:00','13:00','14:00','15:00','16:00','17:00'];
+const MAX_POR_SLOT = 2;
+
+const WEBHOOK_BASE_SLOT = (import.meta.env.VITE_WEBHOOK_BASE ?? 'https://webhook.m2black.com/webhook/dashboard').replace('/webhook/dashboard', '');
+
+function SlotPicker({ selectedDate, onSelectDate, selectedHour, onSelectHour }: {
+  selectedDate: string; onSelectDate: (d: string) => void; selectedHour: string; onSelectHour: (h: string) => void;
+}) {
+  const [ocupacao, setOcupacao] = useState<Record<string, number>>({});
+  const [loading, setLoading] = useState(false);
+
+  // Próximos 7 dias
+  const days = React.useMemo(() => {
+    const arr: { label: string; value: string }[] = [];
+    const now = new Date();
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() + i);
+      const dow = d.toLocaleDateString('pt-BR', { weekday: 'short', timeZone: SP_TZ }).replace('.', '');
+      const label = `${dow.charAt(0).toUpperCase()}${dow.slice(1)} ${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}`;
+      const value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      arr.push({ label, value });
+    }
+    return arr;
+  }, []);
+
+  // Fetch disponibilidade quando data muda
+  useEffect(() => {
+    if (!selectedDate) return;
+    const map: Record<string, number> = {};
+    SLOT_HOURS.forEach(s => map[s] = 0);
+    setOcupacao(map);
+    setLoading(true);
+    (async () => {
+      try {
+        const resp = await fetch(`${WEBHOOK_BASE_SLOT}/webhook/dashboard?page=disponibilidade&data_inicio=${selectedDate}`);
+        const json = await resp.json();
+        const slots: { hora: string; ocupacao: number | string }[] = json.slots || [];
+        const m: Record<string, number> = {};
+        SLOT_HOURS.forEach(s => m[s] = 0);
+        slots.forEach(s => { if (m[s.hora] !== undefined) m[s.hora] = Number(s.ocupacao); });
+        setOcupacao(m);
+      } catch (e) {
+        console.warn('[disponibilidade]', e);
+      } finally { setLoading(false); }
+    })();
+  }, [selectedDate]);
+
+  // Se data = hoje, esconder slots passados
+  const now = new Date();
+  const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  const currentHour = now.getHours();
+
+  const visibleSlots = SLOT_HOURS.filter(h => {
+    if (selectedDate !== todayStr) return true;
+    return parseInt(h) > currentHour;
+  });
+
+  return (
+    <div className="space-y-3">
+      {/* Seletor de data — 7 dias */}
+      <div className="flex gap-1.5 overflow-x-auto pb-1">
+        {days.map(d => (
+          <button key={d.value} type="button" onClick={() => { onSelectDate(d.value); if (selectedHour) onSelectHour(''); }}
+            className={`flex-shrink-0 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold border transition-all ${
+              selectedDate === d.value
+                ? 'bg-brand-primary/20 border-brand-primary text-brand-primary'
+                : 'bg-white/5 border-white/10 text-gray-400 hover:text-white hover:border-white/20'
+            }`}
+          >{d.label}</button>
+        ))}
+      </div>
+
+      {/* Grade de horários */}
+      {selectedDate && (
+        <div className="grid grid-cols-5 gap-1.5">
+          {loading ? (
+            <div className="col-span-5 flex items-center justify-center py-4">
+              <Loader2 size={16} className="animate-spin text-gray-500" />
+            </div>
+          ) : visibleSlots.length === 0 ? (
+            <p className="col-span-5 text-[11px] text-gray-600 text-center py-3">Nenhum horário disponível</p>
+          ) : visibleSlots.map(h => {
+            const occ = ocupacao[h] ?? 0;
+            const full = occ >= MAX_POR_SLOT;
+            const selected = selectedHour === h;
+            let bg = 'bg-[#22c55e15] border-[#22c55e40]';
+            let txt = 'text-white';
+            let badge = '';
+            if (occ === 1) { bg = 'bg-[#d4af3715] border-[#d4af3740]'; badge = '1/2'; }
+            if (full) { bg = 'bg-[#ef444415] border-[#ef444440]'; txt = 'text-gray-600'; badge = '2/2'; }
+            if (selected && !full) bg = 'bg-brand-primary/15 border-brand-primary';
+            return (
+              <button key={h} type="button" disabled={full}
+                onClick={() => onSelectHour(h)}
+                className={`px-2 py-2 rounded-lg border text-xs font-medium transition-all flex flex-col items-center gap-0.5 ${bg} ${txt} ${
+                  full ? 'cursor-not-allowed opacity-50' : 'cursor-pointer hover:brightness-125'
+                } ${selected && !full ? 'border-2 border-brand-primary ring-1 ring-brand-primary/30' : ''}`}
+              >
+                <span className="font-bold">{h}</span>
+                {badge && <span className="text-[9px] opacity-70">{badge}</span>}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Resumo */}
+      {selectedDate && selectedHour && (
+        <p className="text-[11px] text-gray-400">
+          Reunião marcada para <span className="text-white font-semibold">{selectedDate.split('-').reverse().join('/')}</span> às <span className="text-white font-semibold">{selectedHour}</span>
+        </p>
+      )}
+    </div>
+  );
+}
+
 // ── Types ─────────────────────────────────────────────────────
 interface CRMLead {
   id: string;
@@ -265,6 +382,10 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
   // BANT fields for scheduling (Ligação → Atendeu → Agendar Reunião)
   const [bantTipo, setBantTipo] = useState<'R1' | 'R2'>('R1');
   const [bantDataHora, setBantDataHora] = useState('');
+  // SlotPicker state — BANT
+  const tomorrowBant = React.useMemo(() => { const d = new Date(); d.setDate(d.getDate() + 1); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }, []);
+  const [bantSlotDate, setBantSlotDate] = useState(tomorrowBant);
+  const [bantSlotHour, setBantSlotHour] = useState('');
   const [bantDuracao, setBantDuracao] = useState('60');
   const [bantCloser, setBantCloser] = useState('');
   const [bantFaturamento, setBantFaturamento] = useState(leadObj?.faturamento ?? '');
@@ -301,6 +422,10 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
   const [formaPagamento, setFormaPagamento] = useState('');
   const [dataPrimeiroVencimento, setDataPrimeiroVencimento] = useState('');
   const [proximaReuniao, setProximaReuniao] = useState('');
+  // SlotPicker state — Próxima Reunião
+  const tomorrowProx = React.useMemo(() => { const d = new Date(); d.setDate(d.getDate() + 1); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }, []);
+  const [proxSlotDate, setProxSlotDate] = useState(tomorrowProx);
+  const [proxSlotHour, setProxSlotHour] = useState('');
   const [motivoPerda, setMotivoPerda] = useState('');
   // Ligação extra fields
   const [resumoLigacao, setResumoLigacao] = useState('');
@@ -317,6 +442,15 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
   // Bloco 5: Reagendar após não compareceu
   const [reagendarNoShow, setReagendarNoShow] = useState(false);
   const [dataReagendamento, setDataReagendamento] = useState('');
+  // SlotPicker state — Reagendamento
+  const tomorrowReag = React.useMemo(() => { const d = new Date(); d.setDate(d.getDate() + 1); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }, []);
+  const [reagSlotDate, setReagSlotDate] = useState(tomorrowReag);
+  const [reagSlotHour, setReagSlotHour] = useState('');
+
+  // Sync SlotPicker → state variables existentes
+  useEffect(() => { setBantDataHora(bantSlotDate && bantSlotHour ? `${bantSlotDate}T${bantSlotHour}:00` : ''); }, [bantSlotDate, bantSlotHour]);
+  useEffect(() => { setProximaReuniao(proxSlotDate && proxSlotHour ? `${proxSlotDate}T${proxSlotHour}:00` : ''); }, [proxSlotDate, proxSlotHour]);
+  useEffect(() => { setDataReagendamento(reagSlotDate && reagSlotHour ? `${reagSlotDate}T${reagSlotHour}:00` : ''); }, [reagSlotDate, reagSlotHour]);
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0] ?? null;
@@ -1082,9 +1216,7 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
                   </div>
                   <div>
                     <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">Data e hora <span className="text-red-400">*</span></label>
-                    <input type="datetime-local" value={bantDataHora} onChange={e => setBantDataHora(e.target.value)}
-                      className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-1.5 text-sm text-gray-300 focus:outline-none focus:border-yellow-500"
-                    />
+                    <SlotPicker selectedDate={bantSlotDate} onSelectDate={setBantSlotDate} selectedHour={bantSlotHour} onSelectHour={setBantSlotHour} />
                   </div>
                   <div className="grid grid-cols-2 gap-2">
                     <div>
@@ -1254,9 +1386,7 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
               {reagendarNoShow && (
                 <div>
                   <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">Nova data e hora <span className="text-red-400">*</span></label>
-                  <input type="datetime-local" value={dataReagendamento} onChange={e => setDataReagendamento(e.target.value)}
-                    className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-1.5 text-sm text-gray-300 focus:outline-none focus:border-yellow-500"
-                  />
+                  <SlotPicker selectedDate={reagSlotDate} onSelectDate={setReagSlotDate} selectedHour={reagSlotHour} onSelectHour={setReagSlotHour} />
                 </div>
               )}
             </div>
@@ -1410,9 +1540,7 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
           {(resultado === 'Marcou R2+' || resultado === 'Reagendou') && (
             <div>
               <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">Próxima Reunião</label>
-              <input type="datetime-local" value={proximaReuniao} onChange={e => setProximaReuniao(e.target.value)}
-                className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-1.5 text-sm text-gray-300 focus:outline-none focus:border-brand-primary"
-              />
+              <SlotPicker selectedDate={proxSlotDate} onSelectDate={setProxSlotDate} selectedHour={proxSlotHour} onSelectHour={setProxSlotHour} />
             </div>
           )}
 
@@ -1511,6 +1639,9 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
   const [showAgendarReuniao, setShowAgendarReuniao] = useState(false);
   const [arTipo, setArTipo] = useState<'R1' | 'R2'>('R1');
   const [arDataHora, setArDataHora] = useState('');
+  const tomorrowAr = React.useMemo(() => { const d = new Date(); d.setDate(d.getDate() + 1); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }, []);
+  const [arSlotDate, setArSlotDate] = useState(tomorrowAr);
+  const [arSlotHour, setArSlotHour] = useState('');
   const [arDuracao, setArDuracao] = useState('60');
   const [arCloser, setArCloser] = useState('');
   const [arFaturamento, setArFaturamento] = useState(lead.faturamento ?? '');
@@ -1524,6 +1655,9 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
   const [arObs, setArObs] = useState('');
   const [arSaving, setArSaving] = useState(false);
   const [arSuccess, setArSuccess] = useState(false);
+
+  // Sync SlotPicker → arDataHora
+  useEffect(() => { setArDataHora(arSlotDate && arSlotHour ? `${arSlotDate}T${arSlotHour}:00` : ''); }, [arSlotDate, arSlotHour]);
 
   const handleAgendarReuniao = async () => {
     console.log('[handleAgendarReuniao] lead.lead_externo_id:', lead.lead_externo_id);
@@ -2460,9 +2594,7 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
                   </div>
                   <div>
                     <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">Data e hora <span className="text-red-400">*</span></label>
-                    <input type="datetime-local" value={arDataHora} onChange={e => setArDataHora(e.target.value)}
-                      className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-1.5 text-sm text-gray-300 focus:outline-none focus:border-yellow-500"
-                    />
+                    <SlotPicker selectedDate={arSlotDate} onSelectDate={setArSlotDate} selectedHour={arSlotHour} onSelectHour={setArSlotHour} />
                   </div>
                   <div>
                     <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">Closer responsável <span className="text-red-400">*</span></label>
