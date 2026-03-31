@@ -812,7 +812,7 @@ function PageMetas({ data, userSession, range }: { data: any; userSession: any; 
       <div className="grid grid-cols-2 gap-4">
         {closers.length > 0 && (
           <div className="glass-card p-6">
-            <h3 className="text-sm font-bold uppercase tracking-widest text-brand-primary mb-4">Performance por Closer</h3>
+            <h3 className="text-sm font-bold uppercase tracking-widest text-brand-primary mb-4">Performance de Vendas</h3>
             {(() => {
               const rateColor = (v: any, ref: number) => {
                 const n = parseFloat(v ?? 0);
