@@ -74,6 +74,7 @@ import EducacaoView from './EducacaoView';
 import MateriaisClienteView from './MateriaisClienteView';
 import DocumentosClienteView from './DocumentosClienteView';
 import ConsultorIAView from './ConsultorIAView';
+import TranscricaoLigacaoView from './TranscricaoLigacaoView';
 import { getTenantByClientId, activateCrmForClient, authenticateCrmUser, getCrmUsersByTenant, createCrmUser, updateCrmUser, deleteCrmUser, authenticateUser, signOut, resetPassword, updatePassword, getAuthSession, mfaListFactors, mfaChallenge, mfaVerify, mfaEnrollTotp, mfaUnenroll, mfaGetAuthenticatorLevel } from './lib/database';
 import type { CrmClientTenant, CrmClientUser } from './types';
 import { ptBR } from 'date-fns/locale';
@@ -3563,7 +3564,7 @@ export default function App() {
     };
     return (permissions[role] ?? permissions['admin']).includes(tab);
   };
-  const [aquisicaoSubTab, setAquisicaoSubTab] = useState<'CRM' | 'Relatorio' | 'Dashboard' | 'Playbooks'>('CRM');
+  const [aquisicaoSubTab, setAquisicaoSubTab] = useState<'CRM' | 'Relatorio' | 'Dashboard' | 'Playbooks' | 'Transcricao'>('CRM');
   const [entregaSubTab, setEntregaSubTab] = useState<'Kanban' | 'Demandas' | 'AreaCliente' | 'Educacao'>('Kanban');
   const [openCRMLeadName, setOpenCRMLeadName] = useState('');
   const [clients, setClients] = useState<Client[]>([]);
@@ -4556,6 +4557,12 @@ export default function App() {
                       Playbooks
                     </button>
                   )}
+                  <button
+                    onClick={() => setAquisicaoSubTab('Transcricao')}
+                    className={`w-full text-left px-4 py-2 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all ${aquisicaoSubTab === 'Transcricao' ? 'text-brand-primary bg-white/5' : 'text-gray-500 hover:text-white'}`}
+                  >
+                    Análise de Ligação
+                  </button>
                 </div>
               </motion.div>
             )}
@@ -4625,7 +4632,7 @@ export default function App() {
               <>
                 <ChevronRight size={14} className="text-gray-700" />
                 <span className="text-xs font-bold text-white">
-                  {aquisicaoSubTab === 'CRM' ? 'CRM' : aquisicaoSubTab === 'Relatorio' ? 'Relatório' : aquisicaoSubTab === 'Dashboard' ? 'Dashboard' : 'Playbooks'}
+                  {aquisicaoSubTab === 'CRM' ? 'CRM' : aquisicaoSubTab === 'Relatorio' ? 'Relatório' : aquisicaoSubTab === 'Dashboard' ? 'Dashboard' : aquisicaoSubTab === 'Transcricao' ? 'Análise de Ligação' : 'Playbooks'}
                 </span>
               </>
             )}
@@ -4734,6 +4741,9 @@ export default function App() {
               )}
               {activeTab === 'Aquisição' && aquisicaoSubTab === 'Playbooks' && (
                 <PlaybooksView />
+              )}
+              {activeTab === 'Aquisição' && aquisicaoSubTab === 'Transcricao' && (
+                <TranscricaoLigacaoView />
               )}
             </motion.div>
           </AnimatePresence>
