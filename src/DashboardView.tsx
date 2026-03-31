@@ -171,6 +171,13 @@ export default function DashboardView({ userSession }: { userSession: any }) {
     }
   }, []);
 
+  // Período padrão por aba
+  const periodoPadraoAba: Record<string, string> = {
+    overview: 'ano', metas: 'mes', semanal: 'semanal', reunioes: 'hoje',
+    anuncios: 'mes', analise: '90d', sdr: '90d',
+  };
+  const [periodo, setPeriodo] = useState(periodoPadraoAba[page] || 'mes');
+
   // Set default range per page on switch
   useEffect(() => {
     const yearStart   = format(startOfYear(today),  'yyyy-MM-dd');
@@ -178,14 +185,15 @@ export default function DashboardView({ userSession }: { userSession: any }) {
     const monthStart  = format(startOfMonth(today), 'yyyy-MM-dd');
     const monthEnd    = format(tomorrow,             'yyyy-MM-dd');
     const days90Start = format(subDays(today, 90),  'yyyy-MM-dd');
+    const todayStr    = format(today, 'yyyy-MM-dd');
 
-    const todayStr = format(today, 'yyyy-MM-dd');
-    if      (page === 'overview')  setRange({ inicio: yearStart,   fim: yearEnd });
-    else if (page === 'metas')     setRange({ inicio: monthStart,  fim: monthEnd });
-    else if (page === 'reunioes')  setRange({ inicio: todayStr,    fim: todayStr });
-    else if (page === 'analise')   setRange({ inicio: days90Start, fim: monthEnd });
-    else if (page === 'anuncios')  setRange({ inicio: monthStart,  fim: monthEnd });
-    else if (page === 'sdr')       setRange({ inicio: days90Start, fim: monthEnd });
+    const p = periodoPadraoAba[page] || 'mes';
+    setPeriodo(p);
+    if      (p === 'ano')     setRange({ inicio: yearStart,   fim: yearEnd });
+    else if (p === 'mes')     setRange({ inicio: monthStart,  fim: monthEnd });
+    else if (p === 'hoje')    setRange({ inicio: todayStr,    fim: todayStr });
+    else if (p === '90d')     setRange({ inicio: days90Start, fim: monthEnd });
+    else if (p === 'semanal') setRange({ inicio: monthStart,  fim: monthEnd });
   }, [page]); // eslint-disable-line
 
   useEffect(() => {
@@ -203,10 +211,9 @@ export default function DashboardView({ userSession }: { userSession: any }) {
   ];
 
   const PRESETS = [
-    { label: 'Este ano', inicio: format(startOfYear(today), 'yyyy-MM-dd'), fim: format(endOfYear(today), 'yyyy-MM-dd') },
-    { label: 'Este mês', inicio: format(startOfMonth(today), 'yyyy-MM-dd'), fim: format(tomorrow, 'yyyy-MM-dd') },
-    { label: '30 dias', inicio: format(subDays(today, 30), 'yyyy-MM-dd'), fim: format(tomorrow, 'yyyy-MM-dd') },
-    { label: '90 dias', inicio: format(subDays(today, 90), 'yyyy-MM-dd'), fim: format(tomorrow, 'yyyy-MM-dd') },
+    { id: 'ano', label: 'Este ano', inicio: format(startOfYear(today), 'yyyy-MM-dd'), fim: format(endOfYear(today), 'yyyy-MM-dd') },
+    { id: 'mes', label: 'Este mês', inicio: format(startOfMonth(today), 'yyyy-MM-dd'), fim: format(tomorrow, 'yyyy-MM-dd') },
+    { id: '90d', label: '90 dias', inicio: format(subDays(today, 90), 'yyyy-MM-dd'), fim: format(tomorrow, 'yyyy-MM-dd') },
   ];
 
   return (
@@ -218,14 +225,14 @@ export default function DashboardView({ userSession }: { userSession: any }) {
           <p className="text-gray-400 mt-1">Dados em tempo real do Postgres</p>
         </div>
         <div className="flex flex-wrap gap-2 items-center">
-          {/* Selector para overview, metas mensais e KPI's vendas */}
-          {(['overview', 'metas', 'analise', 'anuncios'] as Page[]).includes(page) && (<>
+          {/* Selector para overview, metas mensais e KPI's vendas — esconde em semanal e reuniões */}
+          {(['overview', 'metas', 'analise', 'anuncios', 'sdr'] as Page[]).includes(page) && (<>
             {PRESETS.map(p => (
               <button
-                key={p.label}
-                onClick={() => setRange({ inicio: p.inicio, fim: p.fim })}
+                key={p.id}
+                onClick={() => { setPeriodo(p.id); setRange({ inicio: p.inicio, fim: p.fim }); }}
                 className={`px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all border ${
-                  range.inicio === p.inicio && range.fim === p.fim
+                  periodo === p.id
                     ? 'bg-brand-primary/20 border-brand-primary text-brand-primary'
                     : 'bg-white/5 border-white/10 text-gray-400 hover:border-white/20'
                 }`}
@@ -234,17 +241,18 @@ export default function DashboardView({ userSession }: { userSession: any }) {
               </button>
             ))}
             <div className="flex items-center gap-2 bg-white/5 border border-white/10 rounded-lg px-3 py-1.5">
+              <Calendar size={12} className="text-gray-300 flex-shrink-0" />
               <input
                 type="date"
                 value={range.inicio}
-                onChange={e => setRange(r => ({ ...r, inicio: e.target.value }))}
+                onChange={e => { setPeriodo('custom'); setRange(r => ({ ...r, inicio: e.target.value })); }}
                 className="bg-transparent text-xs text-gray-300 focus:outline-none"
               />
               <span className="text-gray-600 text-xs">→</span>
               <input
                 type="date"
                 value={range.fim}
-                onChange={e => setRange(r => ({ ...r, fim: e.target.value }))}
+                onChange={e => { setPeriodo('custom'); setRange(r => ({ ...r, fim: e.target.value })); }}
                 className="bg-transparent text-xs text-gray-300 focus:outline-none"
               />
             </div>
