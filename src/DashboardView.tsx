@@ -241,19 +241,18 @@ export default function DashboardView({ userSession }: { userSession: any }) {
               </button>
             ))}
             <div className="flex items-center gap-2 bg-white/5 border border-white/10 rounded-lg px-3 py-1.5">
-              <Calendar size={12} className="text-gray-300 flex-shrink-0" />
               <input
                 type="date"
                 value={range.inicio}
                 onChange={e => { setPeriodo('custom'); setRange(r => ({ ...r, inicio: e.target.value })); }}
-                className="bg-transparent text-xs text-gray-300 focus:outline-none"
+                className="bg-transparent text-xs text-gray-300 focus:outline-none [&::-webkit-calendar-picker-indicator]:brightness-75"
               />
-              <span className="text-gray-600 text-xs">→</span>
+              <span className="text-xs" style={{ color: '#888' }}>→</span>
               <input
                 type="date"
                 value={range.fim}
                 onChange={e => { setPeriodo('custom'); setRange(r => ({ ...r, fim: e.target.value })); }}
-                className="bg-transparent text-xs text-gray-300 focus:outline-none"
+                className="bg-transparent text-xs text-gray-300 focus:outline-none [&::-webkit-calendar-picker-indicator]:brightness-75"
               />
             </div>
           </>)}
