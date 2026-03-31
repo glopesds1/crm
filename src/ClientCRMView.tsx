@@ -435,7 +435,8 @@ type LeadModalProps = {
 };
 
 function LeadModal({ lead, stages, tenantId, tarefas, onClose, onUpdate, onDelete, onCreateTarefa, onUpdateTarefa, onImageClick, userName }: LeadModalProps) {
-  const [activeTab, setActiveTab] = useState<'info' | 'timeline' | 'tarefas'>('info');
+  const [activeTab, setActiveTab] = useState<'detalhes' | 'atendimentos' | 'tarefas' | 'notas'>('detalhes');
+  const [nota, setNota] = useState(lead.observacoes || '');
   const [form, setForm] = useState({ ...lead });
   const [saving, setSaving] = useState(false);
   const [activities, setActivities] = useState<CrmClientLeadActivity[]>([]);
@@ -562,7 +563,7 @@ Retorne APENAS o JSON, sem markdown, sem explicação.`;
   useEffect(() => { setForm({ ...lead }); }, [lead]);
 
   useEffect(() => {
-    if (activeTab === 'timeline') {
+    if (activeTab === 'atendimentos') {
       setLoadingActivities(true);
       getLeadActivities(lead.id).then(setActivities).catch(console.error).finally(() => setLoadingActivities(false));
     }
@@ -639,9 +640,10 @@ Retorne APENAS o JSON, sem markdown, sem explicação.`;
   const inputCls = 'w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder-white/30 focus:outline-none focus:border-brand-primary transition-colors';
 
   const TABS = [
-    { id: 'info' as const, label: 'Informações' },
-    { id: 'timeline' as const, label: 'Atividades' },
+    { id: 'detalhes' as const, label: 'Detalhes' },
+    { id: 'atendimentos' as const, label: 'Atendimentos' },
     { id: 'tarefas' as const, label: 'Tarefas' },
+    { id: 'notas' as const, label: 'Notas' },
   ];
 
   const TIPO_BADGES: Record<string, string> = {
@@ -651,22 +653,91 @@ Retorne APENAS o JSON, sem markdown, sem explicação.`;
     analise_audio: 'bg-brand-primary/20 text-brand-primary',
   };
 
+  const currentStage = stages.find(s => s.id === form.stageId);
+
+  const handleMoveToStatus = async (status: 'ganho' | 'perdido' | 'congelado') => {
+    const statusStage = stages.find(s => s.nome.toLowerCase().includes(status === 'ganho' ? 'fech' : status === 'perdido' ? 'perd' : 'conge'));
+    const updated = { ...form, status, stageId: statusStage?.id ?? form.stageId };
+    setForm(updated);
+    await onUpdate(updated);
+  };
+
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={onClose}>
-      <motion.div initial={{ opacity: 0, scale: 0.95, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95, y: 20 }}
-        onClick={e => e.stopPropagation()} className="bg-[#0d1117] border border-white/10 rounded-2xl w-full max-w-3xl max-h-[90vh] flex flex-col overflow-hidden">
-        {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-white/5">
-          <h2 className="text-lg font-bold text-white truncate">{lead.nome}</h2>
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-white/5"><X className="w-5 h-5 text-white/50" /></button>
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-3" onClick={onClose}>
+      <motion.div initial={{ opacity: 0, scale: 0.97, y: 16 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.97, y: 16 }}
+        onClick={e => e.stopPropagation()}
+        className="bg-[#0d1117] border border-white/10 rounded-2xl w-full max-w-5xl h-[92vh] flex flex-col overflow-hidden shadow-2xl">
+
+        {/* ── HEADER ── */}
+        <div className="px-6 pt-5 pb-3 border-b border-white/5 flex-shrink-0">
+          <div className="flex items-start gap-4">
+            {/* Nome editável */}
+            <input
+              className="flex-1 bg-transparent text-xl font-bold text-white placeholder-white/30 border-b border-transparent focus:border-brand-primary focus:outline-none pb-1 transition-colors"
+              value={form.nome}
+              onChange={e => setForm({ ...form, nome: e.target.value })}
+              onBlur={handleSave}
+            />
+            {/* Botões de status */}
+            <div className="flex items-center gap-2 flex-shrink-0">
+              <button onClick={() => handleMoveToStatus('ganho')}
+                className="px-4 py-1.5 rounded-lg text-xs font-bold bg-green-500/10 text-green-400 border border-green-500/20 hover:bg-green-500/20 transition-colors">
+                Ganho
+              </button>
+              <button onClick={() => handleMoveToStatus('congelado')}
+                className="px-4 py-1.5 rounded-lg text-xs font-bold bg-blue-500/10 text-blue-400 border border-blue-500/20 hover:bg-blue-500/20 transition-colors">
+                Congelar
+              </button>
+              <button onClick={() => handleMoveToStatus('perdido')}
+                className="px-4 py-1.5 rounded-lg text-xs font-bold bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20 transition-colors">
+                Perda
+              </button>
+              <button onClick={onClose} className="ml-2 p-1.5 rounded-lg hover:bg-white/5 text-white/40 hover:text-white transition-colors">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+          </div>
+
+          {/* Barra de etapas horizontal */}
+          <div className="flex items-center gap-0 mt-4 overflow-x-auto pb-1">
+            {stages.map((stage, i) => {
+              const isCurrent = form.stageId === stage.id;
+              const currentIdx = stages.findIndex(s => s.id === form.stageId);
+              const isPast = i < currentIdx;
+              return (
+                <button key={stage.id} onClick={async () => { const updated = { ...form, stageId: stage.id }; setForm(updated); await onUpdate(updated); }}
+                  className="flex items-center flex-shrink-0">
+                  <div className={`px-3 py-1.5 text-[11px] font-bold uppercase tracking-wide whitespace-nowrap transition-all ${
+                    isCurrent ? 'text-black bg-brand-primary' :
+                    isPast ? 'text-brand-primary/60 bg-brand-primary/10' :
+                    'text-white/30 bg-white/5 hover:text-white/60'
+                  } ${i === 0 ? 'rounded-l-lg' : ''} ${i === stages.length - 1 ? 'rounded-r-lg' : ''}`}>
+                    {stage.nome}
+                  </div>
+                  {i < stages.length - 1 && (
+                    <div className={`w-4 h-4 -mx-0.5 relative flex-shrink-0 ${isCurrent || isPast ? 'text-brand-primary/40' : 'text-white/10'}`}
+                      style={{ clipPath: 'polygon(0 0, 75% 50%, 0 100%)', background: isCurrent ? 'rgba(0,255,136,0.15)' : isPast ? 'rgba(0,255,136,0.08)' : 'rgba(255,255,255,0.03)' }} />
+                  )}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Sub-header: responsável + empresa */}
+          <div className="flex items-center gap-6 mt-3 text-xs text-white/40">
+            {form.responsavel && <span className="flex items-center gap-1.5"><User className="w-3.5 h-3.5" /> {form.responsavel}</span>}
+            {form.empresa && <span className="flex items-center gap-1.5"><Building2 className="w-3.5 h-3.5" /> {form.empresa}</span>}
+            {form.telefone && <span className="flex items-center gap-1.5"><PhoneCall className="w-3.5 h-3.5" /> {form.telefone}</span>}
+            {form.ticketEstimado > 0 && <span className="flex items-center gap-1.5 text-brand-primary/70"><DollarSign className="w-3.5 h-3.5" /> R$ {form.ticketEstimado.toLocaleString('pt-BR')}</span>}
+          </div>
         </div>
 
-        {/* Tabs */}
-        <div className="flex gap-1 px-6 pt-3">
+        {/* ── TABS ── */}
+        <div className="flex gap-0 px-6 border-b border-white/5 flex-shrink-0">
           {TABS.map(tab => (
             <button key={tab.id} onClick={() => setActiveTab(tab.id)}
-              className={`px-4 py-2 text-sm rounded-lg font-medium transition-colors ${activeTab === tab.id ? 'bg-brand-primary/10 text-brand-primary' : 'text-white/40 hover:text-white/60 hover:bg-white/5'}`}>
+              className={`px-5 py-3 text-sm font-medium border-b-2 transition-all ${activeTab === tab.id ? 'border-brand-primary text-brand-primary' : 'border-transparent text-white/40 hover:text-white/70'}`}>
               {tab.label}
               {tab.id === 'tarefas' && tarefas.filter(t => !t.concluida).length > 0 && (
                 <span className="ml-1.5 bg-amber-500/20 text-amber-400 px-1.5 py-0.5 rounded-full text-[10px] font-bold">{tarefas.filter(t => !t.concluida).length}</span>
@@ -677,8 +748,8 @@ Retorne APENAS o JSON, sem markdown, sem explicação.`;
 
         {/* Body */}
         <div className="flex-1 overflow-y-auto p-6">
-          {/* ── INFO TAB ── */}
-          {activeTab === 'info' && (
+          {/* ── DETALHES TAB ── */}
+          {activeTab === 'detalhes' && (
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div><label className="block text-xs text-white/40 mb-1">Nome</label><input className={inputCls} value={form.nome} onChange={e => setForm({ ...form, nome: e.target.value })} /></div>
@@ -721,8 +792,8 @@ Retorne APENAS o JSON, sem markdown, sem explicação.`;
             </div>
           )}
 
-          {/* ── TIMELINE TAB ── */}
-          {activeTab === 'timeline' && (
+          {/* ── ATENDIMENTOS TAB ── */}
+          {activeTab === 'atendimentos' && (
             <div className="space-y-4">
               {/* Buttons */}
               <div className="flex flex-wrap gap-2">
@@ -909,6 +980,22 @@ Retorne APENAS o JSON, sem markdown, sem explicação.`;
                   ))}
                 </div>
               )}
+            </div>
+          )}
+
+          {/* ── NOTAS TAB ── */}
+          {activeTab === 'notas' && (
+            <div className="space-y-3">
+              <p className="text-xs text-white/40">Anotações internas sobre esta oportunidade. Salvo automaticamente.</p>
+              <textarea
+                rows={14}
+                className={inputCls + ' resize-none'}
+                placeholder="Escreva suas notas aqui..."
+                value={nota}
+                onChange={e => setNota(e.target.value)}
+                onBlur={async () => { const updated = { ...form, observacoes: nota }; setForm(updated); await onUpdate(updated); }}
+              />
+              <p className="text-xs text-white/20 text-right">Salvo ao perder o foco do campo</p>
             </div>
           )}
 
