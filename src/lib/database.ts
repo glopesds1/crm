@@ -152,9 +152,21 @@ export async function getTeamMembers(): Promise<TeamMember[]> {
 }
 
 export async function createTeamMember(member: TeamMember): Promise<TeamMember> {
+  // Cria conta no Supabase Auth automaticamente
+  let authUserId = member.auth_user_id || '';
+  if (supabaseAdmin && member.email && member.password) {
+    const { data: authData } = await supabaseAdmin.auth.admin.createUser({
+      email: member.email,
+      password: member.password,
+      email_confirm: true,
+      user_metadata: { team_member_id: member.id },
+    });
+    if (authData?.user?.id) authUserId = authData.user.id;
+  }
+
   const { data, error } = await supabase
     .from('team_members')
-    .insert(memberToDb(member))
+    .insert({ ...memberToDb(member), auth_user_id: authUserId })
     .select()
     .single();
   if (error) throw error;
