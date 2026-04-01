@@ -3782,6 +3782,29 @@ export default function App() {
   const [supportText, setSupportText] = useState('');
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [kanbanFilters, setKanbanFilters] = useState({ plans: [] as string[], responsible: 'all', status: 'Ativo' });
+  const [kanbanOrder, setKanbanOrder] = useState<Record<string, string[]>>(() => {
+    try { return JSON.parse(localStorage.getItem('kanban_order') || '{}'); } catch { return {}; }
+  });
+
+  const moveKanbanCard = (clientId: string, columnId: string, direction: 'up' | 'down') => {
+    const columnClients = filteredClients
+      .filter(c => c.status === columnId)
+      .sort((a, b) => {
+        const order = kanbanOrder[columnId] || [];
+        const ai = order.indexOf(a.id); const bi = order.indexOf(b.id);
+        return (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi);
+      })
+      .map(c => c.id);
+    const idx = columnClients.indexOf(clientId);
+    if (direction === 'up' && idx === 0) return;
+    if (direction === 'down' && idx === columnClients.length - 1) return;
+    const newOrder = [...columnClients];
+    const swap = direction === 'up' ? idx - 1 : idx + 1;
+    [newOrder[idx], newOrder[swap]] = [newOrder[swap], newOrder[idx]];
+    const updated = { ...kanbanOrder, [columnId]: newOrder };
+    setKanbanOrder(updated);
+    localStorage.setItem('kanban_order', JSON.stringify(updated));
+  };
 
 
   // --- Persistence ---
@@ -4505,13 +4528,36 @@ export default function App() {
               <div className="flex-1 space-y-4 overflow-y-auto custom-scrollbar pr-1">
                 {filteredClients
                   .filter(c => c.status === column.id)
-                  .map(client => (
-                    <ClientCard 
-                      key={client.id} 
-                      client={client} 
-                      allTags={allTags}
-                      onClick={() => setSelectedClientId(client.id)} 
-                    />
+                  .sort((a, b) => {
+                    const order = kanbanOrder[column.id] || [];
+                    const ai = order.indexOf(a.id); const bi = order.indexOf(b.id);
+                    return (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi);
+                  })
+                  .map((client, idx, arr) => (
+                    <div key={client.id} className="group relative">
+                      <ClientCard
+                        client={client}
+                        allTags={allTags}
+                        onClick={() => setSelectedClientId(client.id)}
+                      />
+                      {/* Botões ▲▼ */}
+                      <div className="absolute top-2 right-2 flex flex-col gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity z-10">
+                        <button
+                          onClick={e => { e.stopPropagation(); moveKanbanCard(client.id, column.id, 'up'); }}
+                          disabled={idx === 0}
+                          className="p-1 rounded bg-black/60 text-white/70 hover:text-brand-primary disabled:opacity-20 disabled:cursor-not-allowed"
+                        >
+                          <ChevronUp size={12} />
+                        </button>
+                        <button
+                          onClick={e => { e.stopPropagation(); moveKanbanCard(client.id, column.id, 'down'); }}
+                          disabled={idx === arr.length - 1}
+                          className="p-1 rounded bg-black/60 text-white/70 hover:text-brand-primary disabled:opacity-20 disabled:cursor-not-allowed"
+                        >
+                          <ChevronDown size={12} />
+                        </button>
+                      </div>
+                    </div>
                   ))}
               </div>
             </div>
