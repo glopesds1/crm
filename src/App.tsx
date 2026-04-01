@@ -3785,22 +3785,33 @@ export default function App() {
   const [kanbanOrder, setKanbanOrder] = useState<Record<string, string[]>>(() => {
     try { return JSON.parse(localStorage.getItem('kanban_order') || '{}'); } catch { return {}; }
   });
+  const dragClientId = useRef<string | null>(null);
+  const dragColumnId = useRef<string | null>(null);
 
-  const moveKanbanCard = (clientId: string, columnId: string, direction: 'up' | 'down') => {
-    const columnClients = filteredClients
+  const getSortedColumn = (columnId: string) =>
+    filteredClients
       .filter(c => c.status === columnId)
       .sort((a, b) => {
         const order = kanbanOrder[columnId] || [];
         const ai = order.indexOf(a.id); const bi = order.indexOf(b.id);
         return (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi);
-      })
-      .map(c => c.id);
-    const idx = columnClients.indexOf(clientId);
-    if (direction === 'up' && idx === 0) return;
-    if (direction === 'down' && idx === columnClients.length - 1) return;
-    const newOrder = [...columnClients];
-    const swap = direction === 'up' ? idx - 1 : idx + 1;
-    [newOrder[idx], newOrder[swap]] = [newOrder[swap], newOrder[idx]];
+      });
+
+  const handleDragStart = (clientId: string, columnId: string) => {
+    dragClientId.current = clientId;
+    dragColumnId.current = columnId;
+  };
+
+  const handleDragOver = (e: React.DragEvent, targetClientId: string, columnId: string) => {
+    e.preventDefault();
+    if (!dragClientId.current || dragClientId.current === targetClientId || dragColumnId.current !== columnId) return;
+    const sorted = getSortedColumn(columnId).map(c => c.id);
+    const fromIdx = sorted.indexOf(dragClientId.current);
+    const toIdx = sorted.indexOf(targetClientId);
+    if (fromIdx === -1 || toIdx === -1) return;
+    const newOrder = [...sorted];
+    newOrder.splice(fromIdx, 1);
+    newOrder.splice(toIdx, 0, dragClientId.current);
     const updated = { ...kanbanOrder, [columnId]: newOrder };
     setKanbanOrder(updated);
     localStorage.setItem('kanban_order', JSON.stringify(updated));
@@ -4525,40 +4536,23 @@ export default function App() {
                 </div>
               </div>
               
-              <div className="flex-1 space-y-4 overflow-y-auto custom-scrollbar pr-1">
-                {filteredClients
-                  .filter(c => c.status === column.id)
-                  .sort((a, b) => {
-                    const order = kanbanOrder[column.id] || [];
-                    const ai = order.indexOf(a.id); const bi = order.indexOf(b.id);
-                    return (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi);
-                  })
-                  .map((client, idx, arr) => (
-                    <div key={client.id} className="group relative">
-                      <ClientCard
-                        client={client}
-                        allTags={allTags}
-                        onClick={() => setSelectedClientId(client.id)}
-                      />
-                      {/* Botões ▲▼ */}
-                      <div className="absolute top-2 right-2 flex flex-col gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity z-10">
-                        <button
-                          onClick={e => { e.stopPropagation(); moveKanbanCard(client.id, column.id, 'up'); }}
-                          disabled={idx === 0}
-                          className="p-1 rounded bg-black/60 text-white/70 hover:text-brand-primary disabled:opacity-20 disabled:cursor-not-allowed"
-                        >
-                          <ChevronUp size={12} />
-                        </button>
-                        <button
-                          onClick={e => { e.stopPropagation(); moveKanbanCard(client.id, column.id, 'down'); }}
-                          disabled={idx === arr.length - 1}
-                          className="p-1 rounded bg-black/60 text-white/70 hover:text-brand-primary disabled:opacity-20 disabled:cursor-not-allowed"
-                        >
-                          <ChevronDown size={12} />
-                        </button>
-                      </div>
-                    </div>
-                  ))}
+              <div className="flex-1 space-y-3 overflow-y-auto custom-scrollbar pr-1">
+                {getSortedColumn(column.id).map(client => (
+                  <div
+                    key={client.id}
+                    draggable
+                    onDragStart={() => handleDragStart(client.id, column.id)}
+                    onDragOver={e => handleDragOver(e, client.id, column.id)}
+                    onDragEnd={() => { dragClientId.current = null; dragColumnId.current = null; }}
+                    className="cursor-grab active:cursor-grabbing active:opacity-50 transition-opacity"
+                  >
+                    <ClientCard
+                      client={client}
+                      allTags={allTags}
+                      onClick={() => setSelectedClientId(client.id)}
+                    />
+                  </div>
+                ))}
               </div>
             </div>
           ))}
