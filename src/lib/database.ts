@@ -292,7 +292,7 @@ export async function createTag(tag: Tag): Promise<Tag> {
   const dbRow = { id: tag.id, label: tag.label, color: tag.color };
   const { data, error } = await supabase
     .from('tags')
-    .insert(dbRow)
+    .upsert(dbRow, { onConflict: 'id' })
     .select()
     .single();
   if (error) throw error;
