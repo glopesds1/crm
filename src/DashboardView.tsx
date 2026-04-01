@@ -848,8 +848,8 @@ function PageMetas({ data, userSession, range }: { data: any; userSession: any; 
             return '#ef4444';
           };
           return (
-            <div className="glass-card p-6" style={{ maxWidth: sdrsFiltered.length <= 2 ? '50%' : undefined }}>
-              <h3 className="text-sm font-bold uppercase tracking-widest text-brand-primary mb-4">Performance por SDR</h3>
+            <div className="glass-card p-6">
+              <h3 className="text-sm font-bold uppercase tracking-widest text-brand-primary mb-4">Performance de Pré-Vendas</h3>
               <Table
                 cols={['SDR', 'RM', 'RR', 'Vendas', 'Show-rate']}
                 rows={sdrsFiltered.map((s, i) => [
