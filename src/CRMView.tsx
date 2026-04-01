@@ -87,8 +87,8 @@ const MAX_POR_SLOT = 2;
 
 const WEBHOOK_BASE_SLOT = (import.meta.env.VITE_WEBHOOK_BASE ?? 'https://webhook.m2black.com/webhook/dashboard').replace('/webhook/dashboard', '');
 
-function SlotPicker({ selectedDate, onSelectDate, selectedHour, onSelectHour }: {
-  selectedDate: string; onSelectDate: (d: string) => void; selectedHour: string; onSelectHour: (h: string) => void;
+function SlotPicker({ selectedDate, onSelectDate, selectedHour, onSelectHour, tpAtual }: {
+  selectedDate: string; onSelectDate: (d: string) => void; selectedHour: string; onSelectHour: (h: string) => void; tpAtual?: string;
 }) {
   const [ocupacao, setOcupacao] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(false);
@@ -165,7 +165,8 @@ function SlotPicker({ selectedDate, onSelectDate, selectedHour, onSelectHour }: 
             <p className="col-span-5 text-[11px] text-gray-600 text-center py-3">Nenhum horário disponível</p>
           ) : visibleSlots.map(h => {
             const occ = ocupacao[h] ?? 0;
-            const full = occ >= MAX_POR_SLOT;
+            const isR1 = !tpAtual || tpAtual === 'R1';
+            const full = isR1 && occ >= MAX_POR_SLOT;
             const selected = selectedHour === h;
             let bg = 'bg-[#22c55e15] border-[#22c55e40]';
             let txt = 'text-white';
@@ -1238,7 +1239,7 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
                   </div>
                   <div>
                     <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">Data e hora <span className="text-red-400">*</span></label>
-                    <SlotPicker selectedDate={bantSlotDate} onSelectDate={setBantSlotDate} selectedHour={bantSlotHour} onSelectHour={setBantSlotHour} />
+                    <SlotPicker selectedDate={bantSlotDate} onSelectDate={setBantSlotDate} selectedHour={bantSlotHour} onSelectHour={setBantSlotHour} tpAtual={(leadObj as any)?.tp_atual || 'R1'} />
                   </div>
                   <div className="grid grid-cols-2 gap-2">
                     <div>
@@ -1408,7 +1409,7 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
               {reagendarNoShow && (
                 <div>
                   <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">Nova data e hora <span className="text-red-400">*</span></label>
-                  <SlotPicker selectedDate={reagSlotDate} onSelectDate={setReagSlotDate} selectedHour={reagSlotHour} onSelectHour={setReagSlotHour} />
+                  <SlotPicker selectedDate={reagSlotDate} onSelectDate={setReagSlotDate} selectedHour={reagSlotHour} onSelectHour={setReagSlotHour} tpAtual={(leadObj as any)?.tp_atual || 'R1'} />
                 </div>
               )}
             </div>
@@ -1562,7 +1563,7 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
           {(resultado === 'Marcou R2+' || resultado === 'Reagendou') && (
             <div>
               <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">Próxima Reunião</label>
-              <SlotPicker selectedDate={proxSlotDate} onSelectDate={setProxSlotDate} selectedHour={proxSlotHour} onSelectHour={setProxSlotHour} />
+              <SlotPicker selectedDate={proxSlotDate} onSelectDate={setProxSlotDate} selectedHour={proxSlotHour} onSelectHour={setProxSlotHour} tpAtual={(leadObj as any)?.tp_atual || 'R1'} />
             </div>
           )}
 
@@ -2614,7 +2615,7 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
                   </div>
                   <div>
                     <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">Data e hora <span className="text-red-400">*</span></label>
-                    <SlotPicker selectedDate={arSlotDate} onSelectDate={setArSlotDate} selectedHour={arSlotHour} onSelectHour={setArSlotHour} />
+                    <SlotPicker selectedDate={arSlotDate} onSelectDate={setArSlotDate} selectedHour={arSlotHour} onSelectHour={setArSlotHour} tpAtual={(lead as any)?.tp_atual || 'R1'} />
                   </div>
                   <div>
                     <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">Closer responsável <span className="text-red-400">*</span></label>
