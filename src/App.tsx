@@ -381,27 +381,43 @@ const TagManager = ({ clientTags, allTags, onToggleTag, onSaveTag, onDeleteTag }
           </div>
           <div className="pt-2 border-t border-white/5">
             <p className="text-[10px] text-gray-500 mb-2 uppercase font-bold">Editar Existentes</p>
-            <div className="space-y-2 max-h-32 overflow-y-auto custom-scrollbar pr-2">
+            <div className="space-y-2 max-h-48 overflow-y-auto custom-scrollbar pr-2">
               {Object.values(allTags).map(tag => (
-                <div key={tag.id} className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2">
-                    <div className="w-3 h-3 rounded-full" style={{ backgroundColor: tag.color }} />
-                    <span className="text-xs text-gray-300">{tag.label}</span>
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <button 
-                      onClick={() => startEditing(tag)}
-                      className="text-gray-600 hover:text-brand-primary p-1"
-                    >
-                      <Edit2 size={12} />
-                    </button>
-                    <button 
-                      onClick={() => onDeleteTag(tag.id)}
-                      className="text-gray-600 hover:text-red-400 p-1"
-                    >
-                      <Trash2 size={12} />
-                    </button>
-                  </div>
+                <div key={tag.id}>
+                  {editingTagId === tag.id ? (
+                    // Edição inline direto na linha da etiqueta
+                    <div className="bg-white/5 border border-brand-primary/30 rounded-lg p-2 space-y-2">
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          value={newTagName}
+                          onChange={e => setNewTagName(e.target.value)}
+                          autoFocus
+                          className="flex-1 bg-white/10 border border-white/10 rounded-lg px-2 py-1 text-xs text-white focus:outline-none focus:border-brand-primary"
+                        />
+                        <button onClick={handleCreateOrUpdateTag} className="p-1.5 rounded-lg bg-brand-primary text-black"><Check size={12} /></button>
+                        <button onClick={() => { setEditingTagId(null); setNewTagName(''); }} className="p-1.5 rounded-lg bg-white/5 text-gray-400"><X size={12} /></button>
+                      </div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {COLOR_PALETTE.map(color => (
+                          <button key={color} onClick={() => setNewTagColor(color)}
+                            className={`w-4 h-4 rounded-full border-2 transition-all ${newTagColor === color ? 'border-white scale-110' : 'border-transparent'}`}
+                            style={{ backgroundColor: color }} />
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: tag.color }} />
+                        <span className="text-xs text-gray-300">{tag.label}</span>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <button onClick={() => startEditing(tag)} className="text-gray-600 hover:text-brand-primary p-1"><Edit2 size={12} /></button>
+                        <button onClick={() => onDeleteTag(tag.id)} className="text-gray-600 hover:text-red-400 p-1"><Trash2 size={12} /></button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
