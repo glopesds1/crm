@@ -1706,32 +1706,46 @@ const NotificationPanel = ({ isOpen, onClose, notifications, onMarkRead }: {
   );
 };
 
-const UserMenu = ({ isOpen, onClose, user, onLogout }: { 
-  isOpen: boolean, 
-  onClose: () => void, 
-  user: UserSession,
-  onLogout: () => void
+const UserMenuItems = ({ onLogout }: { onLogout: () => void }) => (
+  <div className="p-2">
+    <button className="w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-xs font-medium text-gray-400 hover:bg-white/5 hover:text-white transition-all">
+      <User size={14} /> Editar Perfil
+    </button>
+    <button className="w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-xs font-medium text-gray-400 hover:bg-white/5 hover:text-white transition-all">
+      <Lock size={14} /> Alterar Senha
+    </button>
+    <div className="my-1 border-t border-white/5" />
+    <button
+      onClick={onLogout}
+      className="w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-xs font-medium text-red-400 hover:bg-red-500/10 transition-all"
+    >
+      <LogOut size={14} /> Sair do Sistema
+    </button>
+  </div>
+);
+
+const UserMenu = ({ isOpen, onClose, user, onLogout }: {
+  isOpen: boolean, onClose: () => void, user: UserSession, onLogout: () => void
 }) => {
   if (!isOpen) return null;
-
   return (
     <div className="absolute bottom-16 left-0 w-56 z-[100] bg-bg-main border border-white/10 rounded-xl shadow-2xl overflow-hidden">
-      <div className="p-2">
-        <button className="w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-xs font-medium text-gray-400 hover:bg-white/5 hover:text-white transition-all">
-          <User size={14} /> Editar Perfil
-        </button>
-        <button className="w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-xs font-medium text-gray-400 hover:bg-white/5 hover:text-white transition-all">
-          <Lock size={14} /> Alterar Senha
-        </button>
-        <div className="my-1 border-t border-white/5" />
-        <button 
-          onClick={onLogout}
-          className="w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-xs font-medium text-red-400 hover:bg-red-500/10 transition-all"
-        >
-          <LogOut size={14} /> Sair do Sistema
-        </button>
-      </div>
+      <UserMenuItems onLogout={onLogout} />
     </div>
+  );
+};
+
+const UserMenuHeader = ({ isOpen, onClose, onLogout }: {
+  isOpen: boolean, onClose: () => void, onLogout: () => void
+}) => {
+  if (!isOpen) return null;
+  return (
+    <>
+      <div className="fixed inset-0 z-[99]" onClick={onClose} />
+      <div className="absolute top-10 right-0 w-56 z-[100] bg-[#0d1117] border border-white/10 rounded-xl shadow-2xl overflow-hidden">
+        <UserMenuItems onLogout={onLogout} />
+      </div>
+    </>
   );
 };
 
@@ -3747,6 +3761,7 @@ export default function App() {
   const [isSearchModalOpen, setIsSearchModalOpen] = useState(false);
   const [isNotificationOpen, setIsNotificationOpen] = useState(false);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
+  const [isHeaderMenuOpen, setIsHeaderMenuOpen] = useState(false);
   const [isSupportModalOpen, setIsSupportModalOpen] = useState(false);
   const [supportText, setSupportText] = useState('');
   const [isFilterOpen, setIsFilterOpen] = useState(false);
@@ -4825,13 +4840,16 @@ export default function App() {
               />
             </div>
             {(() => { const me = teamMembers.find(t => t.name === userSession?.name); return (
-              <button onClick={() => setIsUserMenuOpen(!isUserMenuOpen)} className="relative">
-                {me?.photoUrl ? (
-                  <img src={me.photoUrl} alt={me.name} className="w-8 h-8 rounded-full object-cover ring-2 ring-transparent hover:ring-brand-primary transition-all" referrerPolicy="no-referrer" />
-                ) : (
-                  <div className="w-8 h-8 rounded-full hover:ring-2 hover:ring-brand-primary transition-all" style={{ backgroundColor: userSession.color }} />
-                )}
-              </button>
+              <div className="relative">
+                <button onClick={() => setIsHeaderMenuOpen(!isHeaderMenuOpen)} className="relative">
+                  {me?.photoUrl ? (
+                    <img src={me.photoUrl} alt={me.name} className="w-8 h-8 rounded-full object-cover ring-2 ring-transparent hover:ring-brand-primary transition-all" referrerPolicy="no-referrer" />
+                  ) : (
+                    <div className="w-8 h-8 rounded-full hover:ring-2 hover:ring-brand-primary transition-all" style={{ backgroundColor: userSession.color }} />
+                  )}
+                </button>
+                <UserMenuHeader isOpen={isHeaderMenuOpen} onClose={() => setIsHeaderMenuOpen(false)} onLogout={() => { signOut(); setUserSession(null); localStorage.removeItem('hubm2black_session'); setActiveTab('Dashboard'); }} />
+              </div>
             ); })()}
           </div>
         </header>
