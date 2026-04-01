@@ -779,7 +779,7 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
             const clienteData = {
               id: Date.now().toString(),
               name: razaoSocial || leadName,
-              responsible: responsavelAtividade || (leadObj?.responsavel ?? ''),
+              responsible: nomeResponsavel || (leadObj as any)?.nome_responsavel_financeiro || responsavelAtividade || (leadObj?.responsavel ?? ''),
               plan: vendaPrograma || 'Pro',
               status: 'Ativo',
               entry_date: entryDate,
@@ -1992,7 +1992,7 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
         const clienteData = {
           id: Date.now().toString(),
           name: lead.nome,
-          responsible: lead.responsavel ?? '',
+          responsible: rrNomeResponsavel || (lead as any)?.nome_responsavel_financeiro || lead.responsavel || '',
           plan: lead.programa_apresentado === 'Pro' ? 'Pro' : lead.programa_apresentado === 'Lite' ? 'Lite' : 'Basic',
           status: 'Onboarding',
           entry_date: entryDate,

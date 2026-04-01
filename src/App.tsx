@@ -2985,7 +2985,10 @@ const ComercialView = ({ teamMembers, userSession, onOpenInCRM }: {
                       className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-sm focus:outline-none focus:border-brand-primary transition-all appearance-none cursor-pointer"
                     >
                       <option value="" className="bg-bg-main">TODOS</option>
-                      {teamMembers.map(m => (
+                      {teamMembers.filter(m => {
+                        const r = (m.role || '').toLowerCase();
+                        return r.includes('closer') || r.includes('sdr') || r.includes('comercial') || r.includes('gerente comercial') || m.name === 'Gabriel Fonseca';
+                      }).map(m => (
                         <option key={m.id} value={m.name} className="bg-bg-main">{m.name}</option>
                       ))}
                     </select>
