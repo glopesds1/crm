@@ -1560,12 +1560,17 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
           )}
 
           {/* Marcou R2+ / Reagendou — próxima reunião */}
-          {(resultado === 'Marcou R2+' || resultado === 'Reagendou') && (
-            <div>
-              <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">Próxima Reunião</label>
-              <SlotPicker selectedDate={proxSlotDate} onSelectDate={setProxSlotDate} selectedHour={proxSlotHour} onSelectHour={setProxSlotHour} tpAtual={(leadObj as any)?.tp_atual || 'R1'} />
-            </div>
-          )}
+          {(resultado === 'Marcou R2+' || resultado === 'Reagendou') && (() => {
+            const curTP = (leadObj as any)?.tp_atual || 'R1';
+            const tpMap: Record<string, string> = { 'R1': 'R2', 'R2': 'R3', 'R3': 'R4+' };
+            const nextTP = tpMap[curTP] || 'R4+';
+            return (
+              <div>
+                <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">Próxima Reunião</label>
+                <SlotPicker selectedDate={proxSlotDate} onSelectDate={setProxSlotDate} selectedHour={proxSlotHour} onSelectHour={setProxSlotHour} tpAtual={nextTP} />
+              </div>
+            );
+          })()}
 
           {/* Perdido — motivo */}
           {resultado === 'Perdido' && (
