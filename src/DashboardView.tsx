@@ -839,7 +839,7 @@ function PageMetas({ data, userSession, range }: { data: any; userSession: any; 
           </div>
         )}
         {(() => {
-          const sdrsFiltered = sdrs.filter(s => !['Gabriel Fonseca', 'Gabriel Moreira', 'Thalisson Gama'].includes(s.sdr));
+          const sdrsFiltered = sdrs.filter(s => !['Gabriel Fonseca', 'Thalisson Gama'].includes(s.sdr));
           if (sdrsFiltered.length === 0) return null;
           const rateColor = (v: any, ref: number) => {
             const n = parseFloat(v ?? 0);
@@ -854,7 +854,7 @@ function PageMetas({ data, userSession, range }: { data: any; userSession: any; 
                 cols={['SDR', 'RM', 'RR', 'Vendas', 'Show-rate']}
                 rows={sdrsFiltered.map((s, i) => [
                   `${i + 1}. ${s.sdr}`, s.rm, s.rr, s.vendas,
-                  <span style={{ color: rateColor(s.show_rate, 50) }}>{fmtPct(s.show_rate)}</span>,
+                  <span style={{ color: rateColor(s.tx_show, 50) }}>{fmtPct(s.tx_show)}</span>,
                 ] as any)}
               />
             </div>
