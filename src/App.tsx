@@ -2726,7 +2726,7 @@ const ClientModal = ({ client, allTags, teamMembers, onClose, onUpdateClient, on
         {/* Content */}
         <div className="flex-1 overflow-hidden grid grid-cols-1 lg:grid-cols-12 gap-0">
           {/* Left Col: Info */}
-          <div className="lg:col-span-8 overflow-y-auto custom-scrollbar p-8 space-y-10 border-r border-white/5">
+          <div className="lg:col-span-8 overflow-y-auto overflow-x-hidden custom-scrollbar p-8 space-y-10 border-r border-white/5">
             {/* Quick Info Grid (Moved from Sidebar) */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 p-5 rounded-2xl bg-white/5 border border-white/5">
               <div>
