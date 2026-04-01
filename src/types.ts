@@ -18,6 +18,7 @@ export type Offer = {
   name: string;
   situation: string;
   platform: 'Google Ads' | 'Meta Ads' | 'Ambos';
+  captureUrl?: string;
 };
 
 export type OnboardingItem = {
