@@ -936,7 +936,7 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
               reuniao_action: 'resultado_e_reagendar',
               crm_lead_id: leadId,
               reuniao_tp: currentTP,
-              reuniao_status: 'No-show',
+              reuniao_status: 'Reagendou',
               reuniao_resultado: 'No-show',
               closer,
               nova_data_marcada: new Date(dataReagendamento).toISOString().split('T')[0],
