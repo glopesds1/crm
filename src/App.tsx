@@ -428,14 +428,17 @@ const TagManager = ({ clientTags, allTags, onToggleTag, onSaveTag, onDeleteTag }
   );
 };
 
-const OfferSection = ({ offers, onAddOffer, onRemoveOffer }: { 
-  offers: Offer[], 
+const OfferSection = ({ offers, onAddOffer, onRemoveOffer, onUpdateOffer }: {
+  offers: Offer[],
   onAddOffer: (offer: Omit<Offer, 'id'>) => void,
-  onRemoveOffer: (id: string) => void
+  onRemoveOffer: (id: string) => void,
+  onUpdateOffer?: (offer: Offer) => void,
 }) => {
   const [isAdding, setIsAdding] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [newOffer, setNewOffer] = useState({ name: '', situation: '', platform: 'Ambos' as Offer['platform'] });
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState<Offer | null>(null);
+  const [newOffer, setNewOffer] = useState({ name: '', situation: '', platform: 'Ambos' as Offer['platform'], captureUrl: '' });
 
   return (
     <section>
@@ -456,18 +459,25 @@ const OfferSection = ({ offers, onAddOffer, onRemoveOffer }: {
             animate={{ opacity: 1, scale: 1 }}
             className="p-4 rounded-xl bg-brand-primary/5 border border-brand-primary/20 space-y-3"
           >
-            <input 
-              type="text" 
+            <input
+              type="text"
               placeholder="Nome da oferta"
               value={newOffer.name}
               onChange={e => setNewOffer({ ...newOffer, name: e.target.value })}
               className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand-primary"
             />
-            <textarea 
+            <textarea
               placeholder="Situação atual"
               value={newOffer.situation}
               onChange={e => setNewOffer({ ...newOffer, situation: e.target.value })}
               className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand-primary h-20 resize-none"
+            />
+            <input
+              type="url"
+              placeholder="Link da página de captura (opcional)"
+              value={newOffer.captureUrl}
+              onChange={e => setNewOffer({ ...newOffer, captureUrl: e.target.value })}
+              className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand-primary"
             />
             <div className="flex gap-2">
               {['Google Ads', 'Meta Ads', 'Ambos'].map(p => (
@@ -483,17 +493,17 @@ const OfferSection = ({ offers, onAddOffer, onRemoveOffer }: {
               ))}
             </div>
             <div className="flex gap-2 pt-2">
-              <button 
+              <button
                 onClick={() => {
                   onAddOffer(newOffer);
                   setIsAdding(false);
-                  setNewOffer({ name: '', situation: '', platform: 'Ambos' });
+                  setNewOffer({ name: '', situation: '', platform: 'Ambos', captureUrl: '' });
                 }}
                 className="flex-1 py-2 bg-brand-primary text-bg-main rounded-lg text-xs font-bold"
               >
                 Salvar Oferta
               </button>
-              <button 
+              <button
                 onClick={() => setIsAdding(false)}
                 className="px-4 py-2 bg-white/5 text-gray-400 rounded-lg text-xs font-bold"
               >
@@ -505,44 +515,81 @@ const OfferSection = ({ offers, onAddOffer, onRemoveOffer }: {
 
         {offers.map(offer => (
           <div key={offer.id} className="glass-card overflow-hidden">
-            <div 
-              onClick={() => setExpandedId(expandedId === offer.id ? null : offer.id)}
-              className="p-4 flex items-center justify-between cursor-pointer hover:bg-white/5 transition-colors"
-            >
-              <div className="flex items-center gap-3">
-                <div className="p-2 rounded-lg bg-brand-primary/10 text-brand-primary">
-                  <Briefcase size={16} />
+            {editingId === offer.id && editForm ? (
+              // ── Modo edição inline ──
+              <div className="p-4 space-y-3">
+                <input type="text" value={editForm.name} onChange={e => setEditForm({ ...editForm, name: e.target.value })}
+                  className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand-primary" placeholder="Nome da oferta" />
+                <textarea value={editForm.situation} onChange={e => setEditForm({ ...editForm, situation: e.target.value })}
+                  className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand-primary h-20 resize-none" placeholder="Situação atual" />
+                <input type="url" value={editForm.captureUrl || ''} onChange={e => setEditForm({ ...editForm, captureUrl: e.target.value })}
+                  className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand-primary" placeholder="Link da página de captura (opcional)" />
+                <div className="flex gap-2">
+                  {['Google Ads', 'Meta Ads', 'Ambos'].map(p => (
+                    <button key={p} onClick={() => setEditForm({ ...editForm, platform: p as Offer['platform'] })}
+                      className={`flex-1 py-1.5 rounded-lg border text-[10px] font-bold transition-all ${editForm.platform === p ? 'bg-brand-primary text-bg-main border-brand-primary' : 'bg-white/5 border-white/10 text-gray-400'}`}>
+                      {p}
+                    </button>
+                  ))}
                 </div>
-                <div>
-                  <p className="text-sm font-bold">{offer.name}</p>
-                  <p className="text-[10px] text-gray-500 uppercase tracking-wider font-bold">{offer.platform}</p>
+                <div className="flex gap-2">
+                  <button onClick={() => { onUpdateOffer?.(editForm); setEditingId(null); setEditForm(null); }}
+                    className="flex-1 py-2 bg-brand-primary text-bg-main rounded-lg text-xs font-bold">Salvar</button>
+                  <button onClick={() => { setEditingId(null); setEditForm(null); }}
+                    className="px-4 py-2 bg-white/5 text-gray-400 rounded-lg text-xs font-bold">Cancelar</button>
                 </div>
               </div>
-              <div className="flex items-center gap-2">
-                <button 
-                  onClick={(e) => { e.stopPropagation(); onRemoveOffer(offer.id); }}
-                  className="p-1.5 text-gray-600 hover:text-red-400 transition-colors"
+            ) : (
+              <>
+                <div
+                  onClick={() => setExpandedId(expandedId === offer.id ? null : offer.id)}
+                  className="p-4 flex items-center justify-between cursor-pointer hover:bg-white/5 transition-colors"
                 >
-                  <Trash2 size={14} />
-                </button>
-                {expandedId === offer.id ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-              </div>
-            </div>
-            <AnimatePresence>
-              {expandedId === offer.id && (
-                <motion.div 
-                  initial={{ height: 0 }}
-                  animate={{ height: 'auto' }}
-                  exit={{ height: 0 }}
-                  className="px-4 pb-4 border-t border-white/5"
-                >
-                  <p className="text-xs text-gray-400 mt-4 leading-relaxed">
-                    <span className="text-brand-primary font-bold block mb-1 uppercase tracking-tighter text-[10px]">Situação</span>
-                    {offer.situation}
-                  </p>
-                </motion.div>
-              )}
-            </AnimatePresence>
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 rounded-lg bg-brand-primary/10 text-brand-primary"><Briefcase size={16} /></div>
+                    <div>
+                      <p className="text-sm font-bold">{offer.name}</p>
+                      <p className="text-[10px] text-gray-500 uppercase tracking-wider font-bold">{offer.platform}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {offer.captureUrl && (
+                      <a href={offer.captureUrl} target="_blank" rel="noopener noreferrer"
+                        onClick={e => e.stopPropagation()}
+                        className="p-1.5 text-brand-primary/60 hover:text-brand-primary transition-colors" title="Abrir página de captura">
+                        <ExternalLink size={14} />
+                      </a>
+                    )}
+                    <button onClick={e => { e.stopPropagation(); setEditingId(offer.id); setEditForm({ ...offer }); }}
+                      className="p-1.5 text-gray-600 hover:text-brand-primary transition-colors">
+                      <Edit2 size={14} />
+                    </button>
+                    <button onClick={e => { e.stopPropagation(); onRemoveOffer(offer.id); }}
+                      className="p-1.5 text-gray-600 hover:text-red-400 transition-colors">
+                      <Trash2 size={14} />
+                    </button>
+                    {expandedId === offer.id ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                  </div>
+                </div>
+                <AnimatePresence>
+                  {expandedId === offer.id && (
+                    <motion.div initial={{ height: 0 }} animate={{ height: 'auto' }} exit={{ height: 0 }}
+                      className="px-4 pb-4 border-t border-white/5 overflow-hidden">
+                      <p className="text-xs text-gray-400 mt-4 leading-relaxed">
+                        <span className="text-brand-primary font-bold block mb-1 uppercase tracking-tighter text-[10px]">Situação</span>
+                        {offer.situation || '—'}
+                      </p>
+                      {offer.captureUrl && (
+                        <a href={offer.captureUrl} target="_blank" rel="noopener noreferrer"
+                          className="mt-3 flex items-center gap-2 text-xs text-brand-primary hover:underline">
+                          <ExternalLink size={12} /> {offer.captureUrl}
+                        </a>
+                      )}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </>
+            )}
           </div>
         ))}
       </div>
@@ -2913,10 +2960,11 @@ const ClientModal = ({ client, allTags, teamMembers, onClose, onUpdateClient, on
               }}
             />
 
-            <OfferSection 
-              offers={client.offers} 
+            <OfferSection
+              offers={client.offers}
               onAddOffer={(off) => onUpdateClient({ ...client, offers: [{ ...off, id: Date.now().toString() }, ...client.offers] })}
               onRemoveOffer={(id) => onUpdateClient({ ...client, offers: client.offers.filter(o => o.id !== id) })}
+              onUpdateOffer={(updated) => onUpdateClient({ ...client, offers: client.offers.map(o => o.id === updated.id ? updated : o) })}
             />
 
             <section>
