@@ -839,8 +839,7 @@ function PageMetas({ data, userSession, range }: { data: any; userSession: any; 
           </div>
         )}
         {(() => {
-          const sdrsFiltered = sdrs.filter(s => !['Gabriel Fonseca', 'Thalisson Gama'].includes(s.sdr));
-          if (sdrsFiltered.length === 0) return null;
+          if (sdrs.length === 0) return null;
           const rateColor = (v: any, ref: number) => {
             const n = parseFloat(v ?? 0);
             if (n >= ref) return '#22c55e';
@@ -852,7 +851,7 @@ function PageMetas({ data, userSession, range }: { data: any; userSession: any; 
               <h3 className="text-sm font-bold uppercase tracking-widest text-brand-primary mb-4">Performance de Pré-Vendas</h3>
               <Table
                 cols={['SDR', 'RM', 'RR', 'Vendas', 'Show-rate']}
-                rows={sdrsFiltered.map((s, i) => [
+                rows={sdrs.map((s, i) => [
                   `${i + 1}. ${s.sdr}`, s.rm, s.rr, s.vendas,
                   <span style={{ color: rateColor(s.tx_show, 50) }}>{fmtPct(s.tx_show)}</span>,
                 ] as any)}
