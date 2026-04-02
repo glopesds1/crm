@@ -14,13 +14,13 @@ Deno.serve(async (req) => {
     const { offerId, projectName, repoFullName, productionBranch = 'main' } = await req.json();
 
     if (!offerId || !projectName || !repoFullName) {
-      return Response.json({ error: 'offerId, projectName e repoFullName são obrigatórios' }, { status: 400, headers: corsHeaders });
+      return Response.json({ ok: false, error: 'offerId, projectName e repoFullName são obrigatórios' }, { headers: corsHeaders });
     }
 
     const cfToken = Deno.env.get('CLOUDFLARE_API_TOKEN');
     const accountId = Deno.env.get('CLOUDFLARE_ACCOUNT_ID');
     if (!cfToken || !accountId) {
-      return Response.json({ error: 'CLOUDFLARE_API_TOKEN ou CLOUDFLARE_ACCOUNT_ID não configurados' }, { status: 500, headers: corsHeaders });
+      return Response.json({ ok: false, error: 'CLOUDFLARE_API_TOKEN ou CLOUDFLARE_ACCOUNT_ID não configurados' }, { headers: corsHeaders });
     }
 
     const [owner, repoName] = repoFullName.split('/');
@@ -53,13 +53,16 @@ Deno.serve(async (req) => {
     });
 
     const cfData = await cfRes.json();
+    console.log('[CF Deploy] status:', cfRes.status, cfData.success);
+
     if (!cfData.success) {
       const msg = cfData.errors?.map((e: { message: string }) => e.message).join(', ') || 'Erro Cloudflare';
-      return Response.json({ error: msg }, { status: 400, headers: corsHeaders });
+      return Response.json({ ok: false, error: msg }, { headers: corsHeaders });
     }
 
     const project = cfData.result;
-    const deployUrl = `https://${project.subdomain}`;
+    // Usar nome do projeto para montar URL de produção (não o subdomain com hash)
+    const deployUrl = `https://${project.name}.pages.dev`;
 
     // Atualizar lp_offers
     const supabase = createClient(
@@ -80,11 +83,11 @@ Deno.serve(async (req) => {
     return Response.json({
       ok: true,
       projectName: project.name,
-      subdomain: project.subdomain,
       deployUrl,
     }, { headers: corsHeaders });
 
   } catch (err) {
-    return Response.json({ error: err.message }, { status: 500, headers: corsHeaders });
+    console.error('[lp-cf-deploy]', err);
+    return Response.json({ ok: false, error: String(err) }, { headers: corsHeaders });
   }
 });
