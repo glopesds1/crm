@@ -35,7 +35,6 @@ y=l.getElementsByTagName(r)[0];y.parentNode.insertBefore(t,y);
 <!-- End Clarity -->`);
   }
 
-  // Script de Conversions API — intercepta submit do form e envia server-side
   if (metaPixelId && capiEndpoint) {
     scripts.push(`<!-- Meta CAPI -->
 <script>
@@ -65,26 +64,75 @@ y=l.getElementsByTagName(r)[0];y.parentNode.insertBefore(t,y);
   return injection + html;
 }
 
+// Faz upload de um único arquivo para o GitHub
+async function uploadFileToGitHub(
+  token: string,
+  owner: string,
+  repo: string,
+  path: string,
+  content: string, // já em base64
+  message: string,
+): Promise<void> {
+  // Buscar SHA atual se arquivo já existe
+  let sha: string | undefined;
+  const existsRes = await fetch(
+    `https://api.github.com/repos/${owner}/${repo}/contents/${path}`,
+    { headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28' } }
+  );
+  if (existsRes.ok) {
+    const existing = await existsRes.json();
+    sha = existing.sha;
+  }
+
+  const res = await fetch(
+    `https://api.github.com/repos/${owner}/${repo}/contents/${path}`,
+    {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: 'application/vnd.github+json',
+        'Content-Type': 'application/json',
+        'X-GitHub-Api-Version': '2022-11-28',
+      },
+      body: JSON.stringify({
+        message,
+        content,
+        ...(sha ? { sha } : {}),
+      }),
+    }
+  );
+
+  if (!res.ok) {
+    const data = await res.json();
+    throw new Error(`GitHub (${path}): ${data.message || res.status}`);
+  }
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
   try {
+    const body = await req.json();
     const {
       offerId,
       repoFullName,
-      fileName = 'index.html',
-      content,
       metaPixelId,
       clarityId,
       metaAccessToken,
-    } = await req.json();
-
-    if (!content) {
-      return Response.json({ ok: false, error: 'content é obrigatório' }, { headers: corsHeaders });
-    }
+      // Modo pasta: array de arquivos
+      files,
+      // Modo arquivo único
+      fileName = 'index.html',
+      content,
+    } = body;
 
     if (!repoFullName) {
       return Response.json({ ok: false, error: 'repoFullName é obrigatório' }, { headers: corsHeaders });
+    }
+
+    const token = Deno.env.get('GITHUB_TOKEN');
+    if (!token) {
+      return Response.json({ ok: false, error: 'GITHUB_TOKEN não configurado' }, { headers: corsHeaders });
     }
 
     const supabase = createClient(
@@ -92,55 +140,42 @@ Deno.serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     );
 
-    // Montar endpoint CAPI
     const supabaseUrl = Deno.env.get('SUPABASE_URL');
     const capiEndpoint = metaPixelId && metaAccessToken
       ? `${supabaseUrl}/functions/v1/lp-meta-capi`
       : undefined;
 
-    // Injetar scripts de rastreamento no HTML
-    const finalContent = injectTrackingScripts(content, metaPixelId, clarityId, capiEndpoint);
-
-    // ── Upload para GitHub ─────────────────────────────────────────────────────
-    const token = Deno.env.get('GITHUB_TOKEN');
-    if (!token) {
-      return Response.json({ ok: false, error: 'GITHUB_TOKEN não configurado' }, { headers: corsHeaders });
-    }
-
     const [owner, repo] = repoFullName.split('/');
-    const base64Content = btoa(unescape(encodeURIComponent(finalContent)));
+    let filesUploaded = 0;
 
-    // Verificar se arquivo já existe (para pegar SHA atual)
-    let sha: string | undefined;
-    const existsRes = await fetch(
-      `https://api.github.com/repos/${owner}/${repo}/contents/${fileName}`,
-      { headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28' } }
-    );
-    if (existsRes.ok) sha = (await existsRes.json()).sha;
+    if (files && Array.isArray(files) && files.length > 0) {
+      // ── Modo pasta: múltiplos arquivos ─────────────────────────────────────
+      for (const file of files as { path: string; content: string; encoding: string }[]) {
+        let finalContent = file.content;
 
-    const ghRes = await fetch(
-      `https://api.github.com/repos/${owner}/${repo}/contents/${fileName}`,
-      {
-        method: 'PUT',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          Accept: 'application/vnd.github+json',
-          'Content-Type': 'application/json',
-          'X-GitHub-Api-Version': '2022-11-28',
-        },
-        body: JSON.stringify({
-          message: sha ? `Update ${fileName}` : `Add ${fileName}`,
-          content: base64Content,
-          ...(sha ? { sha } : {}),
-        }),
+        // Injetar scripts apenas no index.html (encoding utf-8)
+        if (file.encoding === 'utf-8' && (file.path === 'index.html' || file.path.endsWith('/index.html'))) {
+          const injected = injectTrackingScripts(file.content, metaPixelId, clarityId, capiEndpoint);
+          // Converter para base64 para a API do GitHub
+          finalContent = btoa(unescape(encodeURIComponent(injected)));
+        } else if (file.encoding === 'utf-8') {
+          finalContent = btoa(unescape(encodeURIComponent(file.content)));
+        }
+        // encoding === 'base64': já está pronto
+
+        await uploadFileToGitHub(token, owner, repo, file.path, finalContent, `Upload ${file.path}`);
+        filesUploaded++;
       }
-    );
 
-    const ghData = await ghRes.json();
-    console.log('[GitHub] status:', ghRes.status);
+    } else if (content) {
+      // ── Modo arquivo único ──────────────────────────────────────────────────
+      const finalContent = injectTrackingScripts(content, metaPixelId, clarityId, capiEndpoint);
+      const base64Content = btoa(unescape(encodeURIComponent(finalContent)));
+      await uploadFileToGitHub(token, owner, repo, fileName, base64Content, `Upload ${fileName}`);
+      filesUploaded = 1;
 
-    if (!ghRes.ok) {
-      return Response.json({ ok: false, error: `GitHub: ${ghData.message || ghRes.status}` }, { headers: corsHeaders });
+    } else {
+      return Response.json({ ok: false, error: 'content ou files é obrigatório' }, { headers: corsHeaders });
     }
 
     // Atualizar updated_at no banco
@@ -150,10 +185,7 @@ Deno.serve(async (req) => {
 
     return Response.json({
       ok: true,
-      fileName,
-      sha: ghData.content?.sha,
-      commitUrl: ghData.commit?.html_url,
-      isUpdate: !!sha,
+      filesUploaded,
       scriptsInjected: { pixel: !!metaPixelId, clarity: !!clarityId, capi: !!capiEndpoint },
     }, { headers: corsHeaders });
 

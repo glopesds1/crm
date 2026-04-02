@@ -80,6 +80,28 @@ function fileToText(file: File): Promise<string> {
   });
 }
 
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const result = e.target?.result as string;
+      // Remove o prefixo "data:...;base64,"
+      resolve(result.split(',')[1]);
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+const TEXT_EXTENSIONS = new Set([
+  'html', 'htm', 'css', 'js', 'json', 'txt', 'svg', 'xml', 'webmanifest'
+]);
+
+function isTextFile(filename: string): boolean {
+  const ext = filename.split('.').pop()?.toLowerCase() || '';
+  return TEXT_EXTENSIONS.has(ext);
+}
+
 // ─── Toast ────────────────────────────────────────────────────────────────────
 
 interface Toast {
@@ -127,11 +149,13 @@ export default function LandingPagesView() {
   const [cfProjectName, setCfProjectName] = useState('');
   const [domainInput, setDomainInput] = useState('');
   const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [uploadFiles, setUploadFiles] = useState<File[]>([]); // pasta inteira
   const [uploadHtml, setUploadHtml] = useState('');
-  const [uploadTab, setUploadTab] = useState<'file' | 'paste'>('file');
+  const [uploadTab, setUploadTab] = useState<'folder' | 'file' | 'paste'>('folder');
   const [uploadFileName, setUploadFileName] = useState('index.html');
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const folderInputRef = useRef<HTMLInputElement>(null);
   const { toasts, push } = useToasts();
 
   // ─── Carregamento ────────────────────────────────────────────────────────────
@@ -256,32 +280,83 @@ export default function LandingPagesView() {
   async function handleUploadHtml() {
     if (!modalUpload) return;
 
-    let content = '';
-    if (uploadTab === 'file' && uploadFile) {
-      content = await fileToText(uploadFile);
-    } else if (uploadTab === 'paste' && uploadHtml.trim()) {
-      content = uploadHtml.trim();
-    } else {
-      push('Selecione um arquivo ou cole o HTML.', 'error');
-      return;
-    }
-
     setActionLoading(modalUpload.id);
     try {
-      const result = await invokeAction('lp-github-upload-file', {
-        offerId: modalUpload.id,
-        repoFullName: modalUpload.github_repo,
-        fileName: uploadFileName || 'index.html',
-        content,
-        metaPixelId: modalUpload.meta_pixel_id || undefined,
-        clarityId: modalUpload.clarity_id || undefined,
-        metaAccessToken: modalUpload.meta_access_token || undefined,
-      });
+      if (uploadTab === 'folder' && uploadFiles.length > 0) {
+        // ── Modo pasta: envia todos os arquivos ──────────────────────────
+        const files: { path: string; content: string; encoding: string }[] = [];
 
-      setModalUpload(null);
-      setUploadFile(null);
-      setUploadHtml('');
-      push(result.isUpdate ? 'HTML atualizado no GitHub! Cloudflare irá republicar automaticamente.' : 'HTML enviado ao GitHub!', 'success');
+        for (const file of uploadFiles) {
+          // Pegar caminho relativo (remove prefixo da pasta raiz)
+          const relativePath = (file as File & { webkitRelativePath: string }).webkitRelativePath;
+          // Remove o primeiro segmento (nome da pasta): "pasta/img/foto.jpg" → "img/foto.jpg"
+          const path = relativePath.split('/').slice(1).join('/');
+          if (!path) continue;
+
+          if (isTextFile(file.name)) {
+            const text = await fileToText(file);
+            // Injetar scripts apenas no index.html
+            files.push({ path, content: text, encoding: 'utf-8' });
+          } else {
+            const b64 = await fileToBase64(file);
+            files.push({ path, content: b64, encoding: 'base64' });
+          }
+        }
+
+        const htmlFile = files.find(f => f.path === 'index.html' || f.path.endsWith('/index.html'));
+        if (!htmlFile) {
+          push('A pasta deve conter um index.html.', 'error');
+          setActionLoading(null);
+          return;
+        }
+
+        const result = await invokeAction('lp-github-upload-file', {
+          offerId: modalUpload.id,
+          repoFullName: modalUpload.github_repo,
+          files,
+          metaPixelId: modalUpload.meta_pixel_id || undefined,
+          clarityId: modalUpload.clarity_id || undefined,
+          metaAccessToken: modalUpload.meta_access_token || undefined,
+        });
+
+        setModalUpload(null);
+        setUploadFiles([]);
+        push(`${result.filesUploaded} arquivo(s) enviados ao GitHub! Cloudflare irá republicar automaticamente.`, 'success');
+
+      } else if (uploadTab === 'file' && uploadFile) {
+        // ── Modo arquivo único ───────────────────────────────────────────
+        const content = await fileToText(uploadFile);
+        const result = await invokeAction('lp-github-upload-file', {
+          offerId: modalUpload.id,
+          repoFullName: modalUpload.github_repo,
+          fileName: uploadFileName || 'index.html',
+          content,
+          metaPixelId: modalUpload.meta_pixel_id || undefined,
+          clarityId: modalUpload.clarity_id || undefined,
+          metaAccessToken: modalUpload.meta_access_token || undefined,
+        });
+        setModalUpload(null);
+        setUploadFile(null);
+        push(result.isUpdate ? 'HTML atualizado no GitHub!' : 'HTML enviado ao GitHub!', 'success');
+
+      } else if (uploadTab === 'paste' && uploadHtml.trim()) {
+        // ── Modo colar HTML ──────────────────────────────────────────────
+        const result = await invokeAction('lp-github-upload-file', {
+          offerId: modalUpload.id,
+          repoFullName: modalUpload.github_repo,
+          fileName: uploadFileName || 'index.html',
+          content: uploadHtml.trim(),
+          metaPixelId: modalUpload.meta_pixel_id || undefined,
+          clarityId: modalUpload.clarity_id || undefined,
+          metaAccessToken: modalUpload.meta_access_token || undefined,
+        });
+        setModalUpload(null);
+        setUploadHtml('');
+        push(result.isUpdate ? 'HTML atualizado no GitHub!' : 'HTML enviado ao GitHub!', 'success');
+
+      } else {
+        push('Selecione uma pasta, arquivo ou cole o HTML.', 'error');
+      }
     } catch (e: unknown) {
       push('Erro: ' + (e instanceof Error ? e.message : String(e)), 'error');
     } finally {
@@ -906,8 +981,8 @@ export default function LandingPagesView() {
       {/* ── Modal: Upload HTML ─────────────────────────────────────── */}
       <Modal
         open={!!modalUpload}
-        title={`${modalUpload?.status === 'repo_criado' ? 'Subir' : 'Atualizar'} HTML — ${modalUpload?.name}`}
-        onClose={() => setModalUpload(null)}
+        title={`${modalUpload?.status === 'repo_criado' ? 'Subir' : 'Atualizar'} Site — ${modalUpload?.name}`}
+        onClose={() => { setModalUpload(null); setUploadFiles([]); setUploadFile(null); setUploadHtml(''); }}
         onConfirm={handleUploadHtml}
         confirmLabel={modalUpload?.status === 'repo_criado' ? 'Enviar para GitHub' : 'Atualizar no GitHub'}
         loading={actionLoading === modalUpload?.id}
@@ -915,7 +990,7 @@ export default function LandingPagesView() {
       >
         {/* Tabs */}
         <div className="flex gap-1 p-1 bg-white/5 rounded-xl mb-4">
-          {(['file', 'paste'] as const).map(tab => (
+          {(['folder', 'file', 'paste'] as const).map(tab => (
             <button
               key={tab}
               onClick={() => setUploadTab(tab)}
@@ -923,12 +998,49 @@ export default function LandingPagesView() {
                 uploadTab === tab ? 'bg-white/10 text-white' : 'text-gray-500 hover:text-white'
               }`}
             >
-              {tab === 'file' ? '📁 Arquivo' : '📋 Colar HTML'}
+              {tab === 'folder' ? '📂 Pasta' : tab === 'file' ? '📄 HTML' : '📋 Colar'}
             </button>
           ))}
         </div>
 
-        {uploadTab === 'file' ? (
+        {uploadTab === 'folder' ? (
+          <div
+            className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-colors ${
+              uploadFiles.length > 0 ? 'border-brand-primary/50 bg-brand-primary/5' : 'border-white/20 hover:border-white/40'
+            }`}
+            onClick={() => folderInputRef.current?.click()}
+          >
+            <Upload size={24} className={`mx-auto mb-2 ${uploadFiles.length > 0 ? 'text-brand-primary' : 'text-gray-500'}`} />
+            {uploadFiles.length > 0 ? (
+              <>
+                <p className="text-sm font-medium text-white">{uploadFiles.length} arquivo(s) selecionados</p>
+                <div className="mt-2 text-left max-h-32 overflow-y-auto space-y-0.5">
+                  {uploadFiles.slice(0, 20).map((f, i) => {
+                    const path = (f as File & { webkitRelativePath: string }).webkitRelativePath;
+                    const rel = path.split('/').slice(1).join('/');
+                    return <p key={i} className="text-[10px] font-mono text-gray-400 truncate">{rel}</p>;
+                  })}
+                  {uploadFiles.length > 20 && <p className="text-[10px] text-gray-600">...e mais {uploadFiles.length - 20} arquivo(s)</p>}
+                </div>
+              </>
+            ) : (
+              <>
+                <p className="text-sm text-gray-400">Clique para selecionar a pasta do site</p>
+                <p className="text-xs text-gray-600 mt-1">Deve conter index.html + imagens, CSS, etc.</p>
+              </>
+            )}
+            <input
+              ref={folderInputRef}
+              type="file"
+              className="hidden"
+              {...{ webkitdirectory: '', multiple: true } as React.InputHTMLAttributes<HTMLInputElement>}
+              onChange={e => {
+                const files = Array.from(e.target.files || []);
+                setUploadFiles(files);
+              }}
+            />
+          </div>
+        ) : uploadTab === 'file' ? (
           <div
             className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-colors ${
               uploadFile ? 'border-brand-primary/50 bg-brand-primary/5' : 'border-white/20 hover:border-white/40'
@@ -947,7 +1059,7 @@ export default function LandingPagesView() {
             ) : (
               <>
                 <p className="text-sm text-gray-400">Arraste o .html aqui ou clique</p>
-                <p className="text-xs text-gray-600 mt-1">index.html, oferta.html...</p>
+                <p className="text-xs text-gray-600 mt-1">Somente HTML único sem imagens externas</p>
               </>
             )}
             <input
@@ -970,14 +1082,16 @@ export default function LandingPagesView() {
           />
         )}
 
-        <FormField label="Nome do arquivo" className="mt-3">
-          <input
-            className="input-dark font-mono"
-            value={uploadFileName}
-            onChange={e => setUploadFileName(e.target.value)}
-            placeholder="index.html"
-          />
-        </FormField>
+        {uploadTab !== 'folder' && (
+          <FormField label="Nome do arquivo" className="mt-3">
+            <input
+              className="input-dark font-mono"
+              value={uploadFileName}
+              onChange={e => setUploadFileName(e.target.value)}
+              placeholder="index.html"
+            />
+          </FormField>
+        )}
 
       </Modal>
 
