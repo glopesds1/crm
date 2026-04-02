@@ -179,10 +179,21 @@ Deno.serve(async (req) => {
         }
       }
 
-      // Upload direto ao Cloudflare Pages
+      // Upload direto ao Cloudflare Pages (Direct Upload — requer manifest)
       if (cfProject) {
+        // Calcular SHA-256 do conteúdo (exigido pelo CF Pages Direct Upload)
+        const encoder = new TextEncoder();
+        const fileBytes = encoder.encode(finalContent);
+        const hashBuffer = await crypto.subtle.digest('SHA-256', fileBytes);
+        const hashHex = Array.from(new Uint8Array(hashBuffer))
+          .map(b => b.toString(16).padStart(2, '0')).join('');
+
+        // Manifest: mapeia hash → caminho do arquivo
+        const manifest: Record<string, string> = { [hashHex]: '/' + fileName };
+
         const formData = new FormData();
-        formData.append(fileName, new Blob([finalContent], { type: 'text/html' }), fileName);
+        formData.append('manifest', JSON.stringify(manifest));
+        formData.append(hashHex, new Blob([finalContent], { type: 'text/html' }), fileName);
 
         const cfRes = await fetch(
           `https://api.cloudflare.com/client/v4/accounts/${accountId}/pages/projects/${cfProject}/deployments`,
@@ -195,12 +206,11 @@ Deno.serve(async (req) => {
           const cfError = cfData.errors?.[0]?.message || cfData.errors?.[0]?.code || JSON.stringify(cfData.errors);
           return Response.json({
             ok: false,
-            error: `Cloudflare Pages: ${cfError}. Se o projeto foi criado com integração GitHub, use um nome diferente.`,
+            error: `Cloudflare Pages: ${cfError}`,
           }, { headers: corsHeaders });
         }
 
         cfDeployed = true;
-        // Sempre usar a URL de produção do projeto (não a URL de deployment com hash)
         deployUrl = `https://${cfProject}.pages.dev`;
       }
     }
