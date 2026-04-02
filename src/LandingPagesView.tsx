@@ -347,6 +347,21 @@ export default function LandingPagesView() {
       ? `https://${offer.custom_domain}`
       : sanitizeUrl(offer.deploy_url);
     const [trackingOpen, setTrackingOpen] = useState(false);
+    const [editingUrl, setEditingUrl] = useState(false);
+    const [urlInput, setUrlInput] = useState(offer.deploy_url || '');
+
+    async function saveDeployUrl() {
+      const clean = urlInput.trim().replace(/^https?:\/\/https?:\/\//, 'https://');
+      const { error } = await supabase.from('lp_offers').update({
+        deploy_url: clean || null,
+        status: clean ? 'no_ar' : offer.status,
+        updated_at: new Date().toISOString(),
+      }).eq('id', offer.id);
+      if (error) { push('Erro ao salvar URL', 'error'); return; }
+      setOffers(o => o.map(x => x.id === offer.id ? { ...x, deploy_url: clean || null, status: clean ? 'no_ar' : x.status } : x));
+      setEditingUrl(false);
+      push('URL atualizada!', 'success');
+    }
     const [pixelId, setPixelId] = useState(offer.meta_pixel_id || '');
     const [clarityId, setClarityId] = useState(offer.clarity_id || '');
     const [accessToken, setAccessToken] = useState(offer.meta_access_token || '');
@@ -419,8 +434,8 @@ export default function LandingPagesView() {
         </div>
 
         {/* Links */}
-        {(offer.github_repo || url) && (
-          <div className="flex flex-wrap gap-2 text-[11px]">
+        {(offer.github_repo || url || offer.status !== 'pendente') && (
+          <div className="flex flex-wrap gap-x-3 gap-y-1.5 text-[11px] items-center">
             {offer.github_repo && (
               <a
                 href={`https://github.com/${offer.github_repo}`}
@@ -431,16 +446,37 @@ export default function LandingPagesView() {
                 <Github size={11} /> {offer.github_repo}
               </a>
             )}
-            {url && (
-              <a
-                href={url}
-                target="_blank"
-                rel="noreferrer"
-                className="flex items-center gap-1 text-brand-primary hover:underline"
+            {/* URL de deploy — editável */}
+            {editingUrl ? (
+              <div className="flex items-center gap-1 flex-1 min-w-0">
+                <input
+                  autoFocus
+                  className="input-dark text-xs py-1 flex-1 min-w-0"
+                  placeholder="https://projeto.pages.dev"
+                  value={urlInput}
+                  onChange={e => setUrlInput(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') saveDeployUrl(); if (e.key === 'Escape') setEditingUrl(false); }}
+                />
+                <button onClick={saveDeployUrl} className="text-brand-primary hover:text-white transition-colors shrink-0"><Save size={12} /></button>
+                <button onClick={() => setEditingUrl(false)} className="text-gray-500 hover:text-white transition-colors shrink-0"><X size={12} /></button>
+              </div>
+            ) : url ? (
+              <div className="flex items-center gap-1">
+                <a href={url} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-brand-primary hover:underline">
+                  <ExternalLink size={11} /> {offer.custom_domain || sanitizeUrl(offer.deploy_url)}
+                </a>
+                <button onClick={() => { setUrlInput(offer.deploy_url || ''); setEditingUrl(true); }} className="text-gray-600 hover:text-gray-400 transition-colors ml-0.5">
+                  <Settings2 size={10} />
+                </button>
+              </div>
+            ) : offer.status === 'no_ar' || offer.status === 'repo_criado' ? (
+              <button
+                onClick={() => { setUrlInput(''); setEditingUrl(true); }}
+                className="flex items-center gap-1 text-gray-600 hover:text-brand-primary transition-colors"
               >
-                <ExternalLink size={11} /> {offer.custom_domain || offer.deploy_url}
-              </a>
-            )}
+                <Link2 size={11} /> Corrigir URL
+              </button>
+            ) : null}
           </div>
         )}
 
