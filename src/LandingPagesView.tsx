@@ -364,9 +364,11 @@ export default function LandingPagesView() {
   function OfferCard({ offer }: { offer: LpOffer }) {
     const st = STATUS_CONFIG[offer.status];
     const busy = actionLoading === offer.id;
+    // Sanitiza URLs com "https://https://" que podem ter sido salvas com bug anterior
+    const sanitizeUrl = (u: string | null) => u ? u.replace(/^https?:\/\/https?:\/\//, 'https://') : null;
     const url = offer.custom_domain
       ? `https://${offer.custom_domain}`
-      : offer.deploy_url;
+      : sanitizeUrl(offer.deploy_url);
     const [trackingOpen, setTrackingOpen] = useState(false);
     const [pixelId, setPixelId] = useState(offer.meta_pixel_id || '');
     const [clarityId, setClarityId] = useState(offer.clarity_id || '');

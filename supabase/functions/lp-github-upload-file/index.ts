@@ -172,7 +172,7 @@ Deno.serve(async (req) => {
             const createErr = createData.errors?.[0]?.message || JSON.stringify(createData.errors);
             return Response.json({ ok: false, error: `Cloudflare criar projeto: ${createErr}` }, { headers: corsHeaders });
           }
-          deployUrl = `https://${createData.result.subdomain}`;
+          deployUrl = `https://${cfProject}.pages.dev`;
         } else {
           // Projeto existe — manter deploy_url atual ou montar padrão
           deployUrl = deployUrl || `https://${cfProject}.pages.dev`;
@@ -200,12 +200,8 @@ Deno.serve(async (req) => {
         }
 
         cfDeployed = true;
-        if (cfData.result?.url) {
-          deployUrl = `https://${cfData.result.url}`;
-        } else {
-          // fallback: URL padrão do projeto
-          deployUrl = deployUrl || `https://${cfProject}.pages.dev`;
-        }
+        // Sempre usar a URL de produção do projeto (não a URL de deployment com hash)
+        deployUrl = `https://${cfProject}.pages.dev`;
       }
     }
 
