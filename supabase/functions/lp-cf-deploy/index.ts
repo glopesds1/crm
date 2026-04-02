@@ -11,7 +11,7 @@ Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
   try {
-    const { offerId, projectName, repoFullName, productionBranch = 'main' } = await req.json();
+    const { offerId, projectName, repoFullName, productionBranch = 'main', triggerCommit = true } = await req.json();
 
     if (!offerId || !projectName || !repoFullName) {
       return Response.json({ ok: false, error: 'offerId, projectName e repoFullName são obrigatórios' }, { headers: corsHeaders });
@@ -46,7 +46,7 @@ Deno.serve(async (req) => {
         },
         build_config: {
           build_command: '',
-          destination_dir: '',
+          destination_dir: '/',
           root_dir: '/',
         },
       }),
@@ -80,10 +80,48 @@ Deno.serve(async (req) => {
       })
       .eq('id', offerId);
 
+    // ── Disparar primeiro deploy: fazer um commit no GitHub para triggar o CF ──
+    let commitTriggered = false;
+    if (triggerCommit) {
+      try {
+        const ghToken = Deno.env.get('GITHUB_TOKEN');
+        const [owner, repoName] = repoFullName.split('/');
+
+        // Verificar se já existe index.html no repo
+        const existsRes = await fetch(
+          `https://api.github.com/repos/${owner}/${repoName}/contents/index.html`,
+          { headers: { Authorization: `Bearer ${ghToken}`, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28' } }
+        );
+
+        if (existsRes.ok) {
+          const existing = await existsRes.json();
+          // Fazer um commit vazio (atualizar o mesmo arquivo) para triggar o CF
+          const updateRes = await fetch(
+            `https://api.github.com/repos/${owner}/${repoName}/contents/index.html`,
+            {
+              method: 'PUT',
+              headers: { Authorization: `Bearer ${ghToken}`, Accept: 'application/vnd.github+json', 'Content-Type': 'application/json', 'X-GitHub-Api-Version': '2022-11-28' },
+              body: JSON.stringify({
+                message: 'chore: trigger Cloudflare Pages deploy',
+                content: existing.content.replace(/\n/g, ''), // mesmo conteúdo, sem quebras
+                sha: existing.sha,
+              }),
+            }
+          );
+          commitTriggered = updateRes.ok;
+          console.log('[GitHub trigger commit] status:', updateRes.status);
+        }
+      } catch (e) {
+        console.error('[trigger commit error]', e);
+        // Não bloqueia — o deploy no CF pode ser feito manualmente depois
+      }
+    }
+
     return Response.json({
       ok: true,
       projectName: project.name,
       deployUrl,
+      commitTriggered,
     }, { headers: corsHeaders });
 
   } catch (err) {
