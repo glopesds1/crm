@@ -124,6 +124,7 @@ export default function LandingPagesView() {
   const [repoName, setRepoName] = useState('');
   const [deployProjectName, setDeployProjectName] = useState('');
   const [deployBranch, setDeployBranch] = useState('main');
+  const [cfProjectName, setCfProjectName] = useState('');
   const [domainInput, setDomainInput] = useState('');
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [uploadHtml, setUploadHtml] = useState('');
@@ -265,21 +266,45 @@ export default function LandingPagesView() {
       return;
     }
 
+    // Para primeiro deploy (sem cf_project), precisamos do nome do projeto CF
+    if (!modalUpload.cf_project && !cfProjectName.trim()) {
+      push('Informe o nome do projeto Cloudflare.', 'error');
+      return;
+    }
+
     setActionLoading(modalUpload.id);
     try {
       const result = await invokeAction('lp-github-upload-file', {
         offerId: modalUpload.id,
-        repoFullName: modalUpload.github_repo,
+        repoFullName: modalUpload.github_repo || undefined,
         fileName: uploadFileName || 'index.html',
         content,
         metaPixelId: modalUpload.meta_pixel_id || undefined,
         clarityId: modalUpload.clarity_id || undefined,
         metaAccessToken: modalUpload.meta_access_token || undefined,
+        cfProjectName: !modalUpload.cf_project ? cfProjectName.trim() : undefined,
       });
+
+      // Atualizar estado local com dados do deploy
+      const updates: Partial<LpOffer> = {};
+      if (result.cfProject) updates.cf_project = result.cfProject;
+      if (result.deployUrl) { updates.deploy_url = result.deployUrl; updates.status = 'no_ar'; }
+
+      if (Object.keys(updates).length > 0) {
+        setOffers(o => o.map(x => x.id === modalUpload.id ? { ...x, ...updates } : x));
+      }
+
       setModalUpload(null);
       setUploadFile(null);
       setUploadHtml('');
-      push(result.isUpdate ? 'Página atualizada no GitHub!' : 'HTML enviado ao GitHub!', 'success');
+      setCfProjectName('');
+
+      const deployedMsg = result.deployUrl ? ` Publicado em: ${result.deployUrl}` : '';
+      if (result.cfDeployed) {
+        push(`Página publicada com sucesso!${deployedMsg}`, 'success');
+      } else {
+        push(result.isUpdate ? 'HTML atualizado no GitHub!' : 'HTML enviado ao GitHub!', 'success');
+      }
     } catch (e: unknown) {
       push('Erro: ' + (e instanceof Error ? e.message : String(e)), 'error');
     } finally {
@@ -450,29 +475,20 @@ export default function LandingPagesView() {
               onClick={() => { setRepoName(slugify(offer.name)); setModalRepo(offer); }}
             />
           )}
-          {(offer.status === 'repo_criado' || offer.status === 'no_ar' || offer.status === 'dominio_apontado') && (
-            <ActionButton
-              icon={<Upload size={13} />}
-              label={offer.status === 'repo_criado' ? 'Subir HTML' : 'Atualizar HTML'}
-              busy={busy}
-              onClick={() => {
-                setUploadFileName('index.html');
-                setUploadTab('file');
-                setUploadFile(null);
-                setUploadHtml('');
-                setModalUpload(offer);
-              }}
-            />
-          )}
-          {offer.status === 'repo_criado' && (
-            <ActionButton
-              icon={<Rocket size={13} />}
-              label="Deploy"
-              busy={busy}
-              primary
-              onClick={() => { setDeployProjectName(slugify(offer.name)); setDeployBranch('main'); setModalDeploy(offer); }}
-            />
-          )}
+          <ActionButton
+            icon={<Upload size={13} />}
+            label={offer.status === 'pendente' ? 'Subir HTML' : offer.cf_project ? 'Atualizar HTML' : 'Subir HTML'}
+            busy={busy}
+            primary={offer.status === 'pendente'}
+            onClick={() => {
+              setUploadFileName('index.html');
+              setUploadTab('file');
+              setUploadFile(null);
+              setUploadHtml('');
+              setCfProjectName(!offer.cf_project ? slugify(offer.name) : '');
+              setModalUpload(offer);
+            }}
+          />
           {offer.status === 'no_ar' && (
             <ActionButton
               icon={<Link2 size={13} />}
@@ -866,10 +882,10 @@ export default function LandingPagesView() {
       {/* ── Modal: Upload HTML ─────────────────────────────────────── */}
       <Modal
         open={!!modalUpload}
-        title={`${modalUpload?.github_repo ? 'Atualizar' : 'Subir'} HTML — ${modalUpload?.name}`}
+        title={`${modalUpload?.cf_project ? 'Atualizar' : 'Publicar'} Página — ${modalUpload?.name}`}
         onClose={() => setModalUpload(null)}
         onConfirm={handleUploadHtml}
-        confirmLabel="Enviar para GitHub"
+        confirmLabel={modalUpload?.cf_project ? 'Atualizar e publicar' : 'Publicar no Cloudflare'}
         loading={actionLoading === modalUpload?.id}
         wide
       >
@@ -938,6 +954,31 @@ export default function LandingPagesView() {
             placeholder="index.html"
           />
         </FormField>
+
+        {/* Campo CF Project — só na primeira vez (sem cf_project) */}
+        {!modalUpload?.cf_project && (
+          <FormField label="Nome do projeto Cloudflare *">
+            <input
+              className="input-dark font-mono"
+              placeholder="ex: moura-engenharia-reforma"
+              value={cfProjectName}
+              onChange={e => setCfProjectName(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '-'))}
+            />
+            <p className="text-[11px] text-gray-500 mt-1">
+              URL: <span className="font-mono text-gray-400">{cfProjectName || 'projeto'}.pages.dev</span>
+            </p>
+          </FormField>
+        )}
+
+        {/* Info se já tem projeto */}
+        {modalUpload?.cf_project && (
+          <div className="flex items-center gap-2 px-3 py-2 bg-brand-primary/5 border border-brand-primary/20 rounded-xl">
+            <Rocket size={13} className="text-brand-primary shrink-0" />
+            <p className="text-xs text-gray-300">
+              Deploy automático em <span className="font-mono text-brand-primary">{modalUpload.cf_project}.pages.dev</span>
+            </p>
+          </div>
+        )}
       </Modal>
 
       {/* ── Modal: Deploy ──────────────────────────────────────────── */}
