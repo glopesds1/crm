@@ -5,7 +5,7 @@ import {
   ChevronDown, ChevronRight, Trash2, X, Loader2,
   CheckCircle2, Clock, Link2, FileCode,
   Building2, MapPin, Rocket, Settings2, Save,
-  ScanSearch, CircleAlert
+  ScanSearch, CircleAlert, Download
 } from 'lucide-react';
 import { supabase } from './lib/supabase';
 
@@ -480,6 +480,35 @@ export default function LandingPagesView() {
               busy={busy}
               onClick={() => { setDomainInput(''); setModalDomain(offer); }}
             />
+          )}
+          {offer.github_repo && (
+            <a
+              href={`https://raw.githubusercontent.com/${offer.github_repo}/main/${offer.slug ? offer.slug + '.html' : 'index.html'}`}
+              download={`${offer.slug || 'index'}.html`}
+              target="_blank"
+              rel="noreferrer"
+              className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg bg-white/5 text-gray-400 hover:text-white transition-colors"
+              onClick={async (e) => {
+                // Busca o arquivo e força download com nome correto
+                e.preventDefault();
+                try {
+                  const rawUrl = `https://raw.githubusercontent.com/${offer.github_repo}/main/index.html`;
+                  const res = await fetch(rawUrl);
+                  if (!res.ok) { push('Arquivo não encontrado no repositório.', 'error'); return; }
+                  const blob = await res.blob();
+                  const a = document.createElement('a');
+                  a.href = URL.createObjectURL(blob);
+                  a.download = `${offer.slug || 'index'}.html`;
+                  a.click();
+                  URL.revokeObjectURL(a.href);
+                } catch {
+                  push('Erro ao baixar o arquivo.', 'error');
+                }
+              }}
+            >
+              <Download size={12} />
+              Baixar HTML
+            </a>
           )}
           {(offer.meta_pixel_id || offer.clarity_id) && url && (
             <button
