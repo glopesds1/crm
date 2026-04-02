@@ -1397,6 +1397,7 @@ const TwoFactorPanel = () => {
 const LoginScreen = ({ onLogin, onCrmLogin, teamMembers, agencyConfig }: { onLogin: (user: UserSession) => void, onCrmLogin: (user: CrmClientUser, tenant: CrmClientTenant) => void, teamMembers: TeamMember[], agencyConfig: AgencyConfig }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -1593,14 +1594,22 @@ const LoginScreen = ({ onLogin, onCrmLogin, teamMembers, agencyConfig }: { onLog
             <label className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-2 block">Senha</label>
             <div className="relative">
               <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500" size={18} />
-              <input 
-                type="password" 
+              <input
+                type={showPassword ? 'text' : 'password'}
                 required
                 value={password}
                 onChange={e => setPassword(e.target.value)}
-                className="w-full bg-white/5 border border-white/10 rounded-xl pl-12 pr-4 py-4 text-sm focus:outline-none focus:border-brand-primary transition-all"
+                className="w-full bg-white/5 border border-white/10 rounded-xl pl-12 pr-12 py-4 text-sm focus:outline-none focus:border-brand-primary transition-all"
                 placeholder="••••••••"
               />
+              <button
+                type="button"
+                onClick={() => setShowPassword(v => !v)}
+                className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white transition-colors"
+                tabIndex={-1}
+              >
+                {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+              </button>
             </div>
           </div>
 
