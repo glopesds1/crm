@@ -75,6 +75,7 @@ import MateriaisClienteView from './MateriaisClienteView';
 import DocumentosClienteView from './DocumentosClienteView';
 import ConsultorIAView from './ConsultorIAView';
 import TranscricaoLigacaoView from './TranscricaoLigacaoView';
+import LandingPagesView from './LandingPagesView';
 import { getTenantByClientId, activateCrmForClient, authenticateCrmUser, getCrmUsersByTenant, createCrmUser, updateCrmUser, deleteCrmUser, authenticateUser, signOut, resetPassword, updatePassword, getAuthSession, mfaListFactors, mfaChallenge, mfaVerify, mfaEnrollTotp, mfaUnenroll, mfaGetAuthenticatorLevel } from './lib/database';
 import type { CrmClientTenant, CrmClientUser } from './types';
 import { ptBR } from 'date-fns/locale';
@@ -1396,6 +1397,7 @@ const TwoFactorPanel = () => {
 const LoginScreen = ({ onLogin, onCrmLogin, teamMembers, agencyConfig }: { onLogin: (user: UserSession) => void, onCrmLogin: (user: CrmClientUser, tenant: CrmClientTenant) => void, teamMembers: TeamMember[], agencyConfig: AgencyConfig }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -1592,14 +1594,22 @@ const LoginScreen = ({ onLogin, onCrmLogin, teamMembers, agencyConfig }: { onLog
             <label className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-2 block">Senha</label>
             <div className="relative">
               <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500" size={18} />
-              <input 
-                type="password" 
+              <input
+                type={showPassword ? 'text' : 'password'}
                 required
                 value={password}
                 onChange={e => setPassword(e.target.value)}
-                className="w-full bg-white/5 border border-white/10 rounded-xl pl-12 pr-4 py-4 text-sm focus:outline-none focus:border-brand-primary transition-all"
+                className="w-full bg-white/5 border border-white/10 rounded-xl pl-12 pr-12 py-4 text-sm focus:outline-none focus:border-brand-primary transition-all"
                 placeholder="••••••••"
               />
+              <button
+                type="button"
+                onClick={() => setShowPassword(v => !v)}
+                className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white transition-colors"
+                tabIndex={-1}
+              >
+                {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+              </button>
             </div>
           </div>
 
@@ -3788,6 +3798,17 @@ const ComercialView = ({ teamMembers, userSession, onOpenInCRM }: {
 export default function App() {
   const [activeTab, setActiveTab] = useState('Dashboard');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' && window.innerWidth < 768);
+  useEffect(() => {
+    const check = () => {
+      const mobile = window.innerWidth < 768;
+      setIsMobile(mobile);
+      if (!mobile) setMobileSidebarOpen(false);
+    };
+    window.addEventListener('resize', check);
+    return () => window.removeEventListener('resize', check);
+  }, []);
   const [selectedCrmTenantId, setSelectedCrmTenantId] = useState<string | null>(null);
   const [cookiesAccepted, setCookiesAccepted] = useState(() => localStorage.getItem('cookies_accepted') === 'true');
 
@@ -3803,7 +3824,7 @@ export default function App() {
     return (permissions[role] ?? permissions['admin']).includes(tab);
   };
   const [aquisicaoSubTab, setAquisicaoSubTab] = useState<'CRM' | 'Relatorio' | 'Dashboard' | 'Playbooks' | 'Transcricao'>('CRM');
-  const [entregaSubTab, setEntregaSubTab] = useState<'Kanban' | 'Demandas' | 'AreaCliente' | 'Educacao'>('Kanban');
+  const [entregaSubTab, setEntregaSubTab] = useState<'Kanban' | 'Demandas' | 'AreaCliente' | 'Educacao' | 'Paginas'>('Kanban');
   const [openCRMLeadName, setOpenCRMLeadName] = useState('');
   const [clients, setClients] = useState<Client[]>([]);
   const [allTags, setAllTags] = useState<Record<string, Tag>>(INITIAL_TAGS);
@@ -4539,21 +4560,21 @@ export default function App() {
   const renderDashboard = () => <DashboardView userSession={userSession} />;
 
   const renderKanban = () => (
-    <div className="h-full flex flex-col gap-6">
-      <div className="flex justify-between items-center">
+    <div className="h-full flex flex-col gap-4 md:gap-6">
+      <div className="flex flex-wrap justify-between items-start gap-3">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Kanban de Operação</h1>
-          <p className="text-gray-400 mt-1">Gerencie o fluxo de entrega e ativação dos clientes.</p>
+          <h1 className="text-2xl md:text-3xl font-bold tracking-tight">Kanban de Operação</h1>
+          <p className="text-gray-400 mt-1 text-sm">Gerencie o fluxo de entrega e ativação dos clientes.</p>
         </div>
-        <div className="flex gap-3">
-          <div className="relative">
+        <div className="flex gap-3 w-full sm:w-auto">
+          <div className="relative flex-1 sm:flex-none">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" size={16} />
-            <input 
-              type="text" 
+            <input
+              type="text"
               placeholder="Buscar cliente..."
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
-              className="pl-10 pr-4 py-2 rounded-lg bg-white/5 border border-white/10 text-sm focus:outline-none focus:border-brand-primary/50 transition-all w-64"
+              className="pl-10 pr-4 py-2 rounded-lg bg-white/5 border border-white/10 text-sm focus:outline-none focus:border-brand-primary/50 transition-all w-full sm:w-64"
             />
           </div>
           <div className="relative">
@@ -4613,17 +4634,17 @@ export default function App() {
   );
 
   const renderClientes = () => (
-    <div className="space-y-8">
-      <div className="flex justify-between items-center">
+    <div className="space-y-6 md:space-y-8">
+      <div className="flex flex-wrap justify-between items-center gap-3">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Gestão de Clientes</h1>
-          <p className="text-gray-400 mt-1">Lista completa de parceiros e contratos ativos.</p>
+          <h1 className="text-2xl md:text-3xl font-bold tracking-tight">Gestão de Clientes</h1>
+          <p className="text-gray-400 mt-1 text-sm">Lista completa de parceiros e contratos ativos.</p>
         </div>
-        <button 
+        <button
           onClick={() => setIsRegistrationModalOpen(true)}
-          className="px-6 py-3 rounded-xl bg-brand-primary text-bg-main font-bold text-sm shadow-glow flex items-center gap-2 hover:scale-105 transition-all"
+          className="px-4 md:px-6 py-2.5 md:py-3 rounded-xl bg-brand-primary text-bg-main font-bold text-sm shadow-glow flex items-center gap-2 hover:scale-105 transition-all"
         >
-          <Plus size={20} /> Novo Cliente
+          <Plus size={18} /> Novo Cliente
         </button>
       </div>
 
@@ -4716,12 +4737,28 @@ export default function App() {
 
   return (
     <div className="flex h-screen bg-bg-main overflow-hidden">
+      {/* Mobile backdrop */}
+      <AnimatePresence>
+        {mobileSidebarOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/60 z-30 md:hidden"
+            onClick={() => setMobileSidebarOpen(false)}
+          />
+        )}
+      </AnimatePresence>
+
       {/* Sidebar */}
       <motion.aside
         initial={false}
-        animate={{ width: sidebarCollapsed ? 0 : 256, padding: sidebarCollapsed ? 0 : 24 }}
-        transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
-        className="bg-bg-sidebar border-r border-white/5 flex flex-col z-40 overflow-hidden flex-shrink-0"
+        animate={isMobile
+          ? { x: mobileSidebarOpen ? 0 : -280, width: 256, padding: 24 }
+          : { x: 0, width: sidebarCollapsed ? 0 : 256, padding: sidebarCollapsed ? 0 : 24 }
+        }
+        transition={{ duration: 0.25, ease: [0.4, 0, 0.2, 1] }}
+        className={`bg-bg-sidebar border-r border-white/5 flex flex-col z-40 overflow-hidden flex-shrink-0 ${isMobile ? 'fixed inset-y-0 left-0 h-full' : ''}`}
       >
         <div className="min-w-[208px] flex flex-col h-full overflow-y-auto overflow-x-hidden custom-scrollbar">
         <div className="flex items-center gap-3 mb-10 px-2">
@@ -4745,7 +4782,7 @@ export default function App() {
           </div>
         </div>
 
-        <nav className="flex-1 space-y-2">
+        <nav className="flex-1 space-y-2" onClick={() => { if (isMobile) setTimeout(() => setMobileSidebarOpen(false), 150); }}>
           {canSee('Dashboard') && !canSee('Aquisição') && <SidebarItem icon={LayoutDashboard} label="Dashboard" active={activeTab === 'Dashboard'} onClick={() => setActiveTab('Dashboard')} />}
           {canSee('Clientes') && <SidebarItem icon={Users} label="Clientes" active={activeTab === 'Clientes'} onClick={() => setActiveTab('Clientes')} />}
           {canSee('Equipe') && <SidebarItem icon={Users} label="Equipe" active={activeTab === 'Equipe'} onClick={() => setActiveTab('Equipe')} />}
@@ -4796,6 +4833,12 @@ export default function App() {
                   className={`w-full text-left px-4 py-2 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all ${entregaSubTab === 'Educacao' ? 'text-brand-primary bg-white/5' : 'text-gray-500 hover:text-white'}`}
                 >
                   Educação
+                </button>
+                <button
+                  onClick={() => setEntregaSubTab('Paginas')}
+                  className={`w-full text-left px-4 py-2 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all ${entregaSubTab === 'Paginas' ? 'text-brand-primary bg-white/5' : 'text-gray-500 hover:text-white'}`}
+                >
+                  Páginas
                 </button>
               </motion.div>
             )}
@@ -4891,31 +4934,32 @@ export default function App() {
       {/* Main Content */}
       <main className="flex-1 flex flex-col min-w-0 overflow-hidden relative">
         {/* Navbar */}
-        <header className="h-16 border-b border-white/5 px-8 flex items-center justify-between bg-bg-main/50 backdrop-blur-md z-30">
-          <div className="flex items-center gap-4">
+        <header className="h-16 border-b border-white/5 px-4 md:px-8 flex items-center justify-between bg-bg-main/50 backdrop-blur-md z-30">
+          <div className="flex items-center gap-2 md:gap-4 min-w-0">
             <button
-              onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-              className="p-1.5 rounded-lg text-gray-500 hover:text-brand-primary hover:bg-white/5 transition-all"
-              title={sidebarCollapsed ? 'Mostrar menu' : 'Esconder menu'}
+              onClick={() => isMobile ? setMobileSidebarOpen(!mobileSidebarOpen) : setSidebarCollapsed(!sidebarCollapsed)}
+              className="p-1.5 rounded-lg text-gray-500 hover:text-brand-primary hover:bg-white/5 transition-all shrink-0"
             >
-              {sidebarCollapsed ? <PanelLeft size={18} /> : <PanelLeftClose size={18} />}
+              {(!isMobile && sidebarCollapsed) || (isMobile && !mobileSidebarOpen)
+                ? <PanelLeft size={18} />
+                : <PanelLeftClose size={18} />}
             </button>
-            <span className="text-xs font-bold text-gray-500 uppercase tracking-widest">{agencyConfig.name}</span>
-            <ChevronRight size={14} className="text-gray-700" />
-            <span className="text-xs font-bold text-white">{activeTab}</span>
+            <span className="text-xs font-bold text-gray-500 uppercase tracking-widest hidden sm:block truncate max-w-[100px]">{agencyConfig.name}</span>
+            <ChevronRight size={14} className="text-gray-700 hidden sm:block shrink-0" />
+            <span className="text-xs font-bold text-white truncate">{activeTab}</span>
             {activeTab === 'Aquisição' && (
               <>
-                <ChevronRight size={14} className="text-gray-700" />
-                <span className="text-xs font-bold text-white">
+                <ChevronRight size={14} className="text-gray-700 hidden sm:block shrink-0" />
+                <span className="text-xs font-bold text-white hidden sm:block truncate">
                   {aquisicaoSubTab === 'CRM' ? 'CRM' : aquisicaoSubTab === 'Relatorio' ? 'Relatório' : aquisicaoSubTab === 'Dashboard' ? 'Dashboard' : aquisicaoSubTab === 'Transcricao' ? 'Análise de Ligação' : 'Playbooks'}
                 </span>
               </>
             )}
             {activeTab === 'Entrega' && (
               <>
-                <ChevronRight size={14} className="text-gray-700" />
-                <span className="text-xs font-bold text-white">
-                  {entregaSubTab === 'Kanban' ? 'Kanban de Operação' : entregaSubTab === 'Demandas' ? 'Demandas' : entregaSubTab === 'AreaCliente' ? 'Área do Cliente' : 'Educação'}
+                <ChevronRight size={14} className="text-gray-700 hidden sm:block shrink-0" />
+                <span className="text-xs font-bold text-white hidden sm:block truncate">
+                  {entregaSubTab === 'Kanban' ? 'Kanban de Operação' : entregaSubTab === 'Demandas' ? 'Demandas' : entregaSubTab === 'AreaCliente' ? 'Área do Cliente' : entregaSubTab === 'Paginas' ? 'Landing Pages' : 'Educação'}
                 </span>
               </>
             )}
@@ -4962,7 +5006,7 @@ export default function App() {
         </header>
 
         {/* Content Area */}
-        <div className="flex-1 overflow-y-auto custom-scrollbar p-8">
+        <div className="flex-1 overflow-y-auto custom-scrollbar p-4 md:p-8">
           <AnimatePresence mode="wait">
             <motion.div
               key={activeTab}
@@ -5006,6 +5050,7 @@ export default function App() {
               {activeTab === 'Entrega' && entregaSubTab === 'Educacao' && (
                 <EducacaoView userEmail={userSession.email} isAdmin={userSession.role.toLowerCase() === 'admin'} />
               )}
+              {activeTab === 'Entrega' && entregaSubTab === 'Paginas' && <LandingPagesView />}
               {activeTab === 'Aquisição' && aquisicaoSubTab === 'Dashboard' && (
                 <DashboardView userSession={userSession} />
               )}

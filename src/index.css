@@ -20,6 +20,10 @@
   }
 }
 
+.input-dark {
+  @apply w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm text-white placeholder-gray-600 outline-none focus:border-brand-primary/50 focus:ring-0 transition-colors;
+}
+
 .glass-card {
   @apply bg-bg-card border border-border-subtle rounded-xl shadow-lg transition-all duration-300;
 }
