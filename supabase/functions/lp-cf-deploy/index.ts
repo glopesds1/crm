@@ -46,8 +46,8 @@ Deno.serve(async (req) => {
         },
         build_config: {
           build_command: '',
-          destination_dir: '/',
-          root_dir: '/',
+          destination_dir: '',
+          root_dir: '',
         },
       }),
     });
