@@ -266,8 +266,8 @@ export default function LandingPagesView() {
       return;
     }
 
-    // Para primeiro deploy (sem cf_project), precisamos do nome do projeto CF
-    if (!modalUpload.cf_project && !cfProjectName.trim()) {
+    // Precisamos sempre do nome do projeto CF
+    if (!cfProjectName.trim()) {
       push('Informe o nome do projeto Cloudflare.', 'error');
       return;
     }
@@ -282,7 +282,7 @@ export default function LandingPagesView() {
         metaPixelId: modalUpload.meta_pixel_id || undefined,
         clarityId: modalUpload.clarity_id || undefined,
         metaAccessToken: modalUpload.meta_access_token || undefined,
-        cfProjectName: !modalUpload.cf_project ? cfProjectName.trim() : undefined,
+        cfProjectName: cfProjectName.trim(),
       });
 
       // Atualizar estado local com dados do deploy
@@ -485,7 +485,7 @@ export default function LandingPagesView() {
               setUploadTab('file');
               setUploadFile(null);
               setUploadHtml('');
-              setCfProjectName(!offer.cf_project ? slugify(offer.name) : '');
+              setCfProjectName(offer.cf_project || slugify(offer.name));
               setModalUpload(offer);
             }}
           />
@@ -955,30 +955,23 @@ export default function LandingPagesView() {
           />
         </FormField>
 
-        {/* Campo CF Project — só na primeira vez (sem cf_project) */}
-        {!modalUpload?.cf_project && (
-          <FormField label="Nome do projeto Cloudflare *">
-            <input
-              className="input-dark font-mono"
-              placeholder="ex: moura-engenharia-reforma"
-              value={cfProjectName}
-              onChange={e => setCfProjectName(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '-'))}
-            />
-            <p className="text-[11px] text-gray-500 mt-1">
-              URL: <span className="font-mono text-gray-400">{cfProjectName || 'projeto'}.pages.dev</span>
+        {/* Campo CF Project — sempre visível */}
+        <FormField label={modalUpload?.cf_project ? 'Projeto Cloudflare Pages' : 'Nome do projeto Cloudflare *'}>
+          <input
+            className="input-dark font-mono"
+            placeholder="ex: moura-engenharia-reforma"
+            value={cfProjectName}
+            onChange={e => setCfProjectName(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '-'))}
+          />
+          <p className="text-[11px] text-gray-500 mt-1">
+            URL: <span className="font-mono text-gray-400">{cfProjectName || 'projeto'}.pages.dev</span>
+          </p>
+          {modalUpload?.cf_project && cfProjectName !== modalUpload.cf_project && (
+            <p className="text-[11px] text-yellow-400 mt-1">
+              ⚠️ Nome diferente do atual — um novo projeto será criado.
             </p>
-          </FormField>
-        )}
-
-        {/* Info se já tem projeto */}
-        {modalUpload?.cf_project && (
-          <div className="flex items-center gap-2 px-3 py-2 bg-brand-primary/5 border border-brand-primary/20 rounded-xl">
-            <Rocket size={13} className="text-brand-primary shrink-0" />
-            <p className="text-xs text-gray-300">
-              Deploy automático em <span className="font-mono text-brand-primary">{modalUpload.cf_project}.pages.dev</span>
-            </p>
-          </div>
-        )}
+          )}
+        </FormField>
       </Modal>
 
       {/* ── Modal: Deploy ──────────────────────────────────────────── */}

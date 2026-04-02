@@ -147,20 +147,35 @@ Deno.serve(async (req) => {
         deployUrl = data?.deploy_url ?? null;
       }
 
-      cfProject = existingProject || cfProjectName || null;
+      // cfProjectName do body sobrescreve o existente (permite trocar para novo projeto)
+      cfProject = cfProjectName || existingProject || null;
 
-      // Se não tem projeto CF ainda, criar agora (direct upload mode)
-      if (!cfProject && cfProjectName) {
-        const createRes = await fetch(`https://api.cloudflare.com/client/v4/accounts/${accountId}/pages/projects`, {
-          method: 'POST',
-          headers: { 'Authorization': `Bearer ${cfToken}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name: cfProjectName, production_branch: 'main' }),
-        });
-        const createData = await createRes.json();
-        console.log('[CF] create project:', createRes.status, createData.success);
-        if (createData.success) {
-          cfProject = createData.result.name;
+      // Verificar se o projeto existe no CF; se não, criar (direct upload mode)
+      if (cfProject) {
+        const checkRes = await fetch(
+          `https://api.cloudflare.com/client/v4/accounts/${accountId}/pages/projects/${cfProject}`,
+          { headers: { 'Authorization': `Bearer ${cfToken}` } }
+        );
+        const checkData = await checkRes.json();
+        console.log('[CF] check project:', checkRes.status, checkData.success);
+
+        if (!checkData.success) {
+          // Projeto não existe — criar em modo direct upload (sem source)
+          const createRes = await fetch(`https://api.cloudflare.com/client/v4/accounts/${accountId}/pages/projects`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${cfToken}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: cfProject, production_branch: 'main' }),
+          });
+          const createData = await createRes.json();
+          console.log('[CF] create project:', createRes.status, createData.success);
+          if (!createData.success) {
+            const createErr = createData.errors?.[0]?.message || JSON.stringify(createData.errors);
+            return Response.json({ ok: false, error: `Cloudflare criar projeto: ${createErr}` }, { headers: corsHeaders });
+          }
           deployUrl = `https://${createData.result.subdomain}`;
+        } else {
+          // Projeto existe — manter deploy_url atual ou montar padrão
+          deployUrl = deployUrl || `https://${cfProject}.pages.dev`;
         }
       }
 
@@ -174,10 +189,22 @@ Deno.serve(async (req) => {
           { method: 'POST', headers: { 'Authorization': `Bearer ${cfToken}` }, body: formData }
         );
         const cfData = await cfRes.json();
-        console.log('[CF Deploy] status:', cfRes.status, cfData.success);
-        cfDeployed = cfData.success ?? false;
-        if (cfData.success && cfData.result?.url) {
-          deployUrl = deployUrl || `https://${cfData.result.url}`;
+        console.log('[CF Deploy] status:', cfRes.status, JSON.stringify(cfData));
+
+        if (!cfData.success) {
+          const cfError = cfData.errors?.[0]?.message || cfData.errors?.[0]?.code || JSON.stringify(cfData.errors);
+          return Response.json({
+            ok: false,
+            error: `Cloudflare Pages: ${cfError}. Se o projeto foi criado com integração GitHub, use um nome diferente.`,
+          }, { headers: corsHeaders });
+        }
+
+        cfDeployed = true;
+        if (cfData.result?.url) {
+          deployUrl = `https://${cfData.result.url}`;
+        } else {
+          // fallback: URL padrão do projeto
+          deployUrl = deployUrl || `https://${cfProject}.pages.dev`;
         }
       }
     }
