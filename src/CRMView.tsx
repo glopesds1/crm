@@ -1114,15 +1114,17 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
               }).select().single();
               if (nsTask) onTarefaCreated?.(nsTask);
             } catch { /* silent */ }
-            // Atualizar crm_leads
+            // Atualizar crm_leads — reagendou: rm_marcada + tag No-show
+            const tagsReag = [...(leadObj?.tags ?? [])];
+            if (!tagsReag.includes('No-show')) tagsReag.push('No-show');
             try {
               await supabase.from('crm_leads').update({
-                etapa: 'rm_marcada', proxima_reuniao: localDatetimeToISO(dataReagendamento), updated_at: now,
+                etapa: 'rm_marcada', proxima_reuniao: localDatetimeToISO(dataReagendamento), tags: tagsReag, updated_at: now,
               }).eq('id', leadId);
-              onLeadUpdated?.({ etapa: 'rm_marcada' });
+              onLeadUpdated?.({ etapa: 'rm_marcada', tags: tagsReag });
             } catch { /* silent */ }
           } else {
-            // Sem reagendamento: apenas No-show
+            // Sem reagendamento: apenas No-show → rm_realizada + tag No-show
             syncPostgres(leadObj?.lead_externo_id, {
               reuniao_action: 'resultado',
               crm_lead_id: leadId,
@@ -1131,10 +1133,11 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
               reuniao_resultado: 'No-show',
               closer,
             });
-            // Mover para rm_realizada
+            const tagsNoShow = [...(leadObj?.tags ?? [])];
+            if (!tagsNoShow.includes('No-show')) tagsNoShow.push('No-show');
             try {
-              await supabase.from('crm_leads').update({ etapa: 'rm_realizada', etapa_desde: now, updated_at: now }).eq('id', leadId);
-              onLeadUpdated?.({ etapa: 'rm_realizada' });
+              await supabase.from('crm_leads').update({ etapa: 'rm_realizada', etapa_desde: now, tags: tagsNoShow, updated_at: now }).eq('id', leadId);
+              onLeadUpdated?.({ etapa: 'rm_realizada', tags: tagsNoShow });
             } catch { /* silent */ }
           }
         } else if (statusReuniao === 'Compareceu') {
@@ -1224,17 +1227,6 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
             });
           }
         }
-      }
-
-      // Add No-show tag when lead didn't show up
-      if (statusReuniao === 'Não compareceu') {
-        try {
-          const tagsAtuais: string[] = leadObj?.tags ?? [];
-          if (!tagsAtuais.includes('No-show')) {
-            await supabase.from('crm_leads').update({ tags: [...tagsAtuais, 'No-show'] }).eq('id', leadId);
-            onLeadUpdated?.({ tags: [...tagsAtuais, 'No-show'] });
-          }
-        } catch { /* silent */ }
       }
 
       // Bloco 6: Auto-concluir tarefa pendente do lead (match por tipo)
@@ -1975,6 +1967,19 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
     if (etapa !== lead.etapa) upd.etapa_desde = new Date().toISOString();
     await onSave(upd);
 
+    // Sync closer → Railway quando responsável muda (fire-and-forget)
+    if (lead.lead_externo_id && responsavel !== (lead.responsavel ?? '')) {
+      syncPostgres(lead.lead_externo_id, { closer: responsavel });
+      fetch(`${WEBHOOK_BASE}/webhook/crm-sync-etapa`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          lead_externo_id: lead.lead_externo_id,
+          closer: responsavel,
+        }),
+      }).catch(e => console.warn('[sync closer]', e));
+    }
+
     // Sync financeiro → Railway via n8n (fire-and-forget)
     const finChanged = (valorContrato !== '' && valorContrato !== (lead.valor_contrato ?? ''))
       || (valorCc !== '' && valorCc !== (lead.valor_cc ?? ''))
@@ -2127,6 +2132,12 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
       leadUpd.motivo_perda = rrMotivoPerda || null;
     } else {
       leadUpd.etapa = 'rm_realizada';
+    }
+    // Add No-show tag inline to avoid stale-state race condition
+    if (rrStatusReuniao === 'Não compareceu') {
+      const tagsNoShow = [...(lead.tags ?? [])];
+      if (!tagsNoShow.includes('No-show')) tagsNoShow.push('No-show');
+      leadUpd.tags = tagsNoShow;
     }
     await supabase.from('crm_leads').update(leadUpd).eq('id', lead.id);
     await onSave(leadUpd);
@@ -2367,17 +2378,9 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
       }
     }
 
-    // Add No-show tag when lead didn't show up
-    if (rrStatusReuniao === 'Não compareceu') {
-      try {
-        const tagsAtuais: string[] = lead.tags ?? [];
-        if (!tagsAtuais.includes('No-show')) {
-          const updatedTags = [...tagsAtuais, 'No-show'];
-          await supabase.from('crm_leads').update({ tags: updatedTags }).eq('id', lead.id);
-          onSave({ tags: updatedTags });
-          setLocalTags(updatedTags);
-        }
-      } catch { /* silent */ }
+    // Update local tags if No-show was added
+    if (rrStatusReuniao === 'Não compareceu' && leadUpd.tags) {
+      setLocalTags(leadUpd.tags);
     }
 
     setReuniaoRealizada(false);

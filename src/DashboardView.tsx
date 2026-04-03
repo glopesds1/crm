@@ -591,6 +591,8 @@ function PageMetas({ data, userSession, range }: { data: any; userSession: any; 
   const closers: any[] = Array.isArray(data?.closers) ? data.closers : data?.closers ? [data.closers] : [];
   const sdrs:    any[] = Array.isArray(data?.sdrs)    ? data.sdrs    : data?.sdrs    ? [data.sdrs]    : [];
   const vendasLista: any[] = Array.isArray(data?.vendas_lista) ? data.vendas_lista : data?.vendas_lista ? [data.vendas_lista] : [];
+  console.log('[perf vendas]', closers);
+  console.log('[perf prevendas]', sdrs);
 
   const [metasEdit, setMetasEdit] = useState({ meta_contrato: 0, meta_cc: 0, meta_rm: 0, meta_rr: 0, meta_vendas: 0 });
   const [editKey, setEditKey] = useState<string | null>(null);
@@ -1115,6 +1117,7 @@ function PageAnalise({ data, range }: { data: any; range: DateRange }) {
   const programas  = toArr(data?.programas).map((x: any) => ({ ...x, vendas: +x.vendas, pct_total: +x.pct_total }));
   const motivos    = toArr(data?.motivos).map((x: any) => ({ ...x, quantidade: +x.quantidade, pct_total: +x.pct_total }));
   const closers    = toArr(data?.closers).map((x: any) => ({ ...x, vendas: +x.vendas }));
+  console.log('[perf vendas analise]', closers);
 
   // Fetch dados de metas (por_tp + closers por TP)
   const [metasData, setMetasData] = useState<any>(null);
@@ -1499,6 +1502,7 @@ function PageAnuncios({ data }: { data: any }) {
 function PageSDR({ data }: { data: any }) {
   const producao: any[] = Array.isArray(data?.producao) ? data.producao : [];
   const leads: any[] = Array.isArray(data?.leads_semanal) ? data.leads_semanal : [];
+  console.log('[perf prevendas sdr]', producao);
 
   const chart = [...leads].reverse().slice(-12).map(r => ({
     name: r.semana_label?.slice(0, 5) ?? '',
