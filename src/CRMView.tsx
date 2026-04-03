@@ -5,7 +5,7 @@ import {
   Plus, RefreshCw, Search, Phone, Building2, DollarSign,
   User, X, ChevronLeft, ChevronRight, Loader2, MapPin, Clock,
   PhoneCall, Users, FileText, Calendar, CheckCircle2,
-  ChevronDown, Trash2, Bell, Volume2, Send, Video
+  ChevronDown, Trash2, Bell, Volume2, Send, Video, ArrowRightLeft
 } from 'lucide-react';
 import type { TeamMember } from './types';
 import { DEFAULT_ONBOARDING_ITEMS } from './constants';
@@ -437,6 +437,7 @@ const TIPO_ICON: Record<string, any> = {
   reuniao: Users,
   nota:    FileText,
   tarefa:  Calendar,
+  alteracao: ArrowRightLeft,
 };
 
 // ── Lead Card ─────────────────────────────────────────────────
@@ -875,6 +876,22 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
           };
           await supabase.from('crm_leads').update(leadUpd).eq('id', leadId);
           onLeadUpdated?.(leadUpd);
+          // Track responsavel change in timeline
+          if (bantCloser && bantCloser !== (leadObj?.responsavel ?? '')) {
+            await supabase.from('crm_atividades').insert({
+              lead_id: leadId,
+              tipo: 'alteracao',
+              data_atividade: now,
+              realizado_por: responsavelAtividade || userSession?.name || '',
+              descricao: JSON.stringify({
+                campo: 'responsavel',
+                de: leadObj?.responsavel || '(sem responsável)',
+                para: bantCloser,
+                obs: 'Alteração via registro de ligação',
+              }),
+              created_at: now,
+            });
+          }
         } catch (err) {
           console.error('Failed to update lead to rm_marcada:', err);
         }
@@ -1967,6 +1984,37 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
     if (etapa !== lead.etapa) upd.etapa_desde = new Date().toISOString();
     await onSave(upd);
 
+    // Track responsavel change in timeline
+    if (responsavel !== (lead.responsavel ?? '')) {
+      await supabase.from('crm_atividades').insert({
+        lead_id: lead.id,
+        tipo: 'alteracao',
+        data_atividade: new Date().toISOString(),
+        realizado_por: userSession?.name || '',
+        descricao: JSON.stringify({
+          campo: 'responsavel',
+          de: lead.responsavel || '(sem responsável)',
+          para: responsavel,
+          obs: 'Alteração manual de responsável',
+        }),
+        created_at: new Date().toISOString(),
+      });
+      setAtividades(prev => [{
+        id: `temp-${Date.now()}`,
+        lead_id: lead.id,
+        tipo: 'alteracao',
+        data_atividade: new Date().toISOString(),
+        realizado_por: userSession?.name || '',
+        descricao: JSON.stringify({
+          campo: 'responsavel',
+          de: lead.responsavel || '(sem responsável)',
+          para: responsavel,
+          obs: 'Alteração manual de responsável',
+        }),
+        created_at: new Date().toISOString(),
+      } as any, ...prev]);
+    }
+
     // Sync closer → Railway quando responsável muda (fire-and-forget)
     if (lead.lead_externo_id && responsavel !== (lead.responsavel ?? '')) {
       syncPostgres(lead.lead_externo_id, { closer: responsavel });
@@ -2940,6 +2988,25 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
               )}
               {atividades.map(a => {
                 const Icon = TIPO_ICON[a.tipo] ?? FileText;
+                if (a.tipo === 'alteracao') {
+                  let desc: any = {};
+                  try { desc = typeof a.descricao === 'string' ? JSON.parse(a.descricao) : (a.descricao ?? {}); } catch { /* */ }
+                  return (
+                    <div key={a.id} className="flex gap-3">
+                      <div className="flex-shrink-0 w-7 h-7 rounded-full bg-yellow-500/20 flex items-center justify-center mt-0.5">
+                        <ArrowRightLeft size={13} className="text-yellow-400" />
+                      </div>
+                      <div className="flex-1 bg-yellow-500/5 rounded-xl p-3 space-y-1 border-l-2 border-yellow-500/40">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-[10px] font-bold uppercase tracking-widest text-yellow-500">Alteração</span>
+                          <span className="text-[9px] text-gray-700">{fmtAtivDate(a.created_at)}</span>
+                        </div>
+                        <p className="text-xs text-gray-300">Responsável alterado de <span className="font-bold text-red-400">{desc.de}</span> para <span className="font-bold text-brand-primary">{desc.para}</span></p>
+                        {a.realizado_por && <p className="text-[9px] text-gray-600">por {a.realizado_por}{desc.obs ? ` — ${desc.obs}` : ''}</p>}
+                      </div>
+                    </div>
+                  );
+                }
                 return (
                   <div key={a.id} className="flex gap-3">
                     <div className="flex-shrink-0 w-7 h-7 rounded-full bg-white/10 flex items-center justify-center mt-0.5">
