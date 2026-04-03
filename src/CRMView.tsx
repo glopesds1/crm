@@ -365,6 +365,10 @@ interface CRMLead {
   motivo_perda?: string;
   proxima_reuniao?: string;
 
+  lead_score?: number;
+  lead_grade?: string;
+  investimento?: string;
+  funcionarios?: string;
   tags?: string[];
   observacoes?: string;
   created_at: string;
@@ -440,6 +444,72 @@ const TIPO_ICON: Record<string, any> = {
   alteracao: ArrowRightLeft,
 };
 
+function calcLeadScore(lead: any): { score: number; grade: string; breakdown: { faturamento: number; investimento: number; funcionarios: number; area: number } } {
+  let score = 0;
+  let bFat = 0, bInv = 0, bFunc = 0, bArea = 0;
+  const fat = (lead.faturamento || '').toLowerCase().replace(/[\s.]/g, '');
+  const inv = (lead.investimento || '').toLowerCase();
+  const func = (lead.funcionarios || '').toLowerCase();
+  const area = (lead.area || '').toLowerCase();
+
+  // FATURAMENTO (0-40)
+  if (fat.includes('300') || fat.includes('151')) bFat = 40;
+  else if (fat.includes('70') || fat.includes('r$70')) bFat = 35;
+  else if (fat.includes('80000') || fat.includes('acima')) bFat = 30;
+  else if (fat.includes('40') || fat.includes('r$40')) bFat = 25;
+  else if (fat.includes('20') || fat.includes('r$20') || fat.includes('11') || fat.includes('r$11') || fat.includes('30')) bFat = 15;
+  else if (fat.includes('10') && !fat.includes('100')) bFat = 8;
+  else if (fat.includes('menos') || fat.includes('5000')) bFat = 3;
+  else {
+    const num = parseFloat(fat.replace(/[^0-9,.-]/g, '').replace(',', '.'));
+    if (!isNaN(num)) {
+      if (num >= 150000) bFat = 40;
+      else if (num >= 70000) bFat = 35;
+      else if (num >= 40000) bFat = 25;
+      else if (num >= 20000) bFat = 15;
+      else if (num >= 10000) bFat = 8;
+      else bFat = 3;
+    }
+  }
+
+  // INVESTIMENTO (0-30)
+  if (inv.includes('todos')) bInv = 30;
+  else if (inv.includes('agência') || inv.includes('agencia')) bInv = 25;
+  else if (inv.includes('mentoria')) bInv = 20;
+  else if (inv.includes('curso')) bInv = 15;
+  else if (inv.includes('nenhum')) bInv = 5;
+
+  // FUNCIONARIOS (0-20)
+  if (func.includes('acima_de_10') || func.includes('acima de 10')) bFunc = 20;
+  else if (func.includes('6_a_10') || func.includes('6 a 10')) bFunc = 18;
+  else if (func.includes('4_a_6') || func.includes('4 a 6')) bFunc = 14;
+  else if (func.includes('1_a_3') || func.includes('1 a 3')) bFunc = 8;
+  else if (func.includes('somente_eu') || func.includes('somente eu')) bFunc = 4;
+
+  // AREA BONUS (0-10)
+  if (area.includes('engenheiro') && area.includes('construtora')) bArea = 10;
+  else if (area.includes('engenheiro')) bArea = 6;
+  else if (area.includes('construtor')) bArea = 6;
+  else if (area.includes('arquiteto')) bArea = 4;
+
+  score = bFat + bInv + bFunc + bArea;
+  const grade = score >= 70 ? 'A' : score >= 45 ? 'B' : score >= 20 ? 'C' : 'D';
+  return { score, grade, breakdown: { faturamento: bFat, investimento: bInv, funcionarios: bFunc, area: bArea } };
+}
+
+function getLeadScore(lead: CRMLead) {
+  return (lead.lead_score && lead.lead_score > 0)
+    ? { score: lead.lead_score, grade: lead.lead_grade || 'D', breakdown: null }
+    : calcLeadScore(lead);
+}
+
+const GRADE_STYLE: Record<string, { background: string; color: string; border: string }> = {
+  A: { background: '#22c55e22', color: '#22c55e', border: '#22c55e44' },
+  B: { background: '#d4af3722', color: '#d4af37', border: '#d4af3744' },
+  C: { background: '#60a5fa22', color: '#60a5fa', border: '#60a5fa44' },
+  D: { background: '#ef444422', color: '#ef4444', border: '#ef444444' },
+};
+
 // ── Lead Card ─────────────────────────────────────────────────
 function LeadCard({ lead, proximaTarefa, onClick }: { key?: React.Key; lead: CRMLead; proximaTarefa?: CRMTarefa; onClick: () => void }) {
   const etapa = ETAPA_MAP[lead.etapa];
@@ -467,6 +537,12 @@ function LeadCard({ lead, proximaTarefa, onClick }: { key?: React.Key; lead: CRM
         <div className="flex items-center gap-1.5 min-w-0">
           <p className="text-xs font-bold text-white leading-tight line-clamp-1">{lead.nome}</p>
           {tpAtual && <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full flex-shrink-0 ${tpColor}`}>{tpAtual}</span>}
+          {(() => {
+            const { score, grade } = getLeadScore(lead);
+            if (score === 0) return null;
+            const gs = GRADE_STYLE[grade] || GRADE_STYLE.D;
+            return <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 4, border: `1px solid ${gs.border}`, background: gs.background, color: gs.color, display: 'inline-block', flexShrink: 0 }}>{score} {grade}</span>;
+          })()}
         </div>
         <ChevronRight size={12} className="text-gray-600 flex-shrink-0 mt-0.5" />
       </div>
@@ -2862,6 +2938,49 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
               )}
             </div>
 
+            {/* Lead Score breakdown */}
+            {(() => {
+              const hasData = lead.faturamento || lead.investimento || lead.funcionarios || lead.area;
+              if (!hasData && !(lead.lead_score && lead.lead_score > 0)) {
+                return (
+                  <div className="bg-white/[0.02] border border-white/10 rounded-xl p-3">
+                    <p className="text-[9px] font-bold uppercase tracking-widest text-gray-600 mb-1">Lead Score</p>
+                    <p className="text-xs text-gray-600 italic">Score não calculado — dados insuficientes</p>
+                  </div>
+                );
+              }
+              const result = getLeadScore(lead);
+              const gs = GRADE_STYLE[result.grade] || GRADE_STYLE.D;
+              const bd = result.breakdown || calcLeadScore(lead).breakdown;
+              const bars: { label: string; value: number; max: number; hint: string }[] = [
+                { label: 'Faturamento', value: bd.faturamento, max: 40, hint: lead.faturamento || '—' },
+                { label: 'Investimento', value: bd.investimento, max: 30, hint: lead.investimento || '—' },
+                { label: 'Funcionários', value: bd.funcionarios, max: 20, hint: lead.funcionarios || '—' },
+                { label: 'Área', value: bd.area, max: 10, hint: lead.area || '—' },
+              ];
+              return (
+                <div className="bg-white/[0.02] border border-white/10 rounded-xl p-3 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <p className="text-[9px] font-bold uppercase tracking-widest text-gray-600">Lead Score</p>
+                    <span style={{ fontSize: 13, fontWeight: 700, padding: '2px 10px', borderRadius: 6, border: `1px solid ${gs.border}`, background: gs.background, color: gs.color }}>{result.score} ({result.grade})</span>
+                  </div>
+                  <div className="space-y-1.5">
+                    {bars.map(b => (
+                      <div key={b.label} className="space-y-0.5">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] text-gray-500">{b.label}: {b.value}/{b.max}</span>
+                          <span className="text-[10px] text-gray-600 truncate max-w-[140px]">{b.hint}</span>
+                        </div>
+                        <div className="w-full h-1.5 bg-white/5 rounded-full overflow-hidden">
+                          <div className="h-full rounded-full transition-all" style={{ width: `${(b.value / b.max) * 100}%`, background: gs.color }} />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
+
             <div className="flex gap-3 pt-1">
               <button onClick={onClose} className="flex-1 px-4 py-2 rounded-xl bg-white/5 border border-white/10 text-sm text-gray-400 hover:text-white transition-colors">Cancelar</button>
               <button onClick={handleSave} disabled={saving}
@@ -3358,6 +3477,7 @@ export default function CRMView({ userSession, teamMembers, openLeadByName, onLe
   const [showNewLead, setShowNewLead] = useState(false);
   const [filtroResponsavel, setFiltroResponsavel] = useState(userSession?.name || 'Todos');
   const [filtroTag, setFiltroTag] = useState('');
+  const [filtroScore, setFiltroScore] = useState('Todos');
   const isAdmin = (userSession?.role ?? '').toLowerCase() === 'admin';
 
   // ── Task alarm system ──────────────────────────────────────
@@ -3649,6 +3769,10 @@ export default function CRMView({ userSession, teamMembers, openLeadByName, onLe
       if (filtroResponsavel === '__sem__' && l.responsavel) return false;
       if (filtroResponsavel && filtroResponsavel !== 'Todos' && filtroResponsavel !== '__sem__' && l.responsavel !== filtroResponsavel) return false;
       if (filtroTag && !(l.tags ?? []).includes(filtroTag)) return false;
+      if (filtroScore !== 'Todos') {
+        const { grade } = getLeadScore(l);
+        if (grade !== filtroScore) return false;
+      }
       if (!search) return true;
       const q = search.toLowerCase();
       return l.nome.toLowerCase().includes(q) ||
@@ -3708,6 +3832,15 @@ export default function CRMView({ userSession, teamMembers, openLeadByName, onLe
           >
             <option value="" className="bg-bg-main">Todas as etiquetas</option>
             {ALL_TAGS.map(t => <option key={t} value={t} className="bg-bg-main">{t}</option>)}
+          </select>
+          <select value={filtroScore} onChange={e => setFiltroScore(e.target.value)}
+            className="bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs text-gray-400 focus:outline-none focus:border-brand-primary appearance-none"
+          >
+            <option value="Todos" className="bg-bg-main">Todos os scores</option>
+            <option value="A" className="bg-bg-main">A (70+)</option>
+            <option value="B" className="bg-bg-main">B (45-69)</option>
+            <option value="C" className="bg-bg-main">C (20-44)</option>
+            <option value="D" className="bg-bg-main">D (0-19)</option>
           </select>
           {isAdmin && (
             <button onClick={handleSync} disabled={syncing}
