@@ -812,22 +812,6 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(bantPayload),
           }).catch(e => { console.warn('Webhook agendar-reuniao (CORS em dev):', e.message); return null; });
-          // Fire-and-forget: agendar touchpoints
-          try {
-            let meetLink = '';
-            try { if (bantResp?.ok) { const rj = await bantResp.json(); meetLink = rj.meet_link ?? ''; } } catch { /* no json */ }
-            fetch(`${webhookBase}/webhook/agendar-touchpoints`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                lead_id: leadObj?.lead_externo_id ?? leadId,
-                lead_nome: leadName,
-                lead_telefone: leadObj?.telefone ?? '',
-                data_hora: new Date(bantDataHora).toISOString(),
-                meet_link: meetLink,
-              }),
-            }).catch(() => {});
-          } catch { /* silent */ }
         } catch (err) {
           console.error('Failed to send BANT webhook:', err);
         }
@@ -1058,22 +1042,6 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
               reagendamento: resultado === 'Reagendou',
             }),
           }).catch(e => { console.warn('[agendar-reuniao R2+ NAF]', e.message); return null; });
-          // Fire-and-forget: agendar touchpoints
-          try {
-            let meetLink_naf = '';
-            try { if (rrResp_naf?.ok) { const rj = await rrResp_naf.json(); meetLink_naf = rj.meet_link ?? ''; } } catch { /* no json */ }
-            fetch(`${WEBHOOK_BASE}/webhook/agendar-touchpoints`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                lead_id: leadObj?.lead_externo_id ?? leadId,
-                lead_nome: leadName,
-                lead_telefone: leadObj?.telefone ?? '',
-                data_hora: new Date(proximaReuniao).toISOString(),
-                meet_link: meetLink_naf,
-              }),
-            }).catch(() => {});
-          } catch { /* silent */ }
         } catch (err) { console.error('Failed to send agendar-reuniao webhook (NAF):', err); }
       }
 
@@ -1084,13 +1052,6 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
         const currentTP = resolvedTP;
 
         if (statusReuniao === 'Não compareceu') {
-          // Cancelar touchpoints pendentes
-          fetch(`${WEBHOOK_BASE}/webhook/cancelar-touchpoints`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ lead_id: leadObj?.lead_externo_id ?? leadId }),
-          }).catch(() => {});
-
           if (reagendarNoShow && dataReagendamento) {
             // Bloco 6 + reagendamento: UPDATE No-show + INSERT nova Pendente (atômico)
             const horaReag = new Date(dataReagendamento).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: SP_TZ });
@@ -1875,22 +1836,6 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
-      // Fire-and-forget: agendar touchpoints
-      try {
-        let meetLink = '';
-        try { if (arResp?.ok) { const rj = await arResp.json(); meetLink = rj.meet_link ?? ''; } } catch { /* no json */ }
-        fetch(`${webhookBase}/webhook/agendar-touchpoints`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            lead_id: lead.lead_externo_id ?? lead.id,
-            lead_nome: lead.nome,
-            lead_telefone: lead.telefone ?? '',
-            data_hora: new Date(arDataHora).toISOString(),
-            meet_link: meetLink,
-          }),
-        }).catch(() => {});
-      } catch { /* silent */ }
       // INSERT reunião na tabela reunioes
       {
         const tpAtual_ar = (lead as any).tp_atual || 'R1';
@@ -2289,22 +2234,6 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
             bant: { sdr: userSession?.name || '' },
           }),
         }).catch(e => { console.warn('Webhook agendar-reuniao (CORS em dev):', e.message); return null; });
-        // Fire-and-forget: agendar touchpoints
-        try {
-          let meetLink = '';
-          try { if (rrResp?.ok) { const rj = await rrResp.json(); meetLink = rj.meet_link ?? ''; } } catch { /* no json */ }
-          fetch(`${webhookBase}/webhook/agendar-touchpoints`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              lead_id: lead.lead_externo_id ?? lead.id,
-              lead_nome: lead.nome,
-              lead_telefone: lead.telefone ?? '',
-              data_hora: new Date(rrProximaReuniao).toISOString(),
-              meet_link: meetLink,
-            }),
-          }).catch(() => {});
-        } catch { /* silent */ }
       } catch (err) { console.error('Failed to send agendar-reuniao webhook:', err); }
     }
 
@@ -2331,12 +2260,6 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
           reuniao_resultado: 'No-show',
           closer,
         });
-        // Cancelar touchpoints pendentes
-        fetch(`${WEBHOOK_BASE}/webhook/cancelar-touchpoints`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ lead_id: lead.lead_externo_id ?? lead.id }),
-        }).catch(() => {});
       } else if (rrStatusReuniao === 'Compareceu') {
         if (rrResultado === 'Marcou R2+') {
           // Bloco 2: UPDATE reunião atual → Compareceu + INSERT R2
@@ -2462,15 +2385,6 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
         await supabase.from('crm_leads').update({ proxima_reuniao: novaData, updated_at: new Date().toISOString() }).eq('id', lead.id);
         onSave({ proxima_reuniao: novaData });
       }
-      // Cancelar touchpoints anteriores antes de reagendar
-      try {
-        const webhookBase0 = import.meta.env.VITE_WEBHOOK_BASE?.replace('/webhook/dashboard', '') ?? 'https://webhook.m2black.com';
-        fetch(`${webhookBase0}/webhook/cancelar-touchpoints`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ lead_id: lead.lead_externo_id ?? lead.id }),
-        }).catch(() => {});
-      } catch { /* silent */ }
       // Enviar para webhook agendar-reuniao (atualizar Google Agenda)
       try {
         const webhookBase = import.meta.env.VITE_WEBHOOK_BASE?.replace('/webhook/dashboard', '') ?? 'https://webhook.m2black.com';
@@ -2489,22 +2403,6 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
             bant: { sdr: userSession?.name || '' },
           }),
         }).catch(() => null);
-        // Fire-and-forget: agendar touchpoints
-        try {
-          let meetLink = '';
-          try { if (reagResp?.ok) { const rj = await reagResp.json(); meetLink = rj.meet_link ?? ''; } } catch { /* no json */ }
-          fetch(`${webhookBase}/webhook/agendar-touchpoints`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              lead_id: lead.lead_externo_id ?? lead.id,
-              lead_nome: lead.nome,
-              lead_telefone: lead.telefone ?? '',
-              data_hora: new Date(reagendarData).toISOString(),
-              meet_link: meetLink,
-            }),
-          }).catch(() => {});
-        } catch { /* silent */ }
       } catch { /* fire-and-forget */ }
       // Sync reuniao_tp → Railway (fire-and-forget)
       {
@@ -3563,22 +3461,6 @@ export default function CRMView({ userSession, teamMembers, openLeadByName, onLe
           bant: { sdr: userSession?.name || '' },
         }),
       }).catch(() => null);
-      // Fire-and-forget: agendar touchpoints
-      try {
-        let meetLink = '';
-        try { if (kanbanResp?.ok) { const rj = await kanbanResp.json(); meetLink = rj.meet_link ?? ''; } } catch { /* no json */ }
-        fetch(`${webhookBase}/webhook/agendar-touchpoints`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            lead_id: lead?.lead_externo_id ?? lead?.id ?? '',
-            lead_nome: lead?.nome ?? '',
-            lead_telefone: lead?.telefone ?? '',
-            data_hora: new Date(novaData).toISOString(),
-            meet_link: meetLink,
-          }),
-        }).catch(() => {});
-      } catch { /* silent */ }
     } catch { /* fire-and-forget */ }
     // Sync reuniao_tp → Railway (fire-and-forget)
     if (lead) {
