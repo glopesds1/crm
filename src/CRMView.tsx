@@ -800,7 +800,7 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
               autoridade: bantAutoridade,
               necessidade: bantNecessidade,
               timing: bantTiming,
-              sdr: bantSdr,
+              sdr: userSession?.name || '',
               observacoes: bantObs,
             },
           };
@@ -843,6 +843,7 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
             hora_marcada: horaBANT,
             etapa: 'rm_marcada',
             closer: bantCloser || null,
+            sdr: userSession?.name || '',
           });
         }
 
@@ -1036,7 +1037,7 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
               data_hora: new Date(proximaReuniao).toISOString(),
               tipo_reuniao: webhookTipoReuniao_naf,
               duracao_min: 60,
-              bant: { sdr: (leadObj as any)?.sdr || leadObj?.responsavel || '' },
+              bant: { sdr: userSession?.name || '' },
               reagendamento: resultado === 'Reagendou',
             }),
           }).catch(e => { console.warn('[agendar-reuniao R2+ NAF]', e.message); return null; });
@@ -1083,6 +1084,7 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
               reuniao_status: 'Reagendou',
               reuniao_resultado: 'No-show',
               closer,
+              sdr: userSession?.name || '',
               nova_data_marcada: new Date(dataReagendamento).toISOString().split('T')[0],
               nova_hora_marcada: horaReag,
               novo_tp: currentTP,
@@ -1099,7 +1101,7 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
                 data_hora: new Date(dataReagendamento).toISOString(),
                 tipo_reuniao: currentTP,
                 duracao_min: 60,
-                bant: { sdr: (leadObj as any)?.sdr || leadObj?.responsavel || '' },
+                bant: { sdr: userSession?.name || '' },
               }),
             }).catch(e => console.warn('[reagendar no-show]', e.message));
             // Criar tarefa de lembrete
@@ -1112,15 +1114,17 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
               }).select().single();
               if (nsTask) onTarefaCreated?.(nsTask);
             } catch { /* silent */ }
-            // Atualizar crm_leads
+            // Atualizar crm_leads — reagendou: rm_marcada + tag No-show
+            const tagsReag = [...(leadObj?.tags ?? [])];
+            if (!tagsReag.includes('No-show')) tagsReag.push('No-show');
             try {
               await supabase.from('crm_leads').update({
-                etapa: 'rm_marcada', proxima_reuniao: localDatetimeToISO(dataReagendamento), updated_at: now,
+                etapa: 'rm_marcada', proxima_reuniao: localDatetimeToISO(dataReagendamento), tags: tagsReag, updated_at: now,
               }).eq('id', leadId);
-              onLeadUpdated?.({ etapa: 'rm_marcada' });
+              onLeadUpdated?.({ etapa: 'rm_marcada', tags: tagsReag });
             } catch { /* silent */ }
           } else {
-            // Sem reagendamento: apenas No-show
+            // Sem reagendamento: apenas No-show → rm_realizada + tag No-show
             syncPostgres(leadObj?.lead_externo_id, {
               reuniao_action: 'resultado',
               crm_lead_id: leadId,
@@ -1129,10 +1133,11 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
               reuniao_resultado: 'No-show',
               closer,
             });
-            // Mover para rm_realizada
+            const tagsNoShow = [...(leadObj?.tags ?? [])];
+            if (!tagsNoShow.includes('No-show')) tagsNoShow.push('No-show');
             try {
-              await supabase.from('crm_leads').update({ etapa: 'rm_realizada', etapa_desde: now, updated_at: now }).eq('id', leadId);
-              onLeadUpdated?.({ etapa: 'rm_realizada' });
+              await supabase.from('crm_leads').update({ etapa: 'rm_realizada', etapa_desde: now, tags: tagsNoShow, updated_at: now }).eq('id', leadId);
+              onLeadUpdated?.({ etapa: 'rm_realizada', tags: tagsNoShow });
             } catch { /* silent */ }
           }
         } else if (statusReuniao === 'Compareceu') {
@@ -1163,6 +1168,7 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
                 Data_Reuniao_Marcada: new Date(proximaReuniao).toISOString().split('T')[0],
                 hora_marcada: horaR2,
                 closer,
+                sdr: userSession?.name || '',
               });
             }
           } else if (resultado === 'Reagendou') {
@@ -1176,6 +1182,7 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
                 reuniao_status: 'Reagendou',
                 reuniao_resultado: 'Reagendou',
                 closer,
+                sdr: userSession?.name || '',
                 nova_data_marcada: new Date(proximaReuniao).toISOString().split('T')[0],
                 nova_hora_marcada: horaReag,
                 novo_tp: currentTP,
@@ -1220,17 +1227,6 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
             });
           }
         }
-      }
-
-      // Add No-show tag when lead didn't show up
-      if (statusReuniao === 'Não compareceu') {
-        try {
-          const tagsAtuais: string[] = leadObj?.tags ?? [];
-          if (!tagsAtuais.includes('No-show')) {
-            await supabase.from('crm_leads').update({ tags: [...tagsAtuais, 'No-show'] }).eq('id', leadId);
-            onLeadUpdated?.({ tags: [...tagsAtuais, 'No-show'] });
-          }
-        } catch { /* silent */ }
       }
 
       // Bloco 6: Auto-concluir tarefa pendente do lead (match por tipo)
@@ -1852,7 +1848,7 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
           autoridade: arAutoridade,
           necessidade: arNecessidade,
           timing: arTiming,
-          sdr: arSdr || lead.responsavel || '',
+          sdr: userSession?.name || '',
           observacoes: arObs,
         },
       };
@@ -1890,6 +1886,7 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
           hora_marcada: horaAR,
           etapa: 'rm_marcada',
           closer: arCloser || null,
+          sdr: userSession?.name || '',
         });
       }
       const upd: Partial<CRMLead> = {
@@ -1969,6 +1966,19 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
     };
     if (etapa !== lead.etapa) upd.etapa_desde = new Date().toISOString();
     await onSave(upd);
+
+    // Sync closer → Railway quando responsável muda (fire-and-forget)
+    if (lead.lead_externo_id && responsavel !== (lead.responsavel ?? '')) {
+      syncPostgres(lead.lead_externo_id, { closer: responsavel });
+      fetch(`${WEBHOOK_BASE}/webhook/crm-sync-etapa`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          lead_externo_id: lead.lead_externo_id,
+          closer: responsavel,
+        }),
+      }).catch(e => console.warn('[sync closer]', e));
+    }
 
     // Sync financeiro → Railway via n8n (fire-and-forget)
     const finChanged = (valorContrato !== '' && valorContrato !== (lead.valor_contrato ?? ''))
@@ -2123,6 +2133,12 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
     } else {
       leadUpd.etapa = 'rm_realizada';
     }
+    // Add No-show tag inline to avoid stale-state race condition
+    if (rrStatusReuniao === 'Não compareceu') {
+      const tagsNoShow = [...(lead.tags ?? [])];
+      if (!tagsNoShow.includes('No-show')) tagsNoShow.push('No-show');
+      leadUpd.tags = tagsNoShow;
+    }
     await supabase.from('crm_leads').update(leadUpd).eq('id', lead.id);
     await onSave(leadUpd);
 
@@ -2222,7 +2238,7 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
             data_hora: new Date(rrProximaReuniao).toISOString(),
             duracao_min: 60,
             reagendamento: rrResultado === 'Reagendou',
-            bant: { sdr: (lead as any).sdr || lead.responsavel || '' },
+            bant: { sdr: userSession?.name || '' },
           }),
         }).catch(e => { console.warn('Webhook agendar-reuniao (CORS em dev):', e.message); return null; });
         // Fire-and-forget: agendar touchpoints
@@ -2301,6 +2317,7 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
               Data_Reuniao_Marcada: new Date(rrProximaReuniao).toISOString().split('T')[0],
               hora_marcada: horaR2,
               closer,
+              sdr: userSession?.name || '',
             });
           }
         } else if (rrResultado === 'Reagendou') {
@@ -2314,6 +2331,7 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
               reuniao_status: 'Reagendou',
               reuniao_resultado: 'Reagendou',
               closer,
+              sdr: userSession?.name || '',
               nova_data_marcada: new Date(rrProximaReuniao).toISOString().split('T')[0],
               nova_hora_marcada: horaReag,
               novo_tp: currentTP,
@@ -2360,17 +2378,9 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
       }
     }
 
-    // Add No-show tag when lead didn't show up
-    if (rrStatusReuniao === 'Não compareceu') {
-      try {
-        const tagsAtuais: string[] = lead.tags ?? [];
-        if (!tagsAtuais.includes('No-show')) {
-          const updatedTags = [...tagsAtuais, 'No-show'];
-          await supabase.from('crm_leads').update({ tags: updatedTags }).eq('id', lead.id);
-          onSave({ tags: updatedTags });
-          setLocalTags(updatedTags);
-        }
-      } catch { /* silent */ }
+    // Update local tags if No-show was added
+    if (rrStatusReuniao === 'Não compareceu' && leadUpd.tags) {
+      setLocalTags(leadUpd.tags);
     }
 
     setReuniaoRealizada(false);
@@ -2428,7 +2438,7 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
             data_hora: new Date(reagendarData).toISOString(),
             duracao_min: 60,
             reagendamento: true,
-            bant: { sdr: (lead as any).sdr || lead.responsavel || '' },
+            bant: { sdr: userSession?.name || '' },
           }),
         }).catch(() => null);
         // Fire-and-forget: agendar touchpoints
@@ -3381,7 +3391,7 @@ export default function CRMView({ userSession, teamMembers, openLeadByName, onLe
   const [etapaVisible, setEtapaVisible] = useState<Record<string, number>>({});
   const [selectedLead, setSelectedLead] = useState<CRMLead | null>(null);
   const [showNewLead, setShowNewLead] = useState(false);
-  const [filtroResponsavel, setFiltroResponsavel] = useState('');
+  const [filtroResponsavel, setFiltroResponsavel] = useState(userSession?.name || 'Todos');
   const [filtroTag, setFiltroTag] = useState('');
   const isAdmin = (userSession?.role ?? '').toLowerCase() === 'admin';
 
@@ -3483,7 +3493,7 @@ export default function CRMView({ userSession, teamMembers, openLeadByName, onLe
           data_hora: new Date(novaData).toISOString(),
           duracao_min: 60,
           reagendamento: true,
-          bant: { sdr: (lead as any)?.sdr || lead?.responsavel || '' },
+          bant: { sdr: userSession?.name || '' },
         }),
       }).catch(() => null);
       // Fire-and-forget: agendar touchpoints
@@ -3527,8 +3537,7 @@ export default function CRMView({ userSession, teamMembers, openLeadByName, onLe
     let from = 0;
     let hasMore = true;
     while (hasMore) {
-      let query = supabase.from('crm_leads').select('*').is('deletado_em', null).order('created_at', { ascending: false }).range(from, from + PAGE_SIZE - 1);
-      if (!isAdmin) query = query.eq('responsavel', userSession?.name ?? '');
+      const query = supabase.from('crm_leads').select('*').is('deletado_em', null).order('created_at', { ascending: false }).range(from, from + PAGE_SIZE - 1);
       const { data, error } = await query;
       if (error) {
         console.warn('[crm_leads] Erro na página', from, '— tentando em lotes menores:', error.message);
@@ -3536,8 +3545,7 @@ export default function CRMView({ userSession, teamMembers, openLeadByName, onLe
         let smallFrom = from;
         const smallEnd = from + PAGE_SIZE;
         while (smallFrom < smallEnd) {
-          let smallQuery = supabase.from('crm_leads').select('*').is('deletado_em', null).order('created_at', { ascending: false }).range(smallFrom, smallFrom + SMALL_PAGE - 1);
-          if (!isAdmin) smallQuery = smallQuery.eq('responsavel', userSession?.name ?? '');
+          const smallQuery = supabase.from('crm_leads').select('*').is('deletado_em', null).order('created_at', { ascending: false }).range(smallFrom, smallFrom + SMALL_PAGE - 1);
           const { data: smallData, error: smallError } = await smallQuery;
           if (smallError) {
             console.warn('[crm_leads] Lote corrompido ignorado:', smallFrom, '-', smallFrom + SMALL_PAGE - 1, smallError.message);
@@ -3566,24 +3574,6 @@ export default function CRMView({ userSession, teamMembers, openLeadByName, onLe
     // Load all tasks (only for active leads) + cleanup orphaned tasks
     const { data: t } = await supabase.from('crm_tarefas').select('*');
 
-    // Para não-admin: também carregar leads que tenham tarefas pendentes atribuídas ao usuário
-    // (permite abrir o card via alarme mesmo que o lead pertença a outro responsável)
-    if (!isAdmin && t) {
-      const loadedIds = new Set(unique.map(l => l.id));
-      const extraLeadIds = [...new Set(
-        t.filter(task => !task.concluida && (task.responsavel ?? '').toLowerCase() === (userSession?.name ?? '').toLowerCase() && !loadedIds.has(task.lead_id))
-          .map(task => task.lead_id)
-      )];
-      if (extraLeadIds.length > 0) {
-        const { data: extraLeads } = await supabase.from('crm_leads').select('*').is('deletado_em', null).in('id', extraLeadIds);
-        if (extraLeads) {
-          for (const el of extraLeads) {
-            if (!seen.has(el.id)) { seen.add(el.id); unique.push(el); }
-          }
-        }
-      }
-    }
-
     setLeads(unique);
 
     const activeLeadIds = new Set(unique.map(l => l.id));
@@ -3593,7 +3583,7 @@ export default function CRMView({ userSession, teamMembers, openLeadByName, onLe
     }
     setTarefas((t ?? []).filter(task => activeLeadIds.has(task.lead_id) && !task.concluida));
     setLoading(false);
-  }, [isAdmin, userSession?.name]);
+  }, []);
 
   useEffect(() => { loadLeads(); }, [loadLeads]);
 
@@ -3708,7 +3698,7 @@ export default function CRMView({ userSession, teamMembers, openLeadByName, onLe
   const filteredLeads = leads
     .filter(l => {
       if (filtroResponsavel === '__sem__' && l.responsavel) return false;
-      if (filtroResponsavel && filtroResponsavel !== '__sem__' && l.responsavel !== filtroResponsavel) return false;
+      if (filtroResponsavel && filtroResponsavel !== 'Todos' && filtroResponsavel !== '__sem__' && l.responsavel !== filtroResponsavel) return false;
       if (filtroTag && !(l.tags ?? []).includes(filtroTag)) return false;
       if (!search) return true;
       const q = search.toLowerCase();
@@ -3757,15 +3747,13 @@ export default function CRMView({ userSession, teamMembers, openLeadByName, onLe
           <span className="text-xs text-gray-600">{filteredLeads.length} leads</span>
         </div>
         <div className="flex items-center gap-2">
-          {isAdmin && responsaveis.length > 1 && (
-            <select value={filtroResponsavel} onChange={e => setFiltroResponsavel(e.target.value)}
-              className="bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs text-gray-400 focus:outline-none focus:border-brand-primary appearance-none"
-            >
-              <option value="" className="bg-bg-main">Todos os responsáveis</option>
-              <option value="__sem__" className="bg-bg-main">Sem responsável</option>
-              {responsaveis.map(r => <option key={r} value={r} className="bg-bg-main">{r}</option>)}
-            </select>
-          )}
+          <select value={filtroResponsavel} onChange={e => setFiltroResponsavel(e.target.value)}
+            className="bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs text-gray-400 focus:outline-none focus:border-brand-primary appearance-none"
+          >
+            <option value="Todos" className="bg-bg-main">Todos os responsáveis</option>
+            <option value="__sem__" className="bg-bg-main">Sem responsável</option>
+            {responsaveis.map(r => <option key={r} value={r} className="bg-bg-main">{r}</option>)}
+          </select>
           <select value={filtroTag} onChange={e => setFiltroTag(e.target.value)}
             className="bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs text-gray-400 focus:outline-none focus:border-brand-primary appearance-none"
           >
