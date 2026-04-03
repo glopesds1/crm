@@ -5,7 +5,7 @@ import {
   Plus, RefreshCw, Search, Phone, Building2, DollarSign,
   User, X, ChevronLeft, ChevronRight, Loader2, MapPin, Clock,
   PhoneCall, Users, FileText, Calendar, CheckCircle2,
-  ChevronDown, Trash2, Bell, Volume2, Send, Video
+  ChevronDown, Trash2, Bell, Volume2, Send, Video, ArrowRightLeft
 } from 'lucide-react';
 import type { TeamMember } from './types';
 import { DEFAULT_ONBOARDING_ITEMS } from './constants';
@@ -365,6 +365,10 @@ interface CRMLead {
   motivo_perda?: string;
   proxima_reuniao?: string;
 
+  lead_score?: number;
+  lead_grade?: string;
+  investimento?: string;
+  funcionarios?: string;
   tags?: string[];
   observacoes?: string;
   created_at: string;
@@ -437,6 +441,73 @@ const TIPO_ICON: Record<string, any> = {
   reuniao: Users,
   nota:    FileText,
   tarefa:  Calendar,
+  alteracao: ArrowRightLeft,
+};
+
+function calcLeadScore(lead: any): { score: number; grade: string; breakdown: { faturamento: number; investimento: number; funcionarios: number; area: number } } {
+  let score = 0;
+  let bFat = 0, bInv = 0, bFunc = 0, bArea = 0;
+  const fat = (lead.faturamento || '').toLowerCase().replace(/[\s.]/g, '');
+  const inv = (lead.investimento || '').toLowerCase();
+  const func = (lead.funcionarios || '').toLowerCase();
+  const area = (lead.area || '').toLowerCase();
+
+  // FATURAMENTO (0-40)
+  if (fat.includes('300') || fat.includes('151')) bFat = 40;
+  else if (fat.includes('70') || fat.includes('r$70')) bFat = 35;
+  else if (fat.includes('80000') || fat.includes('acima')) bFat = 30;
+  else if (fat.includes('40') || fat.includes('r$40')) bFat = 25;
+  else if (fat.includes('20') || fat.includes('r$20') || fat.includes('11') || fat.includes('r$11') || fat.includes('30')) bFat = 15;
+  else if (fat.includes('10') && !fat.includes('100')) bFat = 8;
+  else if (fat.includes('menos') || fat.includes('5000')) bFat = 3;
+  else {
+    const num = parseFloat(fat.replace(/[^0-9,.-]/g, '').replace(',', '.'));
+    if (!isNaN(num)) {
+      if (num >= 150000) bFat = 40;
+      else if (num >= 70000) bFat = 35;
+      else if (num >= 40000) bFat = 25;
+      else if (num >= 20000) bFat = 15;
+      else if (num >= 10000) bFat = 8;
+      else bFat = 3;
+    }
+  }
+
+  // INVESTIMENTO (0-30)
+  if (inv.includes('todos')) bInv = 30;
+  else if (inv.includes('agência') || inv.includes('agencia')) bInv = 25;
+  else if (inv.includes('mentoria')) bInv = 20;
+  else if (inv.includes('curso')) bInv = 15;
+  else if (inv.includes('nenhum')) bInv = 5;
+
+  // FUNCIONARIOS (0-20)
+  if (func.includes('acima_de_10') || func.includes('acima de 10')) bFunc = 20;
+  else if (func.includes('6_a_10') || func.includes('6 a 10')) bFunc = 18;
+  else if (func.includes('4_a_6') || func.includes('4 a 6')) bFunc = 14;
+  else if (func.includes('1_a_3') || func.includes('1 a 3')) bFunc = 8;
+  else if (func.includes('somente_eu') || func.includes('somente eu')) bFunc = 4;
+
+  // AREA BONUS (0-10)
+  if (area.includes('engenheiro') && area.includes('construtora')) bArea = 10;
+  else if (area.includes('engenheiro')) bArea = 6;
+  else if (area.includes('construtor')) bArea = 6;
+  else if (area.includes('arquiteto')) bArea = 4;
+
+  score = bFat + bInv + bFunc + bArea;
+  const grade = score >= 70 ? 'A' : score >= 45 ? 'B' : score >= 20 ? 'C' : 'D';
+  return { score, grade, breakdown: { faturamento: bFat, investimento: bInv, funcionarios: bFunc, area: bArea } };
+}
+
+function getLeadScore(lead: CRMLead) {
+  return (lead.lead_score && lead.lead_score > 0)
+    ? { score: lead.lead_score, grade: lead.lead_grade || 'D', breakdown: null }
+    : calcLeadScore(lead);
+}
+
+const GRADE_STYLE: Record<string, { background: string; color: string; border: string }> = {
+  A: { background: '#22c55e22', color: '#22c55e', border: '#22c55e44' },
+  B: { background: '#d4af3722', color: '#d4af37', border: '#d4af3744' },
+  C: { background: '#60a5fa22', color: '#60a5fa', border: '#60a5fa44' },
+  D: { background: '#ef444422', color: '#ef4444', border: '#ef444444' },
 };
 
 // ── Lead Card ─────────────────────────────────────────────────
@@ -466,6 +537,12 @@ function LeadCard({ lead, proximaTarefa, onClick }: { key?: React.Key; lead: CRM
         <div className="flex items-center gap-1.5 min-w-0">
           <p className="text-xs font-bold text-white leading-tight line-clamp-1">{lead.nome}</p>
           {tpAtual && <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full flex-shrink-0 ${tpColor}`}>{tpAtual}</span>}
+          {(() => {
+            const { score, grade } = getLeadScore(lead);
+            if (score === 0) return null;
+            const gs = GRADE_STYLE[grade] || GRADE_STYLE.D;
+            return <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 4, border: `1px solid ${gs.border}`, background: gs.background, color: gs.color, display: 'inline-block', flexShrink: 0 }}>{score} {grade}</span>;
+          })()}
         </div>
         <ChevronRight size={12} className="text-gray-600 flex-shrink-0 mt-0.5" />
       </div>
@@ -811,22 +888,6 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(bantPayload),
           }).catch(e => { console.warn('Webhook agendar-reuniao (CORS em dev):', e.message); return null; });
-          // Fire-and-forget: agendar touchpoints
-          try {
-            let meetLink = '';
-            try { if (bantResp?.ok) { const rj = await bantResp.json(); meetLink = rj.meet_link ?? ''; } } catch { /* no json */ }
-            fetch(`${webhookBase}/webhook/agendar-touchpoints`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                lead_id: leadObj?.lead_externo_id ?? leadId,
-                lead_nome: leadName,
-                lead_telefone: leadObj?.telefone ?? '',
-                data_hora: new Date(bantDataHora).toISOString(),
-                meet_link: meetLink,
-              }),
-            }).catch(() => {});
-          } catch { /* silent */ }
         } catch (err) {
           console.error('Failed to send BANT webhook:', err);
         }
@@ -875,6 +936,22 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
           };
           await supabase.from('crm_leads').update(leadUpd).eq('id', leadId);
           onLeadUpdated?.(leadUpd);
+          // Track responsavel change in timeline
+          if (bantCloser && bantCloser !== (leadObj?.responsavel ?? '')) {
+            await supabase.from('crm_atividades').insert({
+              lead_id: leadId,
+              tipo: 'alteracao',
+              data_atividade: now,
+              realizado_por: responsavelAtividade || userSession?.name || '',
+              descricao: JSON.stringify({
+                campo: 'responsavel',
+                de: leadObj?.responsavel || '(sem responsável)',
+                para: bantCloser,
+                obs: 'Alteração via registro de ligação',
+              }),
+              created_at: now,
+            });
+          }
         } catch (err) {
           console.error('Failed to update lead to rm_marcada:', err);
         }
@@ -1041,22 +1118,6 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
               reagendamento: resultado === 'Reagendou',
             }),
           }).catch(e => { console.warn('[agendar-reuniao R2+ NAF]', e.message); return null; });
-          // Fire-and-forget: agendar touchpoints
-          try {
-            let meetLink_naf = '';
-            try { if (rrResp_naf?.ok) { const rj = await rrResp_naf.json(); meetLink_naf = rj.meet_link ?? ''; } } catch { /* no json */ }
-            fetch(`${WEBHOOK_BASE}/webhook/agendar-touchpoints`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                lead_id: leadObj?.lead_externo_id ?? leadId,
-                lead_nome: leadName,
-                lead_telefone: leadObj?.telefone ?? '',
-                data_hora: new Date(proximaReuniao).toISOString(),
-                meet_link: meetLink_naf,
-              }),
-            }).catch(() => {});
-          } catch { /* silent */ }
         } catch (err) { console.error('Failed to send agendar-reuniao webhook (NAF):', err); }
       }
 
@@ -1067,13 +1128,6 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
         const currentTP = resolvedTP;
 
         if (statusReuniao === 'Não compareceu') {
-          // Cancelar touchpoints pendentes
-          fetch(`${WEBHOOK_BASE}/webhook/cancelar-touchpoints`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ lead_id: leadObj?.lead_externo_id ?? leadId }),
-          }).catch(() => {});
-
           if (reagendarNoShow && dataReagendamento) {
             // Bloco 6 + reagendamento: UPDATE No-show + INSERT nova Pendente (atômico)
             const horaReag = new Date(dataReagendamento).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: SP_TZ });
@@ -1858,22 +1912,6 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
-      // Fire-and-forget: agendar touchpoints
-      try {
-        let meetLink = '';
-        try { if (arResp?.ok) { const rj = await arResp.json(); meetLink = rj.meet_link ?? ''; } } catch { /* no json */ }
-        fetch(`${webhookBase}/webhook/agendar-touchpoints`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            lead_id: lead.lead_externo_id ?? lead.id,
-            lead_nome: lead.nome,
-            lead_telefone: lead.telefone ?? '',
-            data_hora: new Date(arDataHora).toISOString(),
-            meet_link: meetLink,
-          }),
-        }).catch(() => {});
-      } catch { /* silent */ }
       // INSERT reunião na tabela reunioes
       {
         const tpAtual_ar = (lead as any).tp_atual || 'R1';
@@ -1966,6 +2004,37 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
     };
     if (etapa !== lead.etapa) upd.etapa_desde = new Date().toISOString();
     await onSave(upd);
+
+    // Track responsavel change in timeline
+    if (responsavel !== (lead.responsavel ?? '')) {
+      await supabase.from('crm_atividades').insert({
+        lead_id: lead.id,
+        tipo: 'alteracao',
+        data_atividade: new Date().toISOString(),
+        realizado_por: userSession?.name || '',
+        descricao: JSON.stringify({
+          campo: 'responsavel',
+          de: lead.responsavel || '(sem responsável)',
+          para: responsavel,
+          obs: 'Alteração manual de responsável',
+        }),
+        created_at: new Date().toISOString(),
+      });
+      setAtividades(prev => [{
+        id: `temp-${Date.now()}`,
+        lead_id: lead.id,
+        tipo: 'alteracao',
+        data_atividade: new Date().toISOString(),
+        realizado_por: userSession?.name || '',
+        descricao: JSON.stringify({
+          campo: 'responsavel',
+          de: lead.responsavel || '(sem responsável)',
+          para: responsavel,
+          obs: 'Alteração manual de responsável',
+        }),
+        created_at: new Date().toISOString(),
+      } as any, ...prev]);
+    }
 
     // Sync closer → Railway quando responsável muda (fire-and-forget)
     if (lead.lead_externo_id && responsavel !== (lead.responsavel ?? '')) {
@@ -2241,22 +2310,6 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
             bant: { sdr: userSession?.name || '' },
           }),
         }).catch(e => { console.warn('Webhook agendar-reuniao (CORS em dev):', e.message); return null; });
-        // Fire-and-forget: agendar touchpoints
-        try {
-          let meetLink = '';
-          try { if (rrResp?.ok) { const rj = await rrResp.json(); meetLink = rj.meet_link ?? ''; } } catch { /* no json */ }
-          fetch(`${webhookBase}/webhook/agendar-touchpoints`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              lead_id: lead.lead_externo_id ?? lead.id,
-              lead_nome: lead.nome,
-              lead_telefone: lead.telefone ?? '',
-              data_hora: new Date(rrProximaReuniao).toISOString(),
-              meet_link: meetLink,
-            }),
-          }).catch(() => {});
-        } catch { /* silent */ }
       } catch (err) { console.error('Failed to send agendar-reuniao webhook:', err); }
     }
 
@@ -2283,12 +2336,6 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
           reuniao_resultado: 'No-show',
           closer,
         });
-        // Cancelar touchpoints pendentes
-        fetch(`${WEBHOOK_BASE}/webhook/cancelar-touchpoints`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ lead_id: lead.lead_externo_id ?? lead.id }),
-        }).catch(() => {});
       } else if (rrStatusReuniao === 'Compareceu') {
         if (rrResultado === 'Marcou R2+') {
           // Bloco 2: UPDATE reunião atual → Compareceu + INSERT R2
@@ -2414,15 +2461,6 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
         await supabase.from('crm_leads').update({ proxima_reuniao: novaData, updated_at: new Date().toISOString() }).eq('id', lead.id);
         onSave({ proxima_reuniao: novaData });
       }
-      // Cancelar touchpoints anteriores antes de reagendar
-      try {
-        const webhookBase0 = import.meta.env.VITE_WEBHOOK_BASE?.replace('/webhook/dashboard', '') ?? 'https://webhook.m2black.com';
-        fetch(`${webhookBase0}/webhook/cancelar-touchpoints`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ lead_id: lead.lead_externo_id ?? lead.id }),
-        }).catch(() => {});
-      } catch { /* silent */ }
       // Enviar para webhook agendar-reuniao (atualizar Google Agenda)
       try {
         const webhookBase = import.meta.env.VITE_WEBHOOK_BASE?.replace('/webhook/dashboard', '') ?? 'https://webhook.m2black.com';
@@ -2441,22 +2479,6 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
             bant: { sdr: userSession?.name || '' },
           }),
         }).catch(() => null);
-        // Fire-and-forget: agendar touchpoints
-        try {
-          let meetLink = '';
-          try { if (reagResp?.ok) { const rj = await reagResp.json(); meetLink = rj.meet_link ?? ''; } } catch { /* no json */ }
-          fetch(`${webhookBase}/webhook/agendar-touchpoints`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              lead_id: lead.lead_externo_id ?? lead.id,
-              lead_nome: lead.nome,
-              lead_telefone: lead.telefone ?? '',
-              data_hora: new Date(reagendarData).toISOString(),
-              meet_link: meetLink,
-            }),
-          }).catch(() => {});
-        } catch { /* silent */ }
       } catch { /* fire-and-forget */ }
       // Sync reuniao_tp → Railway (fire-and-forget)
       {
@@ -2916,6 +2938,49 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
               )}
             </div>
 
+            {/* Lead Score breakdown */}
+            {(() => {
+              const hasData = lead.faturamento || lead.investimento || lead.funcionarios || lead.area;
+              if (!hasData && !(lead.lead_score && lead.lead_score > 0)) {
+                return (
+                  <div className="bg-white/[0.02] border border-white/10 rounded-xl p-3">
+                    <p className="text-[9px] font-bold uppercase tracking-widest text-gray-600 mb-1">Lead Score</p>
+                    <p className="text-xs text-gray-600 italic">Score não calculado — dados insuficientes</p>
+                  </div>
+                );
+              }
+              const result = getLeadScore(lead);
+              const gs = GRADE_STYLE[result.grade] || GRADE_STYLE.D;
+              const bd = result.breakdown || calcLeadScore(lead).breakdown;
+              const bars: { label: string; value: number; max: number; hint: string }[] = [
+                { label: 'Faturamento', value: bd.faturamento, max: 40, hint: lead.faturamento || '—' },
+                { label: 'Investimento', value: bd.investimento, max: 30, hint: lead.investimento || '—' },
+                { label: 'Funcionários', value: bd.funcionarios, max: 20, hint: lead.funcionarios || '—' },
+                { label: 'Área', value: bd.area, max: 10, hint: lead.area || '—' },
+              ];
+              return (
+                <div className="bg-white/[0.02] border border-white/10 rounded-xl p-3 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <p className="text-[9px] font-bold uppercase tracking-widest text-gray-600">Lead Score</p>
+                    <span style={{ fontSize: 13, fontWeight: 700, padding: '2px 10px', borderRadius: 6, border: `1px solid ${gs.border}`, background: gs.background, color: gs.color }}>{result.score} ({result.grade})</span>
+                  </div>
+                  <div className="space-y-1.5">
+                    {bars.map(b => (
+                      <div key={b.label} className="space-y-0.5">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] text-gray-500">{b.label}: {b.value}/{b.max}</span>
+                          <span className="text-[10px] text-gray-600 truncate max-w-[140px]">{b.hint}</span>
+                        </div>
+                        <div className="w-full h-1.5 bg-white/5 rounded-full overflow-hidden">
+                          <div className="h-full rounded-full transition-all" style={{ width: `${(b.value / b.max) * 100}%`, background: gs.color }} />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
+
             <div className="flex gap-3 pt-1">
               <button onClick={onClose} className="flex-1 px-4 py-2 rounded-xl bg-white/5 border border-white/10 text-sm text-gray-400 hover:text-white transition-colors">Cancelar</button>
               <button onClick={handleSave} disabled={saving}
@@ -2940,6 +3005,25 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
               )}
               {atividades.map(a => {
                 const Icon = TIPO_ICON[a.tipo] ?? FileText;
+                if (a.tipo === 'alteracao') {
+                  let desc: any = {};
+                  try { desc = typeof a.descricao === 'string' ? JSON.parse(a.descricao) : (a.descricao ?? {}); } catch { /* */ }
+                  return (
+                    <div key={a.id} className="flex gap-3">
+                      <div className="flex-shrink-0 w-7 h-7 rounded-full bg-yellow-500/20 flex items-center justify-center mt-0.5">
+                        <ArrowRightLeft size={13} className="text-yellow-400" />
+                      </div>
+                      <div className="flex-1 bg-yellow-500/5 rounded-xl p-3 space-y-1 border-l-2 border-yellow-500/40">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-[10px] font-bold uppercase tracking-widest text-yellow-500">Alteração</span>
+                          <span className="text-[9px] text-gray-700">{fmtAtivDate(a.created_at)}</span>
+                        </div>
+                        <p className="text-xs text-gray-300">Responsável alterado de <span className="font-bold text-red-400">{desc.de}</span> para <span className="font-bold text-brand-primary">{desc.para}</span></p>
+                        {a.realizado_por && <p className="text-[9px] text-gray-600">por {a.realizado_por}{desc.obs ? ` — ${desc.obs}` : ''}</p>}
+                      </div>
+                    </div>
+                  );
+                }
                 return (
                   <div key={a.id} className="flex gap-3">
                     <div className="flex-shrink-0 w-7 h-7 rounded-full bg-white/10 flex items-center justify-center mt-0.5">
@@ -3393,6 +3477,7 @@ export default function CRMView({ userSession, teamMembers, openLeadByName, onLe
   const [showNewLead, setShowNewLead] = useState(false);
   const [filtroResponsavel, setFiltroResponsavel] = useState(userSession?.name || 'Todos');
   const [filtroTag, setFiltroTag] = useState('');
+  const [filtroScore, setFiltroScore] = useState('Todos');
   const isAdmin = (userSession?.role ?? '').toLowerCase() === 'admin';
 
   // ── Task alarm system ──────────────────────────────────────
@@ -3496,22 +3581,6 @@ export default function CRMView({ userSession, teamMembers, openLeadByName, onLe
           bant: { sdr: userSession?.name || '' },
         }),
       }).catch(() => null);
-      // Fire-and-forget: agendar touchpoints
-      try {
-        let meetLink = '';
-        try { if (kanbanResp?.ok) { const rj = await kanbanResp.json(); meetLink = rj.meet_link ?? ''; } } catch { /* no json */ }
-        fetch(`${webhookBase}/webhook/agendar-touchpoints`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            lead_id: lead?.lead_externo_id ?? lead?.id ?? '',
-            lead_nome: lead?.nome ?? '',
-            lead_telefone: lead?.telefone ?? '',
-            data_hora: new Date(novaData).toISOString(),
-            meet_link: meetLink,
-          }),
-        }).catch(() => {});
-      } catch { /* silent */ }
     } catch { /* fire-and-forget */ }
     // Sync reuniao_tp → Railway (fire-and-forget)
     if (lead) {
@@ -3700,6 +3769,10 @@ export default function CRMView({ userSession, teamMembers, openLeadByName, onLe
       if (filtroResponsavel === '__sem__' && l.responsavel) return false;
       if (filtroResponsavel && filtroResponsavel !== 'Todos' && filtroResponsavel !== '__sem__' && l.responsavel !== filtroResponsavel) return false;
       if (filtroTag && !(l.tags ?? []).includes(filtroTag)) return false;
+      if (filtroScore !== 'Todos') {
+        const { grade } = getLeadScore(l);
+        if (grade !== filtroScore) return false;
+      }
       if (!search) return true;
       const q = search.toLowerCase();
       return l.nome.toLowerCase().includes(q) ||
@@ -3759,6 +3832,15 @@ export default function CRMView({ userSession, teamMembers, openLeadByName, onLe
           >
             <option value="" className="bg-bg-main">Todas as etiquetas</option>
             {ALL_TAGS.map(t => <option key={t} value={t} className="bg-bg-main">{t}</option>)}
+          </select>
+          <select value={filtroScore} onChange={e => setFiltroScore(e.target.value)}
+            className="bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs text-gray-400 focus:outline-none focus:border-brand-primary appearance-none"
+          >
+            <option value="Todos" className="bg-bg-main">Todos os scores</option>
+            <option value="A" className="bg-bg-main">A (70+)</option>
+            <option value="B" className="bg-bg-main">B (45-69)</option>
+            <option value="C" className="bg-bg-main">C (20-44)</option>
+            <option value="D" className="bg-bg-main">D (0-19)</option>
           </select>
           {isAdmin && (
             <button onClick={handleSync} disabled={syncing}
