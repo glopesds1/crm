@@ -3683,8 +3683,9 @@ export default function CRMView({ userSession, teamMembers, openLeadByName, onLe
     });
     const enriched = pendentes.map((d: any) => {
       const lead = leads.find(l => l.id === d.lead_id);
-      return { ...d, lead_nome: lead?.nome ?? 'Lead desconhecido', closer: lead?.closer_responsavel ?? '' };
-    }).filter((d: any) => {
+      if (!lead) return null;
+      return { ...d, lead_nome: lead.nome, closer: lead.closer_responsavel ?? '' };
+    }).filter(Boolean as any).filter((d: any) => {
       if ((userSession?.role ?? '').toLowerCase() === 'admin') return true;
       const lead = leads.find(l => l.id === d.lead_id);
       return d.closer === userSession?.name || lead?.sdr_responsavel === userSession?.name;
@@ -3930,10 +3931,12 @@ export default function CRMView({ userSession, teamMembers, openLeadByName, onLe
     syncEtapaToPostgres(selectedLead, updated);
   };
 
-  const handleDeleteLead = (leadId: string) => {
+  const handleDeleteLead = async (leadId: string) => {
+    await supabase.from('crm_demandas_venda').delete().eq('lead_id', leadId);
     setLeads(prev => prev.filter(l => l.id !== leadId));
     setTarefas(prev => prev.filter(t => t.lead_id !== leadId));
     setAlarmTarefas(prev => prev.filter(t => t.lead_id !== leadId));
+    setDemandasPendentes(prev => prev.filter(d => d.lead_id !== leadId));
     setSelectedLead(null);
   };
 
