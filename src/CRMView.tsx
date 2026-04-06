@@ -353,7 +353,8 @@ interface CRMLead {
   empresa?: string;
   faturamento?: string;
   area?: string;
-  responsavel?: string;
+  closer_responsavel?: string;
+  sdr_responsavel?: string;
   etapa: string;
   status: string;
   origem: string;
@@ -563,7 +564,10 @@ function LeadCard({ lead, proximaTarefa, onClick }: { key?: React.Key; lead: CRM
       )}
       {lead.area && <div className="flex items-center gap-1.5 text-[10px] text-gray-400"><MapPin size={9} className="text-gray-600" /><span className="truncate">{lead.area}</span></div>}
       {lead.faturamento && <div className="flex items-center gap-1.5 text-[10px] text-gray-500"><DollarSign size={9} className="text-gray-600" />{lead.faturamento}</div>}
-      {lead.responsavel && <div className="flex items-center gap-1.5 text-[10px] text-gray-500"><User size={9} className="text-gray-600" />{lead.responsavel}</div>}
+      {(() => {
+        const resp = ['base', 'triagem'].includes(lead.etapa) ? lead.sdr_responsavel : lead.closer_responsavel;
+        return resp ? <div className="flex items-center gap-1.5 text-[10px] text-gray-500"><User size={9} className="text-gray-600" />{resp}</div> : null;
+      })()}
       {lead.programa_apresentado && (() => {
         const p = (lead.programa_apresentado || '').toLowerCase();
         const style = p.includes('pro') ? { background: '#d4af3722', color: '#d4af37', border: '1px solid #d4af3744' }
@@ -616,7 +620,9 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
   lead?: CRMLead; leadId: string; leadName: string; userSession: any; onSaved: (a: CRMAtividade) => void; onCancel: () => void; onLeadUpdated?: (upd: Partial<CRMLead>) => void; onClientCreated?: () => void;
   onTarefaCreated?: (tarefa: CRMTarefa) => void; teamMembers?: TeamMember[]; initialTipo?: 'ligacao' | 'reuniao';
 }) {
-  const [responsavelAtividade, setResponsavelAtividade] = useState(leadObj?.responsavel ?? userSession?.name ?? '');
+  const [responsavelAtividade, setResponsavelAtividade] = useState(
+    (['base', 'triagem'].includes(leadObj?.etapa ?? '') ? leadObj?.sdr_responsavel : leadObj?.closer_responsavel) ?? userSession?.name ?? ''
+  );
   const [tipo, setTipo] = useState<'ligacao' | 'reuniao' | null>(initialTipo ?? null);
   const [statusChamada, setStatusChamada] = useState<'Atendeu' | 'Não atendeu' | null>(null);
   const [touchpoint, setTouchpoint] = useState('');
@@ -923,29 +929,30 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
         } catch (err) {
           console.error('Failed to create scheduled meeting task:', err);
         }
-        // Move lead to rm_marcada + update closer as responsavel
+        // Move lead to rm_marcada + update closer_responsavel (and keep sdr_responsavel)
         try {
           const leadUpd: any = {
             etapa: 'rm_marcada',
             etapa_desde: now,
             proxima_reuniao: localDatetimeToISO(bantDataHora),
             faturamento: bantFaturamento || undefined,
-            responsavel: bantCloser,
+            closer_responsavel: bantCloser,
+            sdr_responsavel: leadObj?.sdr_responsavel || responsavelAtividade || userSession?.name || '',
             tp_atual: 'R1',
             updated_at: now,
           };
           await supabase.from('crm_leads').update(leadUpd).eq('id', leadId);
           onLeadUpdated?.(leadUpd);
           // Track responsavel change in timeline
-          if (bantCloser && bantCloser !== (leadObj?.responsavel ?? '')) {
+          if (bantCloser && bantCloser !== (leadObj?.closer_responsavel ?? '')) {
             await supabase.from('crm_atividades').insert({
               lead_id: leadId,
               tipo: 'alteracao',
               data_atividade: now,
               realizado_por: responsavelAtividade || userSession?.name || '',
               descricao: JSON.stringify({
-                campo: 'responsavel',
-                de: leadObj?.responsavel || '(sem responsável)',
+                campo: 'closer_responsavel',
+                de: leadObj?.closer_responsavel || '(sem responsável)',
                 para: bantCloser,
                 obs: 'Alteração via registro de ligação',
               }),
@@ -1001,7 +1008,7 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
             const clienteData = {
               id: Date.now().toString(),
               name: razaoSocial || leadName,
-              responsible: nomeResponsavel || (leadObj as any)?.nome_responsavel_financeiro || responsavelAtividade || (leadObj?.responsavel ?? ''),
+              responsible: nomeResponsavel || (leadObj as any)?.nome_responsavel_financeiro || responsavelAtividade || (leadObj?.closer_responsavel ?? ''),
               plan: vendaPrograma || 'Pro',
               status: 'Ativo',
               entry_date: entryDate,
@@ -1110,7 +1117,7 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
               lead_nome: leadName,
               lead_telefone: leadObj?.telefone ?? '',
               lead_externo_id: leadObj?.lead_externo_id ?? leadId,
-              closer: responsavelAtividade || leadObj?.responsavel || '',
+              closer: responsavelAtividade || leadObj?.closer_responsavel || '',
               data_hora: new Date(proximaReuniao).toISOString(),
               tipo_reuniao: webhookTipoReuniao_naf,
               duracao_min: 60,
@@ -1124,7 +1131,7 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
       // Sync Postgres → Railway via n8n (fire-and-forget)
       {
         const hoje = new Date().toISOString().split('T')[0];
-        const closer = responsavelAtividade || leadObj?.responsavel || null;
+        const closer = responsavelAtividade || leadObj?.closer_responsavel || null;
         const currentTP = resolvedTP;
 
         if (statusReuniao === 'Não compareceu') {
@@ -1151,7 +1158,7 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
                 lead_nome: leadName,
                 lead_telefone: leadObj?.telefone ?? '',
                 lead_externo_id: leadObj?.lead_externo_id ?? leadId,
-                closer: responsavelAtividade || leadObj?.responsavel || '',
+                closer: responsavelAtividade || leadObj?.closer_responsavel || '',
                 data_hora: new Date(dataReagendamento).toISOString(),
                 tipo_reuniao: currentTP,
                 duracao_min: 60,
@@ -1310,7 +1317,7 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
         id: crypto.randomUUID(),
         type: tipo === 'ligacao' ? 'PreVendas' : 'Vendas',
         category: tipo === 'ligacao' ? 'Ligação' : 'Reunião',
-        collaborator: responsavelAtividade || leadObj?.responsavel || userSession?.name || '',
+        collaborator: responsavelAtividade || leadObj?.closer_responsavel || userSession?.name || '',
         answered: tipo === 'ligacao' ? statusChamada : null,
         touchpoint: tipo === 'ligacao' && touchpoint ? parseInt(touchpoint) : null,
         scheduled: tipo === 'ligacao' ? agendou : false,
@@ -1834,7 +1841,8 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
 }) {
   const isAdmin = (userSession?.role ?? '').toLowerCase() === 'admin';
   const [etapa, setEtapa] = useState(lead.etapa);
-  const [responsavel, setResponsavel] = useState(lead.responsavel ?? '');
+  const [closerResponsavel, setCloserResponsavel] = useState(lead.closer_responsavel ?? '');
+  const [sdrResponsavel, setSdrResponsavel] = useState(lead.sdr_responsavel ?? '');
   const [observacoes, setObservacoes] = useState(lead.observacoes ?? '');
   const [faturamento, setFaturamento] = useState(lead.faturamento ?? '');
   const [area, setArea] = useState(lead.area ?? '');
@@ -1931,7 +1939,8 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
         etapa: 'rm_marcada',
         proxima_reuniao: new Date(arDataHora).toISOString(),
         faturamento: arFaturamento,
-        responsavel: arCloser,
+        closer_responsavel: arCloser,
+        sdr_responsavel: lead.sdr_responsavel || userSession?.name || '',
         etapa_desde: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       };
@@ -1995,7 +2004,7 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
   const handleSave = async () => {
     setSaving(true);
     const upd: Partial<CRMLead> = {
-      etapa, responsavel, observacoes, faturamento, area, tags: localTags,
+      etapa, closer_responsavel: closerResponsavel, sdr_responsavel: sdrResponsavel, observacoes, faturamento, area, tags: localTags,
       programa_apresentado: programaApresentado || null,
       valor_contrato: valorContrato !== '' ? valorContrato : null,
       valor_cc: valorCc !== '' ? valorCc : null,
@@ -2005,18 +2014,18 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
     if (etapa !== lead.etapa) upd.etapa_desde = new Date().toISOString();
     await onSave(upd);
 
-    // Track responsavel change in timeline
-    if (responsavel !== (lead.responsavel ?? '')) {
+    // Track closer_responsavel change in timeline
+    if (closerResponsavel !== (lead.closer_responsavel ?? '')) {
       await supabase.from('crm_atividades').insert({
         lead_id: lead.id,
         tipo: 'alteracao',
         data_atividade: new Date().toISOString(),
         realizado_por: userSession?.name || '',
         descricao: JSON.stringify({
-          campo: 'responsavel',
-          de: lead.responsavel || '(sem responsável)',
-          para: responsavel,
-          obs: 'Alteração manual de responsável',
+          campo: 'closer_responsavel',
+          de: lead.closer_responsavel || '(sem responsável)',
+          para: closerResponsavel,
+          obs: 'Alteração manual de closer responsável',
         }),
         created_at: new Date().toISOString(),
       });
@@ -2027,24 +2036,55 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
         data_atividade: new Date().toISOString(),
         realizado_por: userSession?.name || '',
         descricao: JSON.stringify({
-          campo: 'responsavel',
-          de: lead.responsavel || '(sem responsável)',
-          para: responsavel,
-          obs: 'Alteração manual de responsável',
+          campo: 'closer_responsavel',
+          de: lead.closer_responsavel || '(sem responsável)',
+          para: closerResponsavel,
+          obs: 'Alteração manual de closer responsável',
+        }),
+        created_at: new Date().toISOString(),
+      } as any, ...prev]);
+    }
+    // Track sdr_responsavel change in timeline
+    if (sdrResponsavel !== (lead.sdr_responsavel ?? '')) {
+      await supabase.from('crm_atividades').insert({
+        lead_id: lead.id,
+        tipo: 'alteracao',
+        data_atividade: new Date().toISOString(),
+        realizado_por: userSession?.name || '',
+        descricao: JSON.stringify({
+          campo: 'sdr_responsavel',
+          de: lead.sdr_responsavel || '(sem responsável)',
+          para: sdrResponsavel,
+          obs: 'Alteração manual de SDR responsável',
+        }),
+        created_at: new Date().toISOString(),
+      });
+      setAtividades(prev => [{
+        id: `temp-${Date.now()}`,
+        lead_id: lead.id,
+        tipo: 'alteracao',
+        data_atividade: new Date().toISOString(),
+        realizado_por: userSession?.name || '',
+        descricao: JSON.stringify({
+          campo: 'sdr_responsavel',
+          de: lead.sdr_responsavel || '(sem responsável)',
+          para: sdrResponsavel,
+          obs: 'Alteração manual de SDR responsável',
         }),
         created_at: new Date().toISOString(),
       } as any, ...prev]);
     }
 
     // Sync closer → Railway quando responsável muda (fire-and-forget)
-    if (lead.lead_externo_id && responsavel !== (lead.responsavel ?? '')) {
-      syncPostgres(lead.lead_externo_id, { closer: responsavel });
+    if (lead.lead_externo_id && closerResponsavel !== (lead.closer_responsavel ?? '')) {
+      syncPostgres(lead.lead_externo_id, { closer: closerResponsavel, sdr: sdrResponsavel });
       fetch(`${WEBHOOK_BASE}/webhook/crm-sync-etapa`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           lead_externo_id: lead.lead_externo_id,
-          closer: responsavel,
+          closer: closerResponsavel,
+          sdr: sdrResponsavel,
         }),
       }).catch(e => console.warn('[sync closer]', e));
     }
@@ -2062,14 +2102,15 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
       if (valorCc !== '') infoFields.rs_cc = valorCc;
       if (valorMrr && valorContrato) infoFields.tempo_contrato = (Number(valorContrato) / Number(valorMrr)).toFixed(0);
       if (valorMrr !== '') infoFields.mrr_adicionado = valorMrr;
-      if (responsavel) infoFields.closer = responsavel;
+      if (closerResponsavel) infoFields.closer = closerResponsavel;
+      if (sdrResponsavel) infoFields.sdr = sdrResponsavel;
       syncPostgres(lead.lead_externo_id, infoFields);
     }
 
     // Sync mudança de etapa → Railway via n8n (fire-and-forget)
     // Pular rm_marcada: o syncPostgres correto (com Data_Reuniao_Marcada) já é disparado pelo formulário de atividade
     if (lead.lead_externo_id && etapa !== lead.etapa && etapa !== 'rm_marcada') {
-      syncPostgres(lead.lead_externo_id, { etapa, closer: responsavel || null });
+      syncPostgres(lead.lead_externo_id, { etapa, closer: closerResponsavel || null, sdr: sdrResponsavel || null });
     }
 
     setSaving(false);
@@ -2090,7 +2131,8 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
   const handleLeadUpdated = (upd: Partial<CRMLead>) => {
     onSave(upd);
     if (upd.etapa) setEtapa(upd.etapa);
-    if (upd.responsavel) setResponsavel(upd.responsavel);
+    if (upd.closer_responsavel) setCloserResponsavel(upd.closer_responsavel);
+    if (upd.sdr_responsavel) setSdrResponsavel(upd.sdr_responsavel);
   };
 
   const handleAgendarTarefa = async () => {
@@ -2221,7 +2263,7 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
         const clienteData = {
           id: Date.now().toString(),
           name: lead.nome,
-          responsible: rrNomeResponsavel || (lead as any)?.nome_responsavel_financeiro || lead.responsavel || '',
+          responsible: rrNomeResponsavel || (lead as any)?.nome_responsavel_financeiro || lead.closer_responsavel || '',
           plan: lead.programa_apresentado === 'Pro' ? 'Pro' : lead.programa_apresentado === 'Lite' ? 'Lite' : 'Basic',
           status: 'Onboarding',
           entry_date: entryDate,
@@ -2259,7 +2301,7 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
     try {
       const taskData2 = {
         id: crypto.randomUUID(), type: 'Vendas', category: 'Reunião',
-        collaborator: lead.responsavel || userSession?.name || '', meeting_status: rrStatusReuniao,
+        collaborator: lead.closer_responsavel || userSession?.name || '', meeting_status: rrStatusReuniao,
         sale_status: rrResultado || null,
         contract_value: rrValorContrato ? parseFloat(rrValorContrato) : null,
         cash_collect: rrValorCc ? parseFloat(rrValorCc) : null,
@@ -2302,12 +2344,13 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
             lead_nome: lead.nome,
             lead_telefone: lead.telefone ?? '',
             lead_externo_id: lead.lead_externo_id ?? lead.id,
-            closer: responsavel || userSession?.name || '',
+            closer: closerResponsavel || userSession?.name || '',
+            sdr: sdrResponsavel || userSession?.name || '',
             tipo_reuniao: webhookTipoReuniao,
             data_hora: new Date(rrProximaReuniao).toISOString(),
             duracao_min: 60,
             reagendamento: rrResultado === 'Reagendou',
-            bant: { sdr: userSession?.name || '' },
+            bant: { sdr: sdrResponsavel || userSession?.name || '' },
           }),
         }).catch(e => { console.warn('Webhook agendar-reuniao (CORS em dev):', e.message); return null; });
       } catch (err) { console.error('Failed to send agendar-reuniao webhook:', err); }
@@ -2323,7 +2366,7 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
     // 6. Sync Postgres → Railway via n8n (fire-and-forget)
     {
       const hoje = new Date().toISOString().split('T')[0];
-      const closer = responsavel || null;
+      const closer = closerResponsavel || null;
       const currentTP = resolvedTP_rr;
 
       if (rrStatusReuniao === 'Não compareceu') {
@@ -2471,12 +2514,13 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
             lead_nome: lead.nome,
             lead_telefone: lead.telefone ?? '',
             lead_externo_id: lead.lead_externo_id ?? lead.id,
-            closer: t.responsavel || lead.responsavel || '',
+            closer: t.responsavel || lead.closer_responsavel || '',
+            sdr: lead.sdr_responsavel || userSession?.name || '',
             tipo_reuniao: t.titulo?.includes('R2') ? 'R2' : 'R1',
             data_hora: new Date(reagendarData).toISOString(),
             duracao_min: 60,
             reagendamento: true,
-            bant: { sdr: userSession?.name || '' },
+            bant: { sdr: lead.sdr_responsavel || userSession?.name || '' },
           }),
         }).catch(() => null);
       } catch { /* fire-and-forget */ }
@@ -2491,7 +2535,7 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
           Data_Reuniao_Marcada: new Date(reagendarData).toISOString().split('T')[0],
           hora_marcada: horaReag,
           TP: agendamentoTP,
-          closer: t.responsavel || lead.responsavel || null,
+          closer: t.responsavel || lead.closer_responsavel || null,
         });
       }
       setReagendandoTarefa(null);
@@ -2539,7 +2583,7 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
     if (ativData) setAtividades(prev => [ativData, ...prev]);
 
     // 2. comercial_tasks (relatório)
-    const collaborator = t.responsavel || lead.responsavel || userSession?.name || '';
+    const collaborator = t.responsavel || lead.closer_responsavel || lead.sdr_responsavel || userSession?.name || '';
     const category = tipoAtiv === 'ligacao' ? 'Ligação' : 'Tarefa';
     try {
       await supabase.from('comercial_tasks').insert({
@@ -2659,11 +2703,11 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
               </div>
             </div>
 
-            {/* Responsável */}
+            {/* SDR Responsável */}
             <div>
-              <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">Responsável</label>
+              <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">SDR Responsável</label>
               {isAdmin ? (
-                <select value={responsavel} onChange={e => setResponsavel(e.target.value)}
+                <select value={sdrResponsavel} onChange={e => setSdrResponsavel(e.target.value)}
                   className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-brand-primary appearance-none"
                 >
                   <option value="" className="bg-bg-main">Sem responsável</option>
@@ -2671,8 +2715,25 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
                     .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'))
                     .map(m => <option key={m.id} value={m.name} className="bg-bg-main">{m.name}</option>)}
                 </select>
-              ) : <p className="text-sm text-gray-300">{responsavel || '—'}</p>}
+              ) : <p className="text-sm text-gray-300">{sdrResponsavel || '—'}</p>}
             </div>
+
+            {/* Closer Responsável — visível apenas a partir de rm_marcada */}
+            {!['base', 'triagem'].includes(etapa) && (
+              <div>
+                <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">Closer Responsável</label>
+                {isAdmin ? (
+                  <select value={closerResponsavel} onChange={e => setCloserResponsavel(e.target.value)}
+                    className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-brand-primary appearance-none"
+                  >
+                    <option value="" className="bg-bg-main">Sem responsável</option>
+                    {teamMembers.filter(m => ['admin','comercial'].includes((m.role ?? '').toLowerCase()))
+                      .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'))
+                      .map(m => <option key={m.id} value={m.name} className="bg-bg-main">{m.name}</option>)}
+                  </select>
+                ) : <p className="text-sm text-gray-300">{closerResponsavel || '—'}</p>}
+              </div>
+            )}
 
             {/* Etapa */}
             {isAdmin && (
@@ -3202,7 +3263,7 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
 function NewLeadModal({ onClose, onSave, userSession, teamMembers }: {
   onClose: () => void; onSave: (lead: Partial<CRMLead>) => Promise<void>; userSession: any; teamMembers: TeamMember[];
 }) {
-  const [form, setForm] = useState({ nome: '', telefone: '', empresa: '', faturamento: '', area: '', responsavel: '' });
+  const [form, setForm] = useState({ nome: '', telefone: '', empresa: '', faturamento: '', area: '', sdr_responsavel: '' });
   const [origem, setOrigem] = useState('');
   const [origemCustom, setOrigemCustom] = useState('');
   const [saving, setSaving] = useState(false);
@@ -3260,8 +3321,8 @@ function NewLeadModal({ onClose, onSave, userSession, teamMembers }: {
             </div>
           )}
           <div>
-            <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">Responsável</label>
-            <select value={form.responsavel} onChange={e => setForm(p => ({ ...p, responsavel: e.target.value }))}
+            <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">SDR Responsável</label>
+            <select value={form.sdr_responsavel} onChange={e => setForm(p => ({ ...p, sdr_responsavel: e.target.value }))}
               className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-brand-primary appearance-none"
             >
               <option value="" className="bg-bg-main">Sem responsável</option>
@@ -3394,11 +3455,11 @@ function TaskAlarmPopup({ tarefa, lead, onDismiss, onOpenLead, onComplete, onRes
                 <span className="text-gray-400">Lead:</span>
                 <span className="text-white font-medium">{lead.nome}</span>
               </div>
-              {lead.responsavel && lead.responsavel !== tarefa.responsavel && (
+              {lead.closer_responsavel && lead.closer_responsavel !== tarefa.responsavel && (
                 <div className="flex items-center gap-2 text-xs">
                   <Users size={13} className="text-purple-400 flex-shrink-0" />
-                  <span className="text-gray-400">Responsável lead:</span>
-                  <span className="text-white font-medium">{lead.responsavel}</span>
+                  <span className="text-gray-400">Closer:</span>
+                  <span className="text-white font-medium">{lead.closer_responsavel}</span>
                 </div>
               )}
               {lead.telefone && (
@@ -3497,7 +3558,8 @@ export default function CRMView({ userSession, teamMembers, openLeadByName, onLe
         // Mostrar apenas para responsável pela tarefa ou pela oportunidade
         const lead = leads.find(l => l.id === t.lead_id);
         const isTaskResponsavel = (t.responsavel ?? '').toLowerCase() === userName.toLowerCase();
-        const isLeadResponsavel = (lead?.responsavel ?? '').toLowerCase() === userName.toLowerCase();
+        const isLeadResponsavel = (lead?.closer_responsavel ?? '').toLowerCase() === userName.toLowerCase()
+          || (lead?.sdr_responsavel ?? '').toLowerCase() === userName.toLowerCase();
         return isTaskResponsavel || isLeadResponsavel;
       });
 
@@ -3537,7 +3599,7 @@ export default function CRMView({ userSession, teamMembers, openLeadByName, onLe
         data_atividade: now, realizado_por: userSession?.name ?? '', created_at: now,
       });
       // 2. comercial_tasks (relatório do responsável pela tarefa)
-      const collaborator = tarefa.responsavel || lead?.responsavel || userSession?.name || '';
+      const collaborator = tarefa.responsavel || lead?.closer_responsavel || lead?.sdr_responsavel || userSession?.name || '';
       try {
         await supabase.from('comercial_tasks').insert({
           id: crypto.randomUUID(), type: 'PreVendas', category: 'Tarefa',
@@ -3573,12 +3635,13 @@ export default function CRMView({ userSession, teamMembers, openLeadByName, onLe
           lead_nome: lead?.nome ?? '',
           lead_telefone: lead?.telefone ?? '',
           lead_externo_id: lead?.lead_externo_id ?? lead?.id ?? '',
-          closer: tarefa.responsavel || lead?.responsavel || '',
+          closer: tarefa.responsavel || lead?.closer_responsavel || '',
+          sdr: lead?.sdr_responsavel || userSession?.name || '',
           tipo_reuniao: tarefa.titulo?.includes('R2') ? 'R2' : 'R1',
           data_hora: new Date(novaData).toISOString(),
           duracao_min: 60,
           reagendamento: true,
-          bant: { sdr: userSession?.name || '' },
+          bant: { sdr: lead?.sdr_responsavel || userSession?.name || '' },
         }),
       }).catch(() => null);
     } catch { /* fire-and-forget */ }
@@ -3593,7 +3656,7 @@ export default function CRMView({ userSession, teamMembers, openLeadByName, onLe
         Data_Reuniao_Marcada: new Date(novaData).toISOString().split('T')[0],
         hora_marcada: horaKanban,
         TP: agendamentoTP,
-        closer: tarefa.responsavel || lead.responsavel || null,
+        closer: tarefa.responsavel || lead.closer_responsavel || null,
       });
     }
   };
@@ -3687,7 +3750,8 @@ export default function CRMView({ userSession, teamMembers, openLeadByName, onLe
         valor_cc: updated.valor_cc ?? leadData.valor_cc,
         valor_mrr: updated.valor_mrr ?? leadData.valor_mrr,
         programa_apresentado: updated.programa_apresentado ?? leadData.programa_apresentado,
-        responsavel: updated.responsavel ?? leadData.responsavel,
+        closer: updated.closer_responsavel ?? leadData.closer_responsavel,
+        sdr: updated.sdr_responsavel ?? leadData.sdr_responsavel,
         motivo_perda: updated.motivo_perda ?? leadData.motivo_perda,
         updated_at: new Date().toISOString(),
       }),
@@ -3725,7 +3789,7 @@ export default function CRMView({ userSession, teamMembers, openLeadByName, onLe
       try {
         const webhookBase = import.meta.env.VITE_WEBHOOK_BASE?.replace('/webhook/dashboard', '')
           ?? 'https://webhook.m2black.com';
-        console.log('[criar-lead-manual] payload:', JSON.stringify({nome: lead.nome, telefone: lead.telefone, responsavel: lead.responsavel}));
+        console.log('[criar-lead-manual] payload:', JSON.stringify({nome: lead.nome, telefone: lead.telefone, sdr: lead.sdr_responsavel}));
         const res = await fetch(`${webhookBase}/webhook/criar-lead-manual`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -3735,7 +3799,7 @@ export default function CRMView({ userSession, teamMembers, openLeadByName, onLe
             telefone: lead.telefone ?? '',
             area: lead.area ?? '',
             faturamento: lead.faturamento ?? '',
-            responsavel: lead.responsavel ?? '',
+            sdr: lead.sdr_responsavel ?? '',
             anuncio: lead.anuncio ?? lead.origem ?? '',
           }),
         });
@@ -3762,12 +3826,13 @@ export default function CRMView({ userSession, teamMembers, openLeadByName, onLe
     tarefas.map(t => [t.lead_id, t]).filter(([, t]) => !(t as CRMTarefa).concluida)
   );
 
-  const responsaveis = [...new Set(leads.map(l => l.responsavel).filter(Boolean) as string[])].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+  const responsaveis = [...new Set(leads.flatMap(l => [l.closer_responsavel, l.sdr_responsavel]).filter(Boolean) as string[])].sort((a, b) => a.localeCompare(b, 'pt-BR'));
 
   const filteredLeads = leads
     .filter(l => {
-      if (filtroResponsavel === '__sem__' && l.responsavel) return false;
-      if (filtroResponsavel && filtroResponsavel !== 'Todos' && filtroResponsavel !== '__sem__' && l.responsavel !== filtroResponsavel) return false;
+      const respExibido = ['base', 'triagem'].includes(l.etapa) ? l.sdr_responsavel : l.closer_responsavel;
+      if (filtroResponsavel === '__sem__' && (l.closer_responsavel || l.sdr_responsavel)) return false;
+      if (filtroResponsavel && filtroResponsavel !== 'Todos' && filtroResponsavel !== '__sem__' && l.closer_responsavel !== filtroResponsavel && l.sdr_responsavel !== filtroResponsavel) return false;
       if (filtroTag && !(l.tags ?? []).includes(filtroTag)) return false;
       if (filtroScore !== 'Todos') {
         const { grade } = getLeadScore(l);
@@ -3779,7 +3844,8 @@ export default function CRMView({ userSession, teamMembers, openLeadByName, onLe
         (l.telefone ?? '').includes(q) ||
         (l.empresa ?? '').toLowerCase().includes(q) ||
         (l.area ?? '').toLowerCase().includes(q) ||
-        (l.responsavel ?? '').toLowerCase().includes(q);
+        (l.closer_responsavel ?? '').toLowerCase().includes(q) ||
+        (l.sdr_responsavel ?? '').toLowerCase().includes(q);
     })
     ;
 
