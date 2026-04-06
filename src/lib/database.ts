@@ -371,8 +371,11 @@ function dbToTask(row: Record<string, unknown>): ComercialTask {
     createdAt: row.created_at as string,
   };
 }
-export async function getComercialTasks(): Promise<ComercialTask[]> {
-  const { data, error } = await supabase.from('comercial_tasks').select('*').order('created_at', { ascending: false }).limit(200);
+export async function getComercialTasks(startDate?: string, endDate?: string): Promise<ComercialTask[]> {
+  let query = supabase.from('comercial_tasks').select('*').order('created_at', { ascending: false });
+  if (startDate) query = query.gte('created_at', startDate);
+  if (endDate) query = query.lte('created_at', endDate);
+  const { data, error } = await query.limit(1000);
   if (error) throw error;
   return (data ?? []).map((row) => dbToTask(row as Record<string, unknown>));
 }

@@ -2878,14 +2878,6 @@ const ComercialView = ({ teamMembers, userSession, onOpenInCRM }: {
   const [customInicio, setCustomInicio] = useState(format(startOfMonth(new Date()), 'yyyy-MM-dd'));
   const [customFim, setCustomFim] = useState(format(new Date(), 'yyyy-MM-dd'));
 
-  // Load tasks from Supabase on mount
-  useEffect(() => {
-    getComercialTasks().then(setTasks).catch(console.error);
-    if ((userSession?.role ?? '').toLowerCase() !== 'admin') {
-      setSelectedCollaborator(userSession?.name ?? '');
-    }
-  }, []);
-
   const dateRange = useMemo(() => {
     const now = new Date();
     if (periodo === 'hoje') return { start: startOfDay(now), end: endOfDay(now) };
@@ -2893,6 +2885,14 @@ const ComercialView = ({ teamMembers, userSession, onOpenInCRM }: {
     if (periodo === 'mes') return { start: startOfMonth(now), end: endOfDay(now) };
     return { start: startOfDay(parseISO(customInicio)), end: endOfDay(parseISO(customFim)) };
   }, [periodo, customInicio, customFim]);
+
+  // Load tasks from Supabase filtered by dateRange
+  useEffect(() => {
+    getComercialTasks(dateRange.start.toISOString(), dateRange.end.toISOString()).then(setTasks).catch(console.error);
+    if ((userSession?.role ?? '').toLowerCase() !== 'admin') {
+      setSelectedCollaborator(userSession?.name ?? '');
+    }
+  }, [dateRange]);
 
   const filteredTasks = useMemo(() => {
     const isAdmin = (userSession?.role ?? '').toLowerCase() === 'admin';
