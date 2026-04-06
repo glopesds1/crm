@@ -6,6 +6,7 @@ import {
   Filter, SortAsc, CalendarDays, FileText, CheckCircle2, AlertCircle,
   PhoneCall, Video, Image as ImageIcon, Upload, Bell, Volume2,
   Briefcase, MapPin, Target, TrendingUp, Save, MoreHorizontal,
+  Mic, Square, Loader2, ThumbsUp, AlertTriangle, ChevronRight,
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import type {
@@ -434,7 +435,8 @@ type LeadModalProps = {
 };
 
 function LeadModal({ lead, stages, tenantId, tarefas, onClose, onUpdate, onDelete, onCreateTarefa, onUpdateTarefa, onImageClick, userName }: LeadModalProps) {
-  const [activeTab, setActiveTab] = useState<'info' | 'timeline' | 'tarefas'>('info');
+  const [activeTab, setActiveTab] = useState<'detalhes' | 'atendimentos' | 'tarefas' | 'notas'>('detalhes');
+  const [nota, setNota] = useState(lead.observacoes || '');
   const [form, setForm] = useState({ ...lead });
   const [saving, setSaving] = useState(false);
   const [activities, setActivities] = useState<CrmClientLeadActivity[]>([]);
@@ -449,6 +451,105 @@ function LeadModal({ lead, stages, tenantId, tarefas, onClose, onUpdate, onDelet
   const [actImagePreview, setActImagePreview] = useState('');
   const [sendingActivity, setSendingActivity] = useState(false);
 
+  // Audio recording
+  const [showRecPanel, setShowRecPanel] = useState(false);
+  const [recState, setRecState] = useState<'idle' | 'recording' | 'processing' | 'done'>('idle');
+  const [recSeconds, setRecSeconds] = useState(0);
+  const [recResult, setRecResult] = useState<any>(null);
+  const [recError, setRecError] = useState('');
+  const mediaRecRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mr = new MediaRecorder(stream, { mimeType: MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 'audio/ogg' });
+      audioChunksRef.current = [];
+      mr.ondataavailable = e => { if (e.data.size > 0) audioChunksRef.current.push(e.data); };
+      mr.start(1000);
+      mediaRecRef.current = mr;
+      setRecState('recording');
+      setRecSeconds(0);
+      timerRef.current = setInterval(() => setRecSeconds(s => s + 1), 1000);
+    } catch { setRecError('Não foi possível acessar o microfone.'); }
+  };
+
+  const stopAndAnalyze = async () => {
+    if (!mediaRecRef.current) return;
+    if (timerRef.current) clearInterval(timerRef.current);
+    setRecState('processing');
+    mediaRecRef.current.stop();
+    mediaRecRef.current.stream.getTracks().forEach(t => t.stop());
+    await new Promise<void>(res => { if (mediaRecRef.current) mediaRecRef.current.onstop = () => res(); setTimeout(res, 1500); });
+
+    try {
+      const blob = new Blob(audioChunksRef.current, { type: audioChunksRef.current[0]?.type || 'audio/webm' });
+      const base64 = await new Promise<string>((res, rej) => {
+        const r = new FileReader();
+        r.onload = () => res((r.result as string).split(',')[1]);
+        r.onerror = rej;
+        r.readAsDataURL(blob);
+      });
+      const GEMINI_KEY = import.meta.env.VITE_GEMINI_API_KEY;
+      const prompt = `Você é o Taleco, consultor comercial da M2 Black especializado em marketing para construção civil.
+Analise este áudio de ligação/reunião e retorne JSON válido no formato:
+{
+  "transcricao": "transcrição fiel completa",
+  "tipo_ligacao": "ligação" ou "reunião",
+  "servico_identificado": "Ex: Reforma, Construção Financiada, Projetos ou Outro",
+  "dor_encontrada": true/false,
+  "momento_uau": true/false,
+  "resumo": "resumo em 2-3 linhas",
+  "nota_geral": número de 1 a 10,
+  "acertos": ["acerto 1","acerto 2","acerto 3"],
+  "melhorias": ["melhoria 1","melhoria 2","melhoria 3"],
+  "proximos_passos": ["passo 1","passo 2"],
+  "comentario_taleco": "comentário pessoal e direto do Taleco para o vendedor, no estilo mentor"
+}
+Retorne APENAS o JSON, sem markdown, sem explicação.`;
+
+      const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_KEY}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ contents: [{ parts: [{ inline_data: { mime_type: blob.type, data: base64 } }, { text: prompt }] }] }),
+      });
+      const data = await resp.json();
+      if (!resp.ok) throw new Error(data.error?.message || 'Erro Gemini');
+      let raw = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+      raw = raw.replace(/```json|```/g, '').trim();
+      const result = JSON.parse(raw);
+      setRecResult({ ...result, duracao_segundos: recSeconds });
+
+      // Salva em analises_ligacao com lead_id
+      await supabase.from('analises_ligacao').insert({
+        tenant_id: tenantId, lead_id: lead.id,
+        duracao_segundos: recSeconds, tipo_ligacao: result.tipo_ligacao,
+        servico_identificado: result.servico_identificado,
+        dor_encontrada: result.dor_encontrada, momento_uau: result.momento_uau,
+        resumo: result.resumo, acertos: result.acertos, melhorias: result.melhorias,
+        proximos_passos: result.proximos_passos, nota_geral: result.nota_geral,
+        comentario_taleco: result.comentario_taleco, transcricao: result.transcricao,
+      });
+
+      // Salva como atividade na timeline
+      const act = await createLeadActivity({
+        leadId: lead.id, tenantId, tipo: 'analise_audio',
+        subtipo: result.tipo_ligacao,
+        conteudo: `**${result.resumo}**\n\n✅ Acertos: ${(result.acertos || []).join(' • ')}\n⚠️ Melhorias: ${(result.melhorias || []).join(' • ')}\n\n💬 Taleco: ${result.comentario_taleco}`,
+        autor: userName || 'Usuário',
+        imagemUrl: '', dados: { analise: result },
+      });
+      setActivities(prev => [act, ...prev]);
+      setRecState('done');
+    } catch (err: any) {
+      setRecError(err.message || 'Erro ao processar áudio.');
+      setRecState('idle');
+    }
+  };
+
+  const fmtRecTime = (s: number) => `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
+
   // Task form
   const [showTaskForm, setShowTaskForm] = useState(false);
   const [taskTitle, setTaskTitle] = useState('');
@@ -462,7 +563,7 @@ function LeadModal({ lead, stages, tenantId, tarefas, onClose, onUpdate, onDelet
   useEffect(() => { setForm({ ...lead }); }, [lead]);
 
   useEffect(() => {
-    if (activeTab === 'timeline') {
+    if (activeTab === 'atendimentos') {
       setLoadingActivities(true);
       getLeadActivities(lead.id).then(setActivities).catch(console.error).finally(() => setLoadingActivities(false));
     }
@@ -539,33 +640,104 @@ function LeadModal({ lead, stages, tenantId, tarefas, onClose, onUpdate, onDelet
   const inputCls = 'w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder-white/30 focus:outline-none focus:border-brand-primary transition-colors';
 
   const TABS = [
-    { id: 'info' as const, label: 'Informações' },
-    { id: 'timeline' as const, label: 'Atividades' },
+    { id: 'detalhes' as const, label: 'Detalhes' },
+    { id: 'atendimentos' as const, label: 'Atendimentos' },
     { id: 'tarefas' as const, label: 'Tarefas' },
+    { id: 'notas' as const, label: 'Notas' },
   ];
 
   const TIPO_BADGES: Record<string, string> = {
     comentario: 'bg-blue-500/20 text-blue-400', ligacao: 'bg-green-500/20 text-green-400',
     reuniao: 'bg-purple-500/20 text-purple-400', tarefa: 'bg-amber-500/20 text-amber-400',
     email: 'bg-pink-500/20 text-pink-400', movimentacao: 'bg-cyan-500/20 text-cyan-400',
+    analise_audio: 'bg-brand-primary/20 text-brand-primary',
+  };
+
+  const currentStage = stages.find(s => s.id === form.stageId);
+
+  const handleMoveToStatus = async (status: 'ganho' | 'perdido' | 'congelado') => {
+    const statusStage = stages.find(s => s.nome.toLowerCase().includes(status === 'ganho' ? 'fech' : status === 'perdido' ? 'perd' : 'conge'));
+    const updated = { ...form, status, stageId: statusStage?.id ?? form.stageId };
+    setForm(updated);
+    await onUpdate(updated);
   };
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={onClose}>
-      <motion.div initial={{ opacity: 0, scale: 0.95, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95, y: 20 }}
-        onClick={e => e.stopPropagation()} className="bg-[#0d1117] border border-white/10 rounded-2xl w-full max-w-3xl max-h-[90vh] flex flex-col overflow-hidden">
-        {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-white/5">
-          <h2 className="text-lg font-bold text-white truncate">{lead.nome}</h2>
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-white/5"><X className="w-5 h-5 text-white/50" /></button>
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-3" onClick={onClose}>
+      <motion.div initial={{ opacity: 0, scale: 0.97, y: 16 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.97, y: 16 }}
+        onClick={e => e.stopPropagation()}
+        className="bg-[#0d1117] border border-white/10 rounded-2xl w-full max-w-5xl h-[92vh] flex flex-col overflow-hidden shadow-2xl">
+
+        {/* ── HEADER ── */}
+        <div className="px-6 pt-5 pb-3 border-b border-white/5 flex-shrink-0">
+          <div className="flex items-start gap-4">
+            {/* Nome editável */}
+            <input
+              className="flex-1 bg-transparent text-xl font-bold text-white placeholder-white/30 border-b border-transparent focus:border-brand-primary focus:outline-none pb-1 transition-colors"
+              value={form.nome}
+              onChange={e => setForm({ ...form, nome: e.target.value })}
+              onBlur={handleSave}
+            />
+            {/* Botões de status */}
+            <div className="flex items-center gap-2 flex-shrink-0">
+              <button onClick={() => handleMoveToStatus('ganho')}
+                className="px-4 py-1.5 rounded-lg text-xs font-bold bg-green-500/10 text-green-400 border border-green-500/20 hover:bg-green-500/20 transition-colors">
+                Ganho
+              </button>
+              <button onClick={() => handleMoveToStatus('congelado')}
+                className="px-4 py-1.5 rounded-lg text-xs font-bold bg-blue-500/10 text-blue-400 border border-blue-500/20 hover:bg-blue-500/20 transition-colors">
+                Congelar
+              </button>
+              <button onClick={() => handleMoveToStatus('perdido')}
+                className="px-4 py-1.5 rounded-lg text-xs font-bold bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20 transition-colors">
+                Perda
+              </button>
+              <button onClick={onClose} className="ml-2 p-1.5 rounded-lg hover:bg-white/5 text-white/40 hover:text-white transition-colors">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+          </div>
+
+          {/* Barra de etapas horizontal */}
+          <div className="flex items-center gap-0 mt-4 overflow-x-auto pb-1">
+            {stages.map((stage, i) => {
+              const isCurrent = form.stageId === stage.id;
+              const currentIdx = stages.findIndex(s => s.id === form.stageId);
+              const isPast = i < currentIdx;
+              return (
+                <button key={stage.id} onClick={async () => { const updated = { ...form, stageId: stage.id }; setForm(updated); await onUpdate(updated); }}
+                  className="flex items-center flex-shrink-0">
+                  <div className={`px-3 py-1.5 text-[11px] font-bold uppercase tracking-wide whitespace-nowrap transition-all ${
+                    isCurrent ? 'text-black bg-brand-primary' :
+                    isPast ? 'text-brand-primary/60 bg-brand-primary/10' :
+                    'text-white/30 bg-white/5 hover:text-white/60'
+                  } ${i === 0 ? 'rounded-l-lg' : ''} ${i === stages.length - 1 ? 'rounded-r-lg' : ''}`}>
+                    {stage.nome}
+                  </div>
+                  {i < stages.length - 1 && (
+                    <div className={`w-4 h-4 -mx-0.5 relative flex-shrink-0 ${isCurrent || isPast ? 'text-brand-primary/40' : 'text-white/10'}`}
+                      style={{ clipPath: 'polygon(0 0, 75% 50%, 0 100%)', background: isCurrent ? 'rgba(0,255,136,0.15)' : isPast ? 'rgba(0,255,136,0.08)' : 'rgba(255,255,255,0.03)' }} />
+                  )}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Sub-header: responsável + empresa */}
+          <div className="flex items-center gap-6 mt-3 text-xs text-white/40">
+            {form.responsavel && <span className="flex items-center gap-1.5"><User className="w-3.5 h-3.5" /> {form.responsavel}</span>}
+            {form.empresa && <span className="flex items-center gap-1.5"><Building2 className="w-3.5 h-3.5" /> {form.empresa}</span>}
+            {form.telefone && <span className="flex items-center gap-1.5"><PhoneCall className="w-3.5 h-3.5" /> {form.telefone}</span>}
+            {form.ticketEstimado > 0 && <span className="flex items-center gap-1.5 text-brand-primary/70"><DollarSign className="w-3.5 h-3.5" /> R$ {form.ticketEstimado.toLocaleString('pt-BR')}</span>}
+          </div>
         </div>
 
-        {/* Tabs */}
-        <div className="flex gap-1 px-6 pt-3">
+        {/* ── TABS ── */}
+        <div className="flex gap-0 px-6 border-b border-white/5 flex-shrink-0">
           {TABS.map(tab => (
             <button key={tab.id} onClick={() => setActiveTab(tab.id)}
-              className={`px-4 py-2 text-sm rounded-lg font-medium transition-colors ${activeTab === tab.id ? 'bg-brand-primary/10 text-brand-primary' : 'text-white/40 hover:text-white/60 hover:bg-white/5'}`}>
+              className={`px-5 py-3 text-sm font-medium border-b-2 transition-all ${activeTab === tab.id ? 'border-brand-primary text-brand-primary' : 'border-transparent text-white/40 hover:text-white/70'}`}>
               {tab.label}
               {tab.id === 'tarefas' && tarefas.filter(t => !t.concluida).length > 0 && (
                 <span className="ml-1.5 bg-amber-500/20 text-amber-400 px-1.5 py-0.5 rounded-full text-[10px] font-bold">{tarefas.filter(t => !t.concluida).length}</span>
@@ -576,8 +748,8 @@ function LeadModal({ lead, stages, tenantId, tarefas, onClose, onUpdate, onDelet
 
         {/* Body */}
         <div className="flex-1 overflow-y-auto p-6">
-          {/* ── INFO TAB ── */}
-          {activeTab === 'info' && (
+          {/* ── DETALHES TAB ── */}
+          {activeTab === 'detalhes' && (
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div><label className="block text-xs text-white/40 mb-1">Nome</label><input className={inputCls} value={form.nome} onChange={e => setForm({ ...form, nome: e.target.value })} /></div>
@@ -620,18 +792,100 @@ function LeadModal({ lead, stages, tenantId, tarefas, onClose, onUpdate, onDelet
             </div>
           )}
 
-          {/* ── TIMELINE TAB ── */}
-          {activeTab === 'timeline' && (
+          {/* ── ATENDIMENTOS TAB ── */}
+          {activeTab === 'atendimentos' && (
             <div className="space-y-4">
               {/* Buttons */}
-              <div className="flex gap-2">
-                <button onClick={() => { setShowActivityForm(true); setActType('ligacao'); }} className="flex items-center gap-2 bg-green-500/10 text-green-400 px-4 py-2 rounded-xl text-sm font-medium hover:bg-green-500/20">
+              <div className="flex flex-wrap gap-2">
+                <button onClick={() => { setShowActivityForm(true); setActType('ligacao'); setShowRecPanel(false); }} className="flex items-center gap-2 bg-green-500/10 text-green-400 px-4 py-2 rounded-xl text-sm font-medium hover:bg-green-500/20">
                   <PhoneCall className="w-4 h-4" /> Registrar Ligação
                 </button>
-                <button onClick={() => { setShowActivityForm(true); setActType('reuniao'); }} className="flex items-center gap-2 bg-purple-500/10 text-purple-400 px-4 py-2 rounded-xl text-sm font-medium hover:bg-purple-500/20">
+                <button onClick={() => { setShowActivityForm(true); setActType('reuniao'); setShowRecPanel(false); }} className="flex items-center gap-2 bg-purple-500/10 text-purple-400 px-4 py-2 rounded-xl text-sm font-medium hover:bg-purple-500/20">
                   <Video className="w-4 h-4" /> Registrar Reunião
                 </button>
+                <button onClick={() => { setShowRecPanel(p => !p); setShowActivityForm(false); setRecState('idle'); setRecResult(null); setRecError(''); }} className="flex items-center gap-2 bg-brand-primary/10 text-brand-primary px-4 py-2 rounded-xl text-sm font-medium hover:bg-brand-primary/20">
+                  <Mic className="w-4 h-4" /> Gravar com IA
+                </button>
               </div>
+
+              {/* Recording Panel */}
+              <AnimatePresence>
+                {showRecPanel && (
+                  <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
+                    className="bg-white/3 border border-brand-primary/20 rounded-xl p-4 space-y-3 overflow-hidden">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <img src="/consultor-avatar.jpg" alt="Taleco" className="w-6 h-6 rounded-full object-cover" />
+                        <span className="text-sm font-bold text-white">Análise de Ligação com Taleco</span>
+                      </div>
+                      <button onClick={() => { setShowRecPanel(false); setRecState('idle'); setRecResult(null); setRecError(''); }} className="text-white/30 hover:text-white"><X size={16} /></button>
+                    </div>
+
+                    {recError && <p className="text-xs text-red-400 bg-red-500/10 rounded-lg px-3 py-2">{recError}</p>}
+
+                    {recState === 'idle' && (
+                      <div className="text-center py-4 space-y-3">
+                        <p className="text-xs text-white/40">Grave a ligação e o Taleco analisa o que foi bem e o que melhorar.</p>
+                        <button onClick={startRecording} className="flex items-center gap-2 bg-brand-primary text-black font-bold rounded-xl px-6 py-2.5 text-sm mx-auto hover:brightness-110">
+                          <Mic className="w-4 h-4" /> Iniciar Gravação
+                        </button>
+                      </div>
+                    )}
+
+                    {recState === 'recording' && (
+                      <div className="text-center py-4 space-y-3">
+                        <div className="flex items-center justify-center gap-2">
+                          <span className="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse" />
+                          <span className="text-2xl font-mono font-bold text-white">{fmtRecTime(recSeconds)}</span>
+                        </div>
+                        <p className="text-xs text-white/40">Gravando... fale normalmente</p>
+                        <button onClick={stopAndAnalyze} className="flex items-center gap-2 bg-red-500/20 text-red-400 border border-red-500/30 font-bold rounded-xl px-6 py-2.5 text-sm mx-auto hover:bg-red-500/30">
+                          <Square className="w-4 h-4" /> Finalizar e Analisar
+                        </button>
+                      </div>
+                    )}
+
+                    {recState === 'processing' && (
+                      <div className="text-center py-6 space-y-2">
+                        <Loader2 className="w-8 h-8 animate-spin text-brand-primary mx-auto" />
+                        <p className="text-sm text-white/60">Taleco está analisando a ligação...</p>
+                      </div>
+                    )}
+
+                    {recState === 'done' && recResult && (
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <span className={`text-xs font-bold px-2 py-1 rounded-lg ${recResult.nota_geral >= 7 ? 'bg-green-500/20 text-green-400' : recResult.nota_geral >= 5 ? 'bg-amber-500/20 text-amber-400' : 'bg-red-500/20 text-red-400'}`}>
+                              Nota {recResult.nota_geral}/10
+                            </span>
+                            {recResult.dor_encontrada && <span className="text-xs bg-brand-primary/10 text-brand-primary px-2 py-1 rounded-lg">✅ Dor encontrada</span>}
+                            {recResult.momento_uau && <span className="text-xs bg-purple-500/10 text-purple-400 px-2 py-1 rounded-lg">⚡ Momento UAU</span>}
+                          </div>
+                          <span className="text-xs text-white/30">{fmtRecTime(recResult.duracao_segundos)}</span>
+                        </div>
+                        <p className="text-xs text-white/60 bg-white/3 rounded-lg p-3">{recResult.resumo}</p>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div className="bg-green-500/5 border border-green-500/10 rounded-lg p-3">
+                            <p className="text-xs font-bold text-green-400 mb-1.5 flex items-center gap-1"><ThumbsUp className="w-3 h-3" /> Acertos</p>
+                            {(recResult.acertos || []).map((a: string, i: number) => <p key={i} className="text-xs text-white/60 mb-1">• {a}</p>)}
+                          </div>
+                          <div className="bg-amber-500/5 border border-amber-500/10 rounded-lg p-3">
+                            <p className="text-xs font-bold text-amber-400 mb-1.5 flex items-center gap-1"><AlertTriangle className="w-3 h-3" /> Melhorias</p>
+                            {(recResult.melhorias || []).map((m: string, i: number) => <p key={i} className="text-xs text-white/60 mb-1">• {m}</p>)}
+                          </div>
+                        </div>
+                        <div className="bg-brand-primary/5 border border-brand-primary/10 rounded-lg p-3 flex gap-2">
+                          <img src="/consultor-avatar.jpg" alt="Taleco" className="w-6 h-6 rounded-full object-cover flex-shrink-0 mt-0.5" />
+                          <p className="text-xs text-white/70 italic">{recResult.comentario_taleco}</p>
+                        </div>
+                        <p className="text-xs text-green-400 text-center">✅ Análise salva na timeline desta oportunidade</p>
+                        <button onClick={() => { setRecState('idle'); setRecResult(null); }} className="w-full text-xs text-white/40 hover:text-white/60 py-1">Gravar outra ligação</button>
+                      </div>
+                    )}
+                  </motion.div>
+                )}
+              </AnimatePresence>
 
               {/* Activity Form */}
               <AnimatePresence>
@@ -700,7 +954,24 @@ function LeadModal({ lead, stages, tenantId, tarefas, onClose, onUpdate, onDelet
                         <span className="text-xs text-white/30">{act.autor}</span>
                         <span className="text-xs text-white/20 ml-auto flex items-center gap-1"><Clock className="w-3 h-3" />{fmtDateTime(act.criadoEm)}</span>
                       </div>
-                      <p className="text-sm text-white/70">{act.conteudo}</p>
+                      {act.tipo === 'analise_audio' && act.dados?.analise ? (
+                        <div className="space-y-2 mt-1">
+                          <p className="text-xs text-white/60">{act.dados.analise.resumo}</p>
+                          <div className="flex gap-1.5 flex-wrap">
+                            {act.dados.analise.nota_geral && <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${act.dados.analise.nota_geral >= 7 ? 'bg-green-500/20 text-green-400' : 'bg-amber-500/20 text-amber-400'}`}>Nota {act.dados.analise.nota_geral}/10</span>}
+                            {act.dados.analise.dor_encontrada && <span className="text-[10px] bg-brand-primary/10 text-brand-primary px-2 py-0.5 rounded">✅ Dor</span>}
+                            {act.dados.analise.momento_uau && <span className="text-[10px] bg-purple-500/10 text-purple-400 px-2 py-0.5 rounded">⚡ UAU</span>}
+                          </div>
+                          {act.dados.analise.comentario_taleco && (
+                            <div className="flex gap-2 bg-brand-primary/5 rounded-lg p-2">
+                              <img src="/consultor-avatar.jpg" alt="Taleco" className="w-5 h-5 rounded-full object-cover flex-shrink-0" />
+                              <p className="text-[11px] text-white/60 italic">{act.dados.analise.comentario_taleco}</p>
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <p className="text-sm text-white/70">{act.conteudo}</p>
+                      )}
                       {act.imagemUrl && (
                         <img src={act.imagemUrl} alt="Print" onClick={() => onImageClick(act.imagemUrl)}
                           className="mt-2 w-24 h-16 object-cover rounded-lg border border-white/10 cursor-pointer hover:opacity-80 transition-opacity" />
@@ -709,6 +980,22 @@ function LeadModal({ lead, stages, tenantId, tarefas, onClose, onUpdate, onDelet
                   ))}
                 </div>
               )}
+            </div>
+          )}
+
+          {/* ── NOTAS TAB ── */}
+          {activeTab === 'notas' && (
+            <div className="space-y-3">
+              <p className="text-xs text-white/40">Anotações internas sobre esta oportunidade. Salvo automaticamente.</p>
+              <textarea
+                rows={14}
+                className={inputCls + ' resize-none'}
+                placeholder="Escreva suas notas aqui..."
+                value={nota}
+                onChange={e => setNota(e.target.value)}
+                onBlur={async () => { const updated = { ...form, observacoes: nota }; setForm(updated); await onUpdate(updated); }}
+              />
+              <p className="text-xs text-white/20 text-right">Salvo ao perder o foco do campo</p>
             </div>
           )}
 

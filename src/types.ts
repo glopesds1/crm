@@ -18,6 +18,7 @@ export type Offer = {
   name: string;
   situation: string;
   platform: 'Google Ads' | 'Meta Ads' | 'Ambos';
+  captureUrl?: string;
 };
 
 export type OnboardingItem = {
@@ -56,6 +57,7 @@ export type TeamMember = {
   photoUrl?: string;
   phone?: string;
   webhookKentro?: string;
+  auth_user_id?: string;
 };
 
 export type Client = {

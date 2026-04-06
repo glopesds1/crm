@@ -74,6 +74,8 @@ import EducacaoView from './EducacaoView';
 import MateriaisClienteView from './MateriaisClienteView';
 import DocumentosClienteView from './DocumentosClienteView';
 import ConsultorIAView from './ConsultorIAView';
+import TranscricaoLigacaoView from './TranscricaoLigacaoView';
+import LandingPagesView from './LandingPagesView';
 import { getTenantByClientId, activateCrmForClient, authenticateCrmUser, getCrmUsersByTenant, createCrmUser, updateCrmUser, deleteCrmUser, authenticateUser, signOut, resetPassword, updatePassword, getAuthSession, mfaListFactors, mfaChallenge, mfaVerify, mfaEnrollTotp, mfaUnenroll, mfaGetAuthenticatorLevel } from './lib/database';
 import type { CrmClientTenant, CrmClientUser } from './types';
 import { ptBR } from 'date-fns/locale';
@@ -380,27 +382,43 @@ const TagManager = ({ clientTags, allTags, onToggleTag, onSaveTag, onDeleteTag }
           </div>
           <div className="pt-2 border-t border-white/5">
             <p className="text-[10px] text-gray-500 mb-2 uppercase font-bold">Editar Existentes</p>
-            <div className="space-y-2 max-h-32 overflow-y-auto custom-scrollbar pr-2">
+            <div className="space-y-2 max-h-48 overflow-y-auto custom-scrollbar pr-2">
               {Object.values(allTags).map(tag => (
-                <div key={tag.id} className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2">
-                    <div className="w-3 h-3 rounded-full" style={{ backgroundColor: tag.color }} />
-                    <span className="text-xs text-gray-300">{tag.label}</span>
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <button 
-                      onClick={() => startEditing(tag)}
-                      className="text-gray-600 hover:text-brand-primary p-1"
-                    >
-                      <Edit2 size={12} />
-                    </button>
-                    <button 
-                      onClick={() => onDeleteTag(tag.id)}
-                      className="text-gray-600 hover:text-red-400 p-1"
-                    >
-                      <Trash2 size={12} />
-                    </button>
-                  </div>
+                <div key={tag.id}>
+                  {editingTagId === tag.id ? (
+                    // Edição inline direto na linha da etiqueta
+                    <div className="bg-white/5 border border-brand-primary/30 rounded-lg p-2 space-y-2">
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          value={newTagName}
+                          onChange={e => setNewTagName(e.target.value)}
+                          autoFocus
+                          className="flex-1 bg-white/10 border border-white/10 rounded-lg px-2 py-1 text-xs text-white focus:outline-none focus:border-brand-primary"
+                        />
+                        <button onClick={handleCreateOrUpdateTag} className="p-1.5 rounded-lg bg-brand-primary text-black"><Check size={12} /></button>
+                        <button onClick={() => { setEditingTagId(null); setNewTagName(''); }} className="p-1.5 rounded-lg bg-white/5 text-gray-400"><X size={12} /></button>
+                      </div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {COLOR_PALETTE.map(color => (
+                          <button key={color} onClick={() => setNewTagColor(color)}
+                            className={`w-4 h-4 rounded-full border-2 transition-all ${newTagColor === color ? 'border-white scale-110' : 'border-transparent'}`}
+                            style={{ backgroundColor: color }} />
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: tag.color }} />
+                        <span className="text-xs text-gray-300">{tag.label}</span>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <button onClick={() => startEditing(tag)} className="text-gray-600 hover:text-brand-primary p-1"><Edit2 size={12} /></button>
+                        <button onClick={() => onDeleteTag(tag.id)} className="text-gray-600 hover:text-red-400 p-1"><Trash2 size={12} /></button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -411,14 +429,17 @@ const TagManager = ({ clientTags, allTags, onToggleTag, onSaveTag, onDeleteTag }
   );
 };
 
-const OfferSection = ({ offers, onAddOffer, onRemoveOffer }: { 
-  offers: Offer[], 
+const OfferSection = ({ offers, onAddOffer, onRemoveOffer, onUpdateOffer }: {
+  offers: Offer[],
   onAddOffer: (offer: Omit<Offer, 'id'>) => void,
-  onRemoveOffer: (id: string) => void
+  onRemoveOffer: (id: string) => void,
+  onUpdateOffer?: (offer: Offer) => void,
 }) => {
   const [isAdding, setIsAdding] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [newOffer, setNewOffer] = useState({ name: '', situation: '', platform: 'Ambos' as Offer['platform'] });
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState<Offer | null>(null);
+  const [newOffer, setNewOffer] = useState({ name: '', situation: '', platform: 'Ambos' as Offer['platform'], captureUrl: '' });
 
   return (
     <section>
@@ -439,18 +460,25 @@ const OfferSection = ({ offers, onAddOffer, onRemoveOffer }: {
             animate={{ opacity: 1, scale: 1 }}
             className="p-4 rounded-xl bg-brand-primary/5 border border-brand-primary/20 space-y-3"
           >
-            <input 
-              type="text" 
+            <input
+              type="text"
               placeholder="Nome da oferta"
               value={newOffer.name}
               onChange={e => setNewOffer({ ...newOffer, name: e.target.value })}
               className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand-primary"
             />
-            <textarea 
+            <textarea
               placeholder="Situação atual"
               value={newOffer.situation}
               onChange={e => setNewOffer({ ...newOffer, situation: e.target.value })}
               className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand-primary h-20 resize-none"
+            />
+            <input
+              type="url"
+              placeholder="Link da página de captura (opcional)"
+              value={newOffer.captureUrl}
+              onChange={e => setNewOffer({ ...newOffer, captureUrl: e.target.value })}
+              className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand-primary"
             />
             <div className="flex gap-2">
               {['Google Ads', 'Meta Ads', 'Ambos'].map(p => (
@@ -466,17 +494,17 @@ const OfferSection = ({ offers, onAddOffer, onRemoveOffer }: {
               ))}
             </div>
             <div className="flex gap-2 pt-2">
-              <button 
+              <button
                 onClick={() => {
                   onAddOffer(newOffer);
                   setIsAdding(false);
-                  setNewOffer({ name: '', situation: '', platform: 'Ambos' });
+                  setNewOffer({ name: '', situation: '', platform: 'Ambos', captureUrl: '' });
                 }}
                 className="flex-1 py-2 bg-brand-primary text-bg-main rounded-lg text-xs font-bold"
               >
                 Salvar Oferta
               </button>
-              <button 
+              <button
                 onClick={() => setIsAdding(false)}
                 className="px-4 py-2 bg-white/5 text-gray-400 rounded-lg text-xs font-bold"
               >
@@ -488,44 +516,81 @@ const OfferSection = ({ offers, onAddOffer, onRemoveOffer }: {
 
         {offers.map(offer => (
           <div key={offer.id} className="glass-card overflow-hidden">
-            <div 
-              onClick={() => setExpandedId(expandedId === offer.id ? null : offer.id)}
-              className="p-4 flex items-center justify-between cursor-pointer hover:bg-white/5 transition-colors"
-            >
-              <div className="flex items-center gap-3">
-                <div className="p-2 rounded-lg bg-brand-primary/10 text-brand-primary">
-                  <Briefcase size={16} />
+            {editingId === offer.id && editForm ? (
+              // ── Modo edição inline ──
+              <div className="p-4 space-y-3">
+                <input type="text" value={editForm.name} onChange={e => setEditForm({ ...editForm, name: e.target.value })}
+                  className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand-primary" placeholder="Nome da oferta" />
+                <textarea value={editForm.situation} onChange={e => setEditForm({ ...editForm, situation: e.target.value })}
+                  className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand-primary h-20 resize-none" placeholder="Situação atual" />
+                <input type="url" value={editForm.captureUrl || ''} onChange={e => setEditForm({ ...editForm, captureUrl: e.target.value })}
+                  className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand-primary" placeholder="Link da página de captura (opcional)" />
+                <div className="flex gap-2">
+                  {['Google Ads', 'Meta Ads', 'Ambos'].map(p => (
+                    <button key={p} onClick={() => setEditForm({ ...editForm, platform: p as Offer['platform'] })}
+                      className={`flex-1 py-1.5 rounded-lg border text-[10px] font-bold transition-all ${editForm.platform === p ? 'bg-brand-primary text-bg-main border-brand-primary' : 'bg-white/5 border-white/10 text-gray-400'}`}>
+                      {p}
+                    </button>
+                  ))}
                 </div>
-                <div>
-                  <p className="text-sm font-bold">{offer.name}</p>
-                  <p className="text-[10px] text-gray-500 uppercase tracking-wider font-bold">{offer.platform}</p>
+                <div className="flex gap-2">
+                  <button onClick={() => { onUpdateOffer?.(editForm); setEditingId(null); setEditForm(null); }}
+                    className="flex-1 py-2 bg-brand-primary text-bg-main rounded-lg text-xs font-bold">Salvar</button>
+                  <button onClick={() => { setEditingId(null); setEditForm(null); }}
+                    className="px-4 py-2 bg-white/5 text-gray-400 rounded-lg text-xs font-bold">Cancelar</button>
                 </div>
               </div>
-              <div className="flex items-center gap-2">
-                <button 
-                  onClick={(e) => { e.stopPropagation(); onRemoveOffer(offer.id); }}
-                  className="p-1.5 text-gray-600 hover:text-red-400 transition-colors"
+            ) : (
+              <>
+                <div
+                  onClick={() => setExpandedId(expandedId === offer.id ? null : offer.id)}
+                  className="p-4 flex items-center justify-between cursor-pointer hover:bg-white/5 transition-colors"
                 >
-                  <Trash2 size={14} />
-                </button>
-                {expandedId === offer.id ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-              </div>
-            </div>
-            <AnimatePresence>
-              {expandedId === offer.id && (
-                <motion.div 
-                  initial={{ height: 0 }}
-                  animate={{ height: 'auto' }}
-                  exit={{ height: 0 }}
-                  className="px-4 pb-4 border-t border-white/5"
-                >
-                  <p className="text-xs text-gray-400 mt-4 leading-relaxed">
-                    <span className="text-brand-primary font-bold block mb-1 uppercase tracking-tighter text-[10px]">Situação</span>
-                    {offer.situation}
-                  </p>
-                </motion.div>
-              )}
-            </AnimatePresence>
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 rounded-lg bg-brand-primary/10 text-brand-primary"><Briefcase size={16} /></div>
+                    <div>
+                      <p className="text-sm font-bold">{offer.name}</p>
+                      <p className="text-[10px] text-gray-500 uppercase tracking-wider font-bold">{offer.platform}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {offer.captureUrl && (
+                      <a href={offer.captureUrl} target="_blank" rel="noopener noreferrer"
+                        onClick={e => e.stopPropagation()}
+                        className="p-1.5 text-brand-primary/60 hover:text-brand-primary transition-colors" title="Abrir página de captura">
+                        <ExternalLink size={14} />
+                      </a>
+                    )}
+                    <button onClick={e => { e.stopPropagation(); setEditingId(offer.id); setEditForm({ ...offer }); }}
+                      className="p-1.5 text-gray-600 hover:text-brand-primary transition-colors">
+                      <Edit2 size={14} />
+                    </button>
+                    <button onClick={e => { e.stopPropagation(); onRemoveOffer(offer.id); }}
+                      className="p-1.5 text-gray-600 hover:text-red-400 transition-colors">
+                      <Trash2 size={14} />
+                    </button>
+                    {expandedId === offer.id ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                  </div>
+                </div>
+                <AnimatePresence>
+                  {expandedId === offer.id && (
+                    <motion.div initial={{ height: 0 }} animate={{ height: 'auto' }} exit={{ height: 0 }}
+                      className="px-4 pb-4 border-t border-white/5 overflow-hidden">
+                      <p className="text-xs text-gray-400 mt-4 leading-relaxed">
+                        <span className="text-brand-primary font-bold block mb-1 uppercase tracking-tighter text-[10px]">Situação</span>
+                        {offer.situation || '—'}
+                      </p>
+                      {offer.captureUrl && (
+                        <a href={offer.captureUrl} target="_blank" rel="noopener noreferrer"
+                          className="mt-3 flex items-center gap-2 text-xs text-brand-primary hover:underline">
+                          <ExternalLink size={12} /> {offer.captureUrl}
+                        </a>
+                      )}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </>
+            )}
           </div>
         ))}
       </div>
@@ -1332,6 +1397,7 @@ const TwoFactorPanel = () => {
 const LoginScreen = ({ onLogin, onCrmLogin, teamMembers, agencyConfig }: { onLogin: (user: UserSession) => void, onCrmLogin: (user: CrmClientUser, tenant: CrmClientTenant) => void, teamMembers: TeamMember[], agencyConfig: AgencyConfig }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -1528,14 +1594,22 @@ const LoginScreen = ({ onLogin, onCrmLogin, teamMembers, agencyConfig }: { onLog
             <label className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-2 block">Senha</label>
             <div className="relative">
               <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500" size={18} />
-              <input 
-                type="password" 
+              <input
+                type={showPassword ? 'text' : 'password'}
                 required
                 value={password}
                 onChange={e => setPassword(e.target.value)}
-                className="w-full bg-white/5 border border-white/10 rounded-xl pl-12 pr-4 py-4 text-sm focus:outline-none focus:border-brand-primary transition-all"
+                className="w-full bg-white/5 border border-white/10 rounded-xl pl-12 pr-12 py-4 text-sm focus:outline-none focus:border-brand-primary transition-all"
                 placeholder="••••••••"
               />
+              <button
+                type="button"
+                onClick={() => setShowPassword(v => !v)}
+                className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white transition-colors"
+                tabIndex={-1}
+              >
+                {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+              </button>
             </div>
           </div>
 
@@ -1705,47 +1779,63 @@ const NotificationPanel = ({ isOpen, onClose, notifications, onMarkRead }: {
   );
 };
 
-const UserMenu = ({ isOpen, onClose, user, onLogout }: { 
-  isOpen: boolean, 
-  onClose: () => void, 
-  user: UserSession,
-  onLogout: () => void
+const UserMenuItems = ({ onLogout }: { onLogout: () => void }) => (
+  <div className="p-2">
+    <button className="w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-xs font-medium text-gray-400 hover:bg-white/5 hover:text-white transition-all">
+      <User size={14} /> Editar Perfil
+    </button>
+    <button className="w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-xs font-medium text-gray-400 hover:bg-white/5 hover:text-white transition-all">
+      <Lock size={14} /> Alterar Senha
+    </button>
+    <div className="my-1 border-t border-white/5" />
+    <button
+      onClick={onLogout}
+      className="w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-xs font-medium text-red-400 hover:bg-red-500/10 transition-all"
+    >
+      <LogOut size={14} /> Sair do Sistema
+    </button>
+  </div>
+);
+
+const UserMenu = ({ isOpen, onClose, user, onLogout }: {
+  isOpen: boolean, onClose: () => void, user: UserSession, onLogout: () => void
 }) => {
   if (!isOpen) return null;
-
   return (
     <div className="absolute bottom-16 left-0 w-56 z-[100] bg-bg-main border border-white/10 rounded-xl shadow-2xl overflow-hidden">
-      <div className="p-2">
-        <button className="w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-xs font-medium text-gray-400 hover:bg-white/5 hover:text-white transition-all">
-          <User size={14} /> Editar Perfil
-        </button>
-        <button className="w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-xs font-medium text-gray-400 hover:bg-white/5 hover:text-white transition-all">
-          <Lock size={14} /> Alterar Senha
-        </button>
-        <div className="my-1 border-t border-white/5" />
-        <button 
-          onClick={onLogout}
-          className="w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-xs font-medium text-red-400 hover:bg-red-500/10 transition-all"
-        >
-          <LogOut size={14} /> Sair do Sistema
-        </button>
-      </div>
+      <UserMenuItems onLogout={onLogout} />
     </div>
   );
 };
 
-const KanbanFilterPanel = ({ 
-  isOpen, 
-  onClose, 
-  filters, 
+const UserMenuHeader = ({ isOpen, onClose, onLogout }: {
+  isOpen: boolean, onClose: () => void, onLogout: () => void
+}) => {
+  if (!isOpen) return null;
+  return (
+    <>
+      <div className="fixed inset-0 z-[99]" onClick={onClose} />
+      <div className="absolute top-10 right-0 w-56 z-[100] bg-[#0d1117] border border-white/10 rounded-xl shadow-2xl overflow-hidden">
+        <UserMenuItems onLogout={onLogout} />
+      </div>
+    </>
+  );
+};
+
+const KanbanFilterPanel = ({
+  isOpen,
+  onClose,
+  filters,
   onFilterChange,
-  teamMembers 
-}: { 
-  isOpen: boolean, 
-  onClose: () => void, 
+  teamMembers,
+  allTags,
+}: {
+  isOpen: boolean,
+  onClose: () => void,
   filters: any,
   onFilterChange: (newFilters: any) => void,
-  teamMembers: TeamMember[]
+  teamMembers: TeamMember[],
+  allTags: Record<string, Tag>,
 }) => {
   if (!isOpen) return null;
 
@@ -1807,8 +1897,35 @@ const KanbanFilterPanel = ({
           </div>
         </div>
 
-        <button 
-          onClick={() => onFilterChange({ plans: [], responsible: 'all', status: 'Ativo' })}
+        {Object.keys(allTags).length > 0 && (
+          <div>
+            <label className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-3 block">Etiqueta</label>
+            <div className="flex flex-wrap gap-2">
+              {Object.values(allTags).map(tag => (
+                <button
+                  key={tag.id}
+                  onClick={() => {
+                    const newTags = filters.tags.includes(tag.id)
+                      ? filters.tags.filter((t: string) => t !== tag.id)
+                      : [...filters.tags, tag.id];
+                    onFilterChange({ ...filters, tags: newTags });
+                  }}
+                  className="px-3 py-1.5 rounded-lg border text-[10px] font-bold transition-all"
+                  style={
+                    filters.tags.includes(tag.id)
+                      ? { backgroundColor: tag.color + '22', borderColor: tag.color, color: tag.color }
+                      : { backgroundColor: 'rgba(255,255,255,0.05)', borderColor: 'rgba(255,255,255,0.1)', color: '#6b7280' }
+                  }
+                >
+                  {tag.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <button
+          onClick={() => onFilterChange({ plans: [], responsible: 'all', status: 'Ativo', tags: [] })}
           className="w-full py-2.5 text-[10px] font-bold uppercase tracking-widest text-gray-500 hover:text-white transition-colors"
         >
           Limpar Filtros
@@ -2362,12 +2479,25 @@ const CrmClientSection = ({ clientId, clientName, onOpenCrm }: { clientId: strin
   const [tenant, setTenant] = useState<CrmClientTenant | null | undefined>(undefined);
   const [activating, setActivating] = useState(false);
   const [leadCount, setLeadCount] = useState(0);
+  const [users, setUsers] = useState<CrmClientUser[]>([]);
+  const [loadingUsers, setLoadingUsers] = useState(false);
+  const [showUserForm, setShowUserForm] = useState(false);
+  const [newUserNome, setNewUserNome] = useState('');
+  const [newUserEmail, setNewUserEmail] = useState('');
+  const [newUserSenha, setNewUserSenha] = useState('');
+  const [savingUser, setSavingUser] = useState(false);
+  const [showPassFor, setShowPassFor] = useState<string | null>(null);
+  const [editingPassFor, setEditingPassFor] = useState<string | null>(null);
+  const [newPassValue, setNewPassValue] = useState('');
+  const [savingPass, setSavingPass] = useState(false);
 
   useEffect(() => {
     getTenantByClientId(clientId).then(t => {
       setTenant(t);
       if (t) {
         import('./lib/database').then(db => db.getClientLeads(t.id)).then(leads => setLeadCount(leads.length));
+        setLoadingUsers(true);
+        getCrmUsersByTenant(t.id).then(setUsers).catch(console.error).finally(() => setLoadingUsers(false));
       }
     }).catch(() => setTenant(null));
   }, [clientId]);
@@ -2384,34 +2514,178 @@ const CrmClientSection = ({ clientId, clientName, onOpenCrm }: { clientId: strin
     setActivating(false);
   };
 
-  if (tenant === undefined) return null; // loading
+  const handleCreateUser = async () => {
+    if (!tenant || !newUserNome.trim() || !newUserEmail.trim() || !newUserSenha.trim()) return;
+    setSavingUser(true);
+    try {
+      // Cria no Supabase Auth via admin
+      const { supabaseAdmin } = await import('./lib/supabase');
+      if (supabaseAdmin) {
+        const { error: authErr } = await supabaseAdmin.auth.admin.createUser({
+          email: newUserEmail.trim(),
+          password: newUserSenha.trim(),
+          email_confirm: true,
+          user_metadata: { tenant_id: tenant.id, nome: newUserNome.trim() },
+        });
+        if (authErr && !authErr.message.includes('already registered')) throw authErr;
+      }
+      // Cria na tabela crm_client_users
+      const created = await createCrmUser({
+        tenantId: tenant.id, nome: newUserNome.trim(),
+        email: newUserEmail.trim(), senha: newUserSenha.trim(),
+        role: 'member', ativo: true,
+      });
+      setUsers(prev => [...prev, created]);
+      setNewUserNome(''); setNewUserEmail(''); setNewUserSenha('');
+      setShowUserForm(false);
+    } catch (err: any) {
+      alert('Erro ao criar usuário: ' + (err.message || err));
+    }
+    setSavingUser(false);
+  };
+
+  const handleDeleteUser = async (userId: string) => {
+    if (!confirm('Remover acesso deste usuário?')) return;
+    await deleteCrmUser(userId);
+    setUsers(prev => prev.filter(u => u.id !== userId));
+  };
+
+  const handleResetPass = async (u: CrmClientUser) => {
+    if (!newPassValue.trim()) return;
+    setSavingPass(true);
+    try {
+      // Atualiza no Auth via admin
+      const { supabaseAdmin } = await import('./lib/supabase');
+      if (supabaseAdmin) {
+        // Busca auth_user_id pelo email
+        const { data: authUsers } = await supabaseAdmin.auth.admin.listUsers();
+        const authUser = authUsers?.users?.find((au: any) => au.email === u.email);
+        if (authUser) {
+          await supabaseAdmin.auth.admin.updateUserById(authUser.id, { password: newPassValue.trim() });
+        }
+      }
+      // Atualiza na tabela crm_client_users
+      const updated = await updateCrmUser({ ...u, senha: newPassValue.trim() });
+      setUsers(prev => prev.map(x => x.id === u.id ? updated : x));
+      setEditingPassFor(null);
+      setNewPassValue('');
+    } catch (err: any) {
+      alert('Erro ao redefinir senha: ' + (err.message || err));
+    }
+    setSavingPass(false);
+  };
+
+  if (tenant === undefined) return null;
 
   return (
-    <section className="glass-card p-6 mb-6">
-      <h3 className="text-sm font-bold uppercase tracking-widest text-brand-primary mb-4">CRM do Cliente</h3>
+    <section className="glass-card p-6 mb-6 space-y-5">
+      <h3 className="text-sm font-bold uppercase tracking-widest text-brand-primary">Área do Cliente</h3>
+
+      {/* Status + botão acessar */}
       {!tenant ? (
         <div className="flex items-center justify-between">
-          <div>
-            <p className="text-sm text-gray-400">CRM não configurado para este cliente.</p>
-          </div>
+          <p className="text-sm text-gray-400">Área do cliente não configurada.</p>
           <button onClick={handleActivate} disabled={activating}
             className="bg-brand-primary text-black font-bold rounded-xl px-5 py-2.5 text-sm hover:brightness-110 transition-all disabled:opacity-50 flex items-center gap-2">
             {activating ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />}
-            {activating ? 'Ativando...' : 'Ativar CRM'}
+            {activating ? 'Ativando...' : 'Ativar'}
           </button>
         </div>
       ) : (
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <span className="flex items-center gap-1.5 text-sm">
-              <span className="w-2 h-2 rounded-full bg-green-400" /> Ativo
-            </span>
+            <span className="flex items-center gap-1.5 text-sm"><span className="w-2 h-2 rounded-full bg-green-400" /> Ativo</span>
             <span className="text-sm text-gray-400">{leadCount} leads</span>
           </div>
           <button onClick={() => onOpenCrm(tenant.id)}
             className="bg-brand-primary text-black font-bold rounded-xl px-5 py-2.5 text-sm hover:brightness-110 transition-all flex items-center gap-2">
-            <ExternalLink size={16} /> Acessar CRM
+            <ExternalLink size={16} /> Acessar
           </button>
+        </div>
+      )}
+
+      {/* Usuários — só aparece se tenant ativo */}
+      {tenant && (
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <p className="text-xs font-bold uppercase tracking-widest text-gray-500">Usuários com acesso</p>
+            <button onClick={() => setShowUserForm(p => !p)}
+              className="flex items-center gap-1.5 text-xs text-brand-primary hover:brightness-110 font-bold">
+              <Plus size={13} /> Adicionar
+            </button>
+          </div>
+
+          {/* Form novo usuário */}
+          <AnimatePresence>
+            {showUserForm && (
+              <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
+                className="bg-white/5 border border-white/10 rounded-xl p-4 space-y-3 overflow-hidden">
+                <input placeholder="Nome *" value={newUserNome} onChange={e => setNewUserNome(e.target.value)}
+                  className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder-white/30 focus:outline-none focus:border-brand-primary/50" />
+                <input placeholder="E-mail *" type="email" value={newUserEmail} onChange={e => setNewUserEmail(e.target.value)}
+                  className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder-white/30 focus:outline-none focus:border-brand-primary/50" />
+                <input placeholder="Senha *" type="text" value={newUserSenha} onChange={e => setNewUserSenha(e.target.value)}
+                  className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder-white/30 focus:outline-none focus:border-brand-primary/50" />
+                <div className="flex gap-2">
+                  <button onClick={handleCreateUser} disabled={savingUser || !newUserNome || !newUserEmail || !newUserSenha}
+                    className="flex-1 bg-brand-primary text-black font-bold rounded-lg py-2 text-sm hover:brightness-110 disabled:opacity-50 flex items-center justify-center gap-2">
+                    {savingUser ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
+                    {savingUser ? 'Criando...' : 'Criar acesso'}
+                  </button>
+                  <button onClick={() => setShowUserForm(false)} className="px-4 py-2 text-sm text-gray-400 hover:text-white bg-white/5 rounded-lg">Cancelar</button>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* Lista de usuários */}
+          {loadingUsers ? (
+            <div className="flex justify-center py-3"><Loader2 size={16} className="animate-spin text-brand-primary" /></div>
+          ) : users.length === 0 ? (
+            <p className="text-xs text-gray-500 text-center py-3">Nenhum usuário cadastrado ainda.</p>
+          ) : (
+            <div className="space-y-2">
+              {users.map(u => (
+                <div key={u.id} className="bg-white/3 border border-white/5 rounded-xl px-4 py-3 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-medium text-white">{u.nome}</p>
+                      <p className="text-xs text-gray-500">{u.email}</p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button onClick={() => setShowPassFor(showPassFor === u.id ? null : u.id)}
+                        className="text-xs text-gray-500 hover:text-white bg-white/5 px-2 py-1 rounded-lg flex items-center gap-1">
+                        <Eye size={11} /> {showPassFor === u.id ? u.senha : '••••••'}
+                      </button>
+                      <button onClick={() => { setEditingPassFor(editingPassFor === u.id ? null : u.id); setNewPassValue(''); }}
+                        className="text-xs text-brand-primary/60 hover:text-brand-primary bg-white/5 px-2 py-1 rounded-lg flex items-center gap-1">
+                        <Edit2 size={11} /> Senha
+                      </button>
+                      <button onClick={() => handleDeleteUser(u.id)} className="text-red-400/60 hover:text-red-400 p-1.5 rounded-lg hover:bg-red-400/10">
+                        <Trash2 size={13} />
+                      </button>
+                    </div>
+                  </div>
+                  {/* Form redefinir senha */}
+                  <AnimatePresence>
+                    {editingPassFor === u.id && (
+                      <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
+                        className="flex gap-2 overflow-hidden">
+                        <input placeholder="Nova senha *" type="text" value={newPassValue} onChange={e => setNewPassValue(e.target.value)}
+                          className="flex-1 bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-sm text-white placeholder-white/30 focus:outline-none focus:border-brand-primary/50" />
+                        <button onClick={() => handleResetPass(u)} disabled={savingPass || !newPassValue.trim()}
+                          className="bg-brand-primary text-black font-bold rounded-lg px-3 py-1.5 text-xs hover:brightness-110 disabled:opacity-50 flex items-center gap-1">
+                          {savingPass ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
+                          Salvar
+                        </button>
+                        <button onClick={() => { setEditingPassFor(null); setNewPassValue(''); }} className="px-3 py-1.5 text-xs text-gray-400 hover:text-white bg-white/5 rounded-lg">✕</button>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </section>
@@ -2501,8 +2775,9 @@ const ClientModal = ({ client, allTags, teamMembers, onClose, onUpdateClient, on
     setNewComment('');
   };
 
+
   return (
-    <motion.div 
+    <motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
@@ -2554,7 +2829,7 @@ const ClientModal = ({ client, allTags, teamMembers, onClose, onUpdateClient, on
         {/* Content */}
         <div className="flex-1 overflow-hidden grid grid-cols-1 lg:grid-cols-12 gap-0">
           {/* Left Col: Info */}
-          <div className="lg:col-span-8 overflow-y-auto custom-scrollbar p-8 space-y-10 border-r border-white/5">
+          <div className="lg:col-span-8 overflow-y-auto overflow-x-hidden custom-scrollbar p-8 space-y-10 border-r border-white/5">
             {/* Quick Info Grid (Moved from Sidebar) */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 p-5 rounded-2xl bg-white/5 border border-white/5">
               <div>
@@ -2725,10 +3000,11 @@ const ClientModal = ({ client, allTags, teamMembers, onClose, onUpdateClient, on
               }}
             />
 
-            <OfferSection 
-              offers={client.offers} 
+            <OfferSection
+              offers={client.offers}
               onAddOffer={(off) => onUpdateClient({ ...client, offers: [{ ...off, id: Date.now().toString() }, ...client.offers] })}
               onRemoveOffer={(id) => onUpdateClient({ ...client, offers: client.offers.filter(o => o.id !== id) })}
+              onUpdateOffer={(updated) => onUpdateClient({ ...client, offers: client.offers.map(o => o.id === updated.id ? updated : o) })}
             />
 
             <section>
@@ -2783,6 +3059,17 @@ const ClientModal = ({ client, allTags, teamMembers, onClose, onUpdateClient, on
                       <div className="flex items-center gap-2 mb-1">
                         <span className="text-xs font-bold text-white">{comment.author}</span>
                         <span className="text-[9px] text-gray-500">{comment.date}</span>
+                        {comment.author === userSession.name && (
+                          <button
+                            onClick={() => {
+                              if (!confirm('Apagar esta mensagem?')) return;
+                              onUpdateClient({ ...client, comments: client.comments.filter(c => c.id !== comment.id) });
+                            }}
+                            className="text-[9px] text-gray-600 hover:text-red-400 transition-colors ml-1"
+                          >
+                            Apagar
+                          </button>
+                        )}
                       </div>
                       <div className="p-3 rounded-xl bg-white/5 border border-white/5">
                         <p className="text-xs text-gray-400 leading-relaxed">{comment.text}</p>
@@ -2849,6 +3136,28 @@ const ClientModal = ({ client, allTags, teamMembers, onClose, onUpdateClient, on
                     <Plus size={20} />
                   </button>
                 </div>
+                {/* Preview de menções reconhecidas */}
+                {(() => {
+                  const mentionRegex = /@([A-Za-zÀ-ÿ]+(?:\s[A-Za-zÀ-ÿ]+)*)/g;
+                  const matched: string[] = [];
+                  let m;
+                  while ((m = mentionRegex.exec(newComment)) !== null) {
+                    const name = m[1].trim();
+                    const found = teamMembers.find(t => t.name.toLowerCase().startsWith(name.toLowerCase()));
+                    if (found && !matched.includes(found.name)) matched.push(found.name);
+                  }
+                  if (matched.length === 0) return null;
+                  return (
+                    <div className="flex items-center gap-1.5 mt-2 flex-wrap">
+                      <span className="text-[10px] text-gray-500">Vai criar demanda para:</span>
+                      {matched.map(name => (
+                        <span key={name} className="text-[10px] font-bold text-brand-primary bg-brand-primary/10 px-2 py-0.5 rounded-full">
+                          @{name}
+                        </span>
+                      ))}
+                    </div>
+                  );
+                })()}
               </div>
             </div>
           </div>
@@ -3552,6 +3861,17 @@ const ComercialView = ({ teamMembers, userSession, onOpenInCRM }: {
 export default function App() {
   const [activeTab, setActiveTab] = useState('Dashboard');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' && window.innerWidth < 768);
+  useEffect(() => {
+    const check = () => {
+      const mobile = window.innerWidth < 768;
+      setIsMobile(mobile);
+      if (!mobile) setMobileSidebarOpen(false);
+    };
+    window.addEventListener('resize', check);
+    return () => window.removeEventListener('resize', check);
+  }, []);
   const [selectedCrmTenantId, setSelectedCrmTenantId] = useState<string | null>(null);
   const [cookiesAccepted, setCookiesAccepted] = useState(() => localStorage.getItem('cookies_accepted') === 'true');
 
@@ -3566,8 +3886,8 @@ export default function App() {
     };
     return (permissions[role] ?? permissions['admin']).includes(tab);
   };
-  const [aquisicaoSubTab, setAquisicaoSubTab] = useState<'CRM' | 'Relatorio' | 'Dashboard' | 'Playbooks'>('CRM');
-  const [entregaSubTab, setEntregaSubTab] = useState<'Kanban' | 'Demandas' | 'AreaCliente' | 'Educacao'>('Kanban');
+  const [aquisicaoSubTab, setAquisicaoSubTab] = useState<'CRM' | 'Relatorio' | 'Dashboard' | 'Playbooks' | 'Transcricao'>('CRM');
+  const [entregaSubTab, setEntregaSubTab] = useState<'Kanban' | 'Demandas' | 'AreaCliente' | 'Educacao' | 'Paginas'>('Kanban');
   const [openCRMLeadName, setOpenCRMLeadName] = useState('');
   const [clients, setClients] = useState<Client[]>([]);
   const [allTags, setAllTags] = useState<Record<string, Tag>>(INITIAL_TAGS);
@@ -3575,7 +3895,7 @@ export default function App() {
   const [agencyConfig, setAgencyConfig] = useState<AgencyConfig>(INITIAL_AGENCY_CONFIG);
   const [userSession, setUserSession] = useState<UserSession | null>(null);
   const [crmClientSession, setCrmClientSession] = useState<{ user: CrmClientUser; tenant: CrmClientTenant } | null>(null);
-  const [clientTab, setClientTab] = useState<'crm' | 'educacao' | 'materiais' | 'documentos'>('crm');
+  const [clientTab, setClientTab] = useState<'crm' | 'educacao' | 'materiais' | 'documentos' | 'analise'>('crm');
   const [showConsultorChat, setShowConsultorChat] = useState(false);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [demands, setDemands] = useState<Demand[]>([]);
@@ -3592,10 +3912,45 @@ export default function App() {
   const [isSearchModalOpen, setIsSearchModalOpen] = useState(false);
   const [isNotificationOpen, setIsNotificationOpen] = useState(false);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
+  const [isHeaderMenuOpen, setIsHeaderMenuOpen] = useState(false);
   const [isSupportModalOpen, setIsSupportModalOpen] = useState(false);
   const [supportText, setSupportText] = useState('');
   const [isFilterOpen, setIsFilterOpen] = useState(false);
-  const [kanbanFilters, setKanbanFilters] = useState({ plans: [] as string[], responsible: 'all', status: 'Ativo' });
+  const [kanbanFilters, setKanbanFilters] = useState({ plans: [] as string[], responsible: 'all', status: 'Ativo', tags: [] as string[] });
+  const [kanbanOrder, setKanbanOrder] = useState<Record<string, string[]>>(() => {
+    try { return JSON.parse(localStorage.getItem('kanban_order') || '{}'); } catch { return {}; }
+  });
+  const dragClientId = useRef<string | null>(null);
+  const dragColumnId = useRef<string | null>(null);
+
+  const getSortedColumn = (columnId: string) =>
+    filteredClients
+      .filter(c => c.status === columnId)
+      .sort((a, b) => {
+        const order = kanbanOrder[columnId] || [];
+        const ai = order.indexOf(a.id); const bi = order.indexOf(b.id);
+        return (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi);
+      });
+
+  const handleDragStart = (clientId: string, columnId: string) => {
+    dragClientId.current = clientId;
+    dragColumnId.current = columnId;
+  };
+
+  const handleDragOver = (e: React.DragEvent, targetClientId: string, columnId: string) => {
+    e.preventDefault();
+    if (!dragClientId.current || dragClientId.current === targetClientId || dragColumnId.current !== columnId) return;
+    const sorted = getSortedColumn(columnId).map(c => c.id);
+    const fromIdx = sorted.indexOf(dragClientId.current);
+    const toIdx = sorted.indexOf(targetClientId);
+    if (fromIdx === -1 || toIdx === -1) return;
+    const newOrder = [...sorted];
+    newOrder.splice(fromIdx, 1);
+    newOrder.splice(toIdx, 0, dragClientId.current);
+    const updated = { ...kanbanOrder, [columnId]: newOrder };
+    setKanbanOrder(updated);
+    localStorage.setItem('kanban_order', JSON.stringify(updated));
+  };
 
 
   // --- Persistence ---
@@ -3730,7 +4085,8 @@ export default function App() {
       const matchesPlan = kanbanFilters.plans.length === 0 || kanbanFilters.plans.includes(c.plan.toUpperCase());
       const matchesResponsible = kanbanFilters.responsible === 'all' || c.responsible === kanbanFilters.responsible;
       const matchesStatus = kanbanFilters.status === 'Ativo' ? c.isActive : !c.isActive;
-      return matchesSearch && matchesPlan && matchesResponsible && matchesStatus;
+      const matchesTags = kanbanFilters.tags.length === 0 || kanbanFilters.tags.every((tagId: string) => c.tags.includes(tagId));
+      return matchesSearch && matchesPlan && matchesResponsible && matchesStatus && matchesTags;
     });
   }, [clients, searchQuery, kanbanFilters]);
 
@@ -3941,6 +4297,7 @@ export default function App() {
             <button onClick={() => setClientTab('materiais')} className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${clientTab === 'materiais' ? 'bg-brand-primary/10 text-brand-primary' : 'text-white/40 hover:text-white/60'}`}>Materiais</button>
             <button onClick={() => setClientTab('documentos')} className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${clientTab === 'documentos' ? 'bg-brand-primary/10 text-brand-primary' : 'text-white/40 hover:text-white/60'}`}>Documentos</button>
             <button onClick={() => setClientTab('educacao')} className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${clientTab === 'educacao' ? 'bg-brand-primary/10 text-brand-primary' : 'text-white/40 hover:text-white/60'}`}>Educação</button>
+            <button onClick={() => setClientTab('analise')} className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${clientTab === 'analise' ? 'bg-brand-primary/10 text-brand-primary' : 'text-white/40 hover:text-white/60'}`}>Análise de Ligação</button>
           </div>
           <div className="flex items-center gap-4">
             <span className="text-sm text-gray-400">{crmClientSession.user.nome}</span>
@@ -3953,6 +4310,7 @@ export default function App() {
           {clientTab === 'materiais' && <MateriaisClienteView tenantId={crmClientSession.tenant.id} />}
           {clientTab === 'documentos' && <DocumentosClienteView tenantId={crmClientSession.tenant.id} />}
           {clientTab === 'educacao' && <EducacaoView userEmail={crmClientSession.user.email} isAdmin={false} />}
+          {clientTab === 'analise' && <TranscricaoLigacaoView tenantId={crmClientSession.tenant.id} />}
         </div>
 
         {/* Botão flutuante do Consultor IA */}
@@ -4266,21 +4624,21 @@ export default function App() {
   const renderDashboard = () => <DashboardView userSession={userSession} />;
 
   const renderKanban = () => (
-    <div className="h-full flex flex-col gap-6">
-      <div className="flex justify-between items-center">
+    <div className="h-full flex flex-col gap-4 md:gap-6">
+      <div className="flex flex-wrap justify-between items-start gap-3">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Kanban de Operação</h1>
-          <p className="text-gray-400 mt-1">Gerencie o fluxo de entrega e ativação dos clientes.</p>
+          <h1 className="text-2xl md:text-3xl font-bold tracking-tight">Kanban de Operação</h1>
+          <p className="text-gray-400 mt-1 text-sm">Gerencie o fluxo de entrega e ativação dos clientes.</p>
         </div>
-        <div className="flex gap-3">
-          <div className="relative">
+        <div className="flex gap-3 w-full sm:w-auto">
+          <div className="relative flex-1 sm:flex-none">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" size={16} />
-            <input 
-              type="text" 
+            <input
+              type="text"
               placeholder="Buscar cliente..."
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
-              className="pl-10 pr-4 py-2 rounded-lg bg-white/5 border border-white/10 text-sm focus:outline-none focus:border-brand-primary/50 transition-all w-64"
+              className="pl-10 pr-4 py-2 rounded-lg bg-white/5 border border-white/10 text-sm focus:outline-none focus:border-brand-primary/50 transition-all w-full sm:w-64"
             />
           </div>
           <div className="relative">
@@ -4290,12 +4648,13 @@ export default function App() {
             >
               <Filter size={20} />
             </button>
-            <KanbanFilterPanel 
-              isOpen={isFilterOpen} 
-              onClose={() => setIsFilterOpen(false)} 
-              filters={kanbanFilters} 
+            <KanbanFilterPanel
+              isOpen={isFilterOpen}
+              onClose={() => setIsFilterOpen(false)}
+              filters={kanbanFilters}
               onFilterChange={setKanbanFilters}
               teamMembers={teamMembers}
+              allTags={allTags}
             />
           </div>
         </div>
@@ -4314,17 +4673,23 @@ export default function App() {
                 </div>
               </div>
               
-              <div className="flex-1 space-y-4 overflow-y-auto custom-scrollbar pr-1">
-                {filteredClients
-                  .filter(c => c.status === column.id)
-                  .map(client => (
-                    <ClientCard 
-                      key={client.id} 
-                      client={client} 
+              <div className="flex-1 space-y-3 overflow-y-auto custom-scrollbar pr-1">
+                {getSortedColumn(column.id).map(client => (
+                  <div
+                    key={client.id}
+                    draggable
+                    onDragStart={() => handleDragStart(client.id, column.id)}
+                    onDragOver={e => handleDragOver(e, client.id, column.id)}
+                    onDragEnd={() => { dragClientId.current = null; dragColumnId.current = null; }}
+                    className="cursor-grab active:cursor-grabbing active:opacity-50 transition-opacity"
+                  >
+                    <ClientCard
+                      client={client}
                       allTags={allTags}
-                      onClick={() => setSelectedClientId(client.id)} 
+                      onClick={() => setSelectedClientId(client.id)}
                     />
-                  ))}
+                  </div>
+                ))}
               </div>
             </div>
           ))}
@@ -4334,17 +4699,17 @@ export default function App() {
   );
 
   const renderClientes = () => (
-    <div className="space-y-8">
-      <div className="flex justify-between items-center">
+    <div className="space-y-6 md:space-y-8">
+      <div className="flex flex-wrap justify-between items-center gap-3">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Gestão de Clientes</h1>
-          <p className="text-gray-400 mt-1">Lista completa de parceiros e contratos ativos.</p>
+          <h1 className="text-2xl md:text-3xl font-bold tracking-tight">Gestão de Clientes</h1>
+          <p className="text-gray-400 mt-1 text-sm">Lista completa de parceiros e contratos ativos.</p>
         </div>
-        <button 
+        <button
           onClick={() => setIsRegistrationModalOpen(true)}
-          className="px-6 py-3 rounded-xl bg-brand-primary text-bg-main font-bold text-sm shadow-glow flex items-center gap-2 hover:scale-105 transition-all"
+          className="px-4 md:px-6 py-2.5 md:py-3 rounded-xl bg-brand-primary text-bg-main font-bold text-sm shadow-glow flex items-center gap-2 hover:scale-105 transition-all"
         >
-          <Plus size={20} /> Novo Cliente
+          <Plus size={18} /> Novo Cliente
         </button>
       </div>
 
@@ -4437,12 +4802,28 @@ export default function App() {
 
   return (
     <div className="flex h-screen bg-bg-main overflow-hidden">
+      {/* Mobile backdrop */}
+      <AnimatePresence>
+        {mobileSidebarOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/60 z-30 md:hidden"
+            onClick={() => setMobileSidebarOpen(false)}
+          />
+        )}
+      </AnimatePresence>
+
       {/* Sidebar */}
       <motion.aside
         initial={false}
-        animate={{ width: sidebarCollapsed ? 0 : 256, padding: sidebarCollapsed ? 0 : 24 }}
-        transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
-        className="bg-bg-sidebar border-r border-white/5 flex flex-col z-40 overflow-hidden flex-shrink-0"
+        animate={isMobile
+          ? { x: mobileSidebarOpen ? 0 : -280, width: 256, padding: 24 }
+          : { x: 0, width: sidebarCollapsed ? 0 : 256, padding: sidebarCollapsed ? 0 : 24 }
+        }
+        transition={{ duration: 0.25, ease: [0.4, 0, 0.2, 1] }}
+        className={`bg-bg-sidebar border-r border-white/5 flex flex-col z-40 overflow-hidden flex-shrink-0 ${isMobile ? 'fixed inset-y-0 left-0 h-full' : ''}`}
       >
         <div className="min-w-[208px] flex flex-col h-full overflow-y-auto overflow-x-hidden custom-scrollbar">
         <div className="flex items-center gap-3 mb-10 px-2">
@@ -4466,7 +4847,7 @@ export default function App() {
           </div>
         </div>
 
-        <nav className="flex-1 space-y-2">
+        <nav className="flex-1 space-y-2" onClick={() => { if (isMobile) setTimeout(() => setMobileSidebarOpen(false), 150); }}>
           {canSee('Dashboard') && !canSee('Aquisição') && <SidebarItem icon={LayoutDashboard} label="Dashboard" active={activeTab === 'Dashboard'} onClick={() => setActiveTab('Dashboard')} />}
           {canSee('Clientes') && <SidebarItem icon={Users} label="Clientes" active={activeTab === 'Clientes'} onClick={() => setActiveTab('Clientes')} />}
           {canSee('Equipe') && <SidebarItem icon={Users} label="Equipe" active={activeTab === 'Equipe'} onClick={() => setActiveTab('Equipe')} />}
@@ -4517,6 +4898,12 @@ export default function App() {
                   className={`w-full text-left px-4 py-2 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all ${entregaSubTab === 'Educacao' ? 'text-brand-primary bg-white/5' : 'text-gray-500 hover:text-white'}`}
                 >
                   Educação
+                </button>
+                <button
+                  onClick={() => setEntregaSubTab('Paginas')}
+                  className={`w-full text-left px-4 py-2 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all ${entregaSubTab === 'Paginas' ? 'text-brand-primary bg-white/5' : 'text-gray-500 hover:text-white'}`}
+                >
+                  Páginas
                 </button>
               </motion.div>
             )}
@@ -4612,31 +4999,32 @@ export default function App() {
       {/* Main Content */}
       <main className="flex-1 flex flex-col min-w-0 overflow-hidden relative">
         {/* Navbar */}
-        <header className="h-16 border-b border-white/5 px-8 flex items-center justify-between bg-bg-main/50 backdrop-blur-md z-30">
-          <div className="flex items-center gap-4">
+        <header className="h-16 border-b border-white/5 px-4 md:px-8 flex items-center justify-between bg-bg-main/50 backdrop-blur-md z-30">
+          <div className="flex items-center gap-2 md:gap-4 min-w-0">
             <button
-              onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-              className="p-1.5 rounded-lg text-gray-500 hover:text-brand-primary hover:bg-white/5 transition-all"
-              title={sidebarCollapsed ? 'Mostrar menu' : 'Esconder menu'}
+              onClick={() => isMobile ? setMobileSidebarOpen(!mobileSidebarOpen) : setSidebarCollapsed(!sidebarCollapsed)}
+              className="p-1.5 rounded-lg text-gray-500 hover:text-brand-primary hover:bg-white/5 transition-all shrink-0"
             >
-              {sidebarCollapsed ? <PanelLeft size={18} /> : <PanelLeftClose size={18} />}
+              {(!isMobile && sidebarCollapsed) || (isMobile && !mobileSidebarOpen)
+                ? <PanelLeft size={18} />
+                : <PanelLeftClose size={18} />}
             </button>
-            <span className="text-xs font-bold text-gray-500 uppercase tracking-widest">{agencyConfig.name}</span>
-            <ChevronRight size={14} className="text-gray-700" />
-            <span className="text-xs font-bold text-white">{activeTab}</span>
+            <span className="text-xs font-bold text-gray-500 uppercase tracking-widest hidden sm:block truncate max-w-[100px]">{agencyConfig.name}</span>
+            <ChevronRight size={14} className="text-gray-700 hidden sm:block shrink-0" />
+            <span className="text-xs font-bold text-white truncate">{activeTab}</span>
             {activeTab === 'Aquisição' && (
               <>
-                <ChevronRight size={14} className="text-gray-700" />
-                <span className="text-xs font-bold text-white">
-                  {aquisicaoSubTab === 'CRM' ? 'CRM' : aquisicaoSubTab === 'Relatorio' ? 'Relatório' : aquisicaoSubTab === 'Dashboard' ? 'Dashboard' : 'Playbooks'}
+                <ChevronRight size={14} className="text-gray-700 hidden sm:block shrink-0" />
+                <span className="text-xs font-bold text-white hidden sm:block truncate">
+                  {aquisicaoSubTab === 'CRM' ? 'CRM' : aquisicaoSubTab === 'Relatorio' ? 'Relatório' : aquisicaoSubTab === 'Dashboard' ? 'Dashboard' : aquisicaoSubTab === 'Transcricao' ? 'Análise de Ligação' : 'Playbooks'}
                 </span>
               </>
             )}
             {activeTab === 'Entrega' && (
               <>
-                <ChevronRight size={14} className="text-gray-700" />
-                <span className="text-xs font-bold text-white">
-                  {entregaSubTab === 'Kanban' ? 'Kanban de Operação' : entregaSubTab === 'Demandas' ? 'Demandas' : entregaSubTab === 'AreaCliente' ? 'Área do Cliente' : 'Educação'}
+                <ChevronRight size={14} className="text-gray-700 hidden sm:block shrink-0" />
+                <span className="text-xs font-bold text-white hidden sm:block truncate">
+                  {entregaSubTab === 'Kanban' ? 'Kanban de Operação' : entregaSubTab === 'Demandas' ? 'Demandas' : entregaSubTab === 'AreaCliente' ? 'Área do Cliente' : entregaSubTab === 'Paginas' ? 'Landing Pages' : 'Educação'}
                 </span>
               </>
             )}
@@ -4667,16 +5055,23 @@ export default function App() {
                 onMarkRead={(id) => setNotifications(notifications.map(n => n.id === id ? { ...n, read: true } : n))}
               />
             </div>
-            {(() => { const me = teamMembers.find(t => t.name === userSession?.name); return me?.photoUrl ? (
-              <img src={me.photoUrl} alt={me.name} className="w-8 h-8 rounded-full object-cover" referrerPolicy="no-referrer" />
-            ) : (
-              <div className="w-8 h-8 rounded-full" style={{ backgroundColor: userSession.color }} />
+            {(() => { const me = teamMembers.find(t => t.name === userSession?.name); return (
+              <div className="relative">
+                <button onClick={() => setIsHeaderMenuOpen(!isHeaderMenuOpen)} className="relative">
+                  {me?.photoUrl ? (
+                    <img src={me.photoUrl} alt={me.name} className="w-8 h-8 rounded-full object-cover ring-2 ring-transparent hover:ring-brand-primary transition-all" referrerPolicy="no-referrer" />
+                  ) : (
+                    <div className="w-8 h-8 rounded-full hover:ring-2 hover:ring-brand-primary transition-all" style={{ backgroundColor: userSession.color }} />
+                  )}
+                </button>
+                <UserMenuHeader isOpen={isHeaderMenuOpen} onClose={() => setIsHeaderMenuOpen(false)} onLogout={() => { signOut(); setUserSession(null); localStorage.removeItem('hubm2black_session'); setActiveTab('Dashboard'); }} />
+              </div>
             ); })()}
           </div>
         </header>
 
         {/* Content Area */}
-        <div className="flex-1 overflow-y-auto custom-scrollbar p-8">
+        <div className="flex-1 overflow-y-auto custom-scrollbar p-4 md:p-8">
           <AnimatePresence mode="wait">
             <motion.div
               key={activeTab}
@@ -4720,6 +5115,7 @@ export default function App() {
               {activeTab === 'Entrega' && entregaSubTab === 'Educacao' && (
                 <EducacaoView userEmail={userSession.email} isAdmin={userSession.role.toLowerCase() === 'admin'} />
               )}
+              {activeTab === 'Entrega' && entregaSubTab === 'Paginas' && <LandingPagesView />}
               {activeTab === 'Aquisição' && aquisicaoSubTab === 'Dashboard' && (
                 <DashboardView userSession={userSession} />
               )}

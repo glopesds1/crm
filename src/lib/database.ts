@@ -1,4 +1,4 @@
-import { supabase } from './supabase';
+import { supabase, supabaseAdmin } from './supabase';
 import type { Client, TeamMember, AgencyConfig, Tag, ComercialTask, Demand, CrmClientTarefa, EducacaoModulo, EducacaoAula, EducacaoProgresso } from '../types';
 
 // --- Mappers Client camelCase <-> snake_case ---
@@ -100,6 +100,7 @@ function dbToMember(row: Record<string, unknown>): TeamMember {
     photoUrl: (row.photo_url as string) || '',
     phone: (row.phone as string) || '',
     webhookKentro: (row.webhook_kentro as string) || '',
+    auth_user_id: (row.auth_user_id as string) || '',
   };
 }
 
@@ -151,9 +152,21 @@ export async function getTeamMembers(): Promise<TeamMember[]> {
 }
 
 export async function createTeamMember(member: TeamMember): Promise<TeamMember> {
+  // Cria conta no Supabase Auth automaticamente
+  let authUserId = member.auth_user_id || '';
+  if (supabaseAdmin && member.email && member.password) {
+    const { data: authData } = await supabaseAdmin.auth.admin.createUser({
+      email: member.email,
+      password: member.password,
+      email_confirm: true,
+      user_metadata: { team_member_id: member.id },
+    });
+    if (authData?.user?.id) authUserId = authData.user.id;
+  }
+
   const { data, error } = await supabase
     .from('team_members')
-    .insert(memberToDb(member))
+    .insert({ ...memberToDb(member), auth_user_id: authUserId })
     .select()
     .single();
   if (error) throw error;
@@ -168,6 +181,14 @@ export async function updateTeamMember(member: TeamMember): Promise<TeamMember> 
     .select()
     .single();
   if (error) throw error;
+
+  // Se tiver auth_user_id e senha, sincroniza a senha no Supabase Auth
+  if (member.auth_user_id && member.password && supabaseAdmin) {
+    await supabaseAdmin.auth.admin.updateUserById(member.auth_user_id, {
+      password: member.password,
+    });
+  }
+
   return dbToMember(data as Record<string, unknown>);
 }
 
@@ -271,7 +292,7 @@ export async function createTag(tag: Tag): Promise<Tag> {
   const dbRow = { id: tag.id, label: tag.label, color: tag.color };
   const { data, error } = await supabase
     .from('tags')
-    .insert(dbRow)
+    .upsert(dbRow, { onConflict: 'id' })
     .select()
     .single();
   if (error) throw error;
