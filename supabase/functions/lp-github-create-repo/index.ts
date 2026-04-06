@@ -22,27 +22,46 @@ Deno.serve(async (req) => {
       ? `https://api.github.com/orgs/${org}/repos`
       : 'https://api.github.com/user/repos';
 
-    const ghRes = await fetch(endpoint, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        Accept: 'application/vnd.github+json',
-        'Content-Type': 'application/json',
-        'X-GitHub-Api-Version': '2022-11-28',
-      },
-      body: JSON.stringify({
-        name: repoName,
-        description: description || `Landing page — ${repoName}`,
-        private: false,
-        auto_init: true,
-      }),
+    // Verificar se o repo já existe
+    const owner = org || (await fetch('https://api.github.com/user', {
+      headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28' },
+    }).then(r => r.json()).then(d => d.login));
+
+    const checkRes = await fetch(`https://api.github.com/repos/${owner}/${repoName}`, {
+      headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28' },
     });
 
-    const ghData = await ghRes.json();
-    console.log('[GitHub] status:', ghRes.status, JSON.stringify(ghData));
+    let ghData: Record<string, unknown>;
 
-    if (!ghRes.ok) {
-      return Response.json({ ok: false, error: `GitHub: ${ghData.message || ghRes.status}` }, { headers: corsHeaders });
+    if (checkRes.ok) {
+      // Repo já existe — só vincular
+      ghData = await checkRes.json();
+      console.log('[GitHub] repo já existe:', ghData.full_name);
+    } else {
+      // Criar novo repo
+      const ghRes = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: 'application/vnd.github+json',
+          'Content-Type': 'application/json',
+          'X-GitHub-Api-Version': '2022-11-28',
+        },
+        body: JSON.stringify({
+          name: repoName,
+          description: description || `Landing page — ${repoName}`,
+          private: false,
+          auto_init: true,
+        }),
+      });
+
+      ghData = await ghRes.json();
+      console.log('[GitHub] status:', ghRes.status);
+
+      if (!ghRes.ok) {
+        const msg = (ghData.errors as Array<{message: string}>)?.[0]?.message || ghData.message as string || String(ghRes.status);
+        return Response.json({ ok: false, error: `GitHub: ${msg}` }, { headers: corsHeaders });
+      }
     }
 
     const supabase = createClient(
