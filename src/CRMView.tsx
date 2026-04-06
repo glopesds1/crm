@@ -1185,7 +1185,7 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
               onLeadUpdated?.({ etapa: 'rm_marcada', tags: tagsReag });
             } catch { /* silent */ }
           } else {
-            // Sem reagendamento: apenas No-show → rm_realizada + tag No-show
+            // Sem reagendamento: apenas No-show → permanece rm_marcada + tag No-show
             syncPostgres(leadObj?.lead_externo_id, {
               reuniao_action: 'resultado',
               crm_lead_id: leadId,
@@ -1197,8 +1197,8 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
             const tagsNoShow = [...(leadObj?.tags ?? [])];
             if (!tagsNoShow.includes('No-show')) tagsNoShow.push('No-show');
             try {
-              await supabase.from('crm_leads').update({ etapa: 'rm_realizada', etapa_desde: now, tags: tagsNoShow, updated_at: now }).eq('id', leadId);
-              onLeadUpdated?.({ etapa: 'rm_realizada', tags: tagsNoShow });
+              await supabase.from('crm_leads').update({ tags: tagsNoShow, updated_at: now }).eq('id', leadId);
+              onLeadUpdated?.({ tags: tagsNoShow });
             } catch { /* silent */ }
           }
         } else if (statusReuniao === 'Compareceu') {
@@ -2241,6 +2241,9 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
     } else if (rrResultado === 'Perdido') {
       leadUpd.etapa = 'perdido'; leadUpd.status = 'perdido';
       leadUpd.motivo_perda = rrMotivoPerda || null;
+    } else if (rrStatusReuniao === 'Não compareceu') {
+      // No-show: permanece em rm_marcada, não muda etapa
+      delete leadUpd.etapa_desde;
     } else {
       leadUpd.etapa = 'rm_realizada';
     }
