@@ -1849,6 +1849,11 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
 
   const toggleDemanda = async (field: keyof CRMDemandaVenda) => {
     if (!demandaVenda || demandaSaving) return;
+    const allComplete = demandaVenda.contrato_feito && demandaVenda.contrato_assinado &&
+      demandaVenda.sinal_pago && demandaVenda.entrada_paga &&
+      demandaVenda.onboarding_agendado && demandaVenda.grupo_criado &&
+      demandaVenda.membros_adicionados && demandaVenda.mensagem_saudacao;
+    if (allComplete) return;
     const newVal = !demandaVenda[field];
     setDemandaSaving(true);
 
@@ -1868,7 +1873,7 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
 
     const vendaValidada = (updated.contrato_assinado && updated.sinal_pago) || updated.entrada_paga;
 
-    if (vendaValidada && lead.etapa !== 'fechado') {
+    if (vendaValidada && etapa !== 'fechado') {
       const now = new Date().toISOString();
       await supabase.from('crm_leads').update({
         etapa: 'fechado', status: 'ganho', updated_at: now, etapa_desde: now,
@@ -1923,14 +1928,16 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
         etapa: 'fechado', status: 'ganho',
         Data_Venda: now,
       });
+      setEtapa('fechado');
     }
 
-    if (!vendaValidada && lead.etapa === 'fechado') {
+    if (!vendaValidada && etapa === 'fechado') {
       const now = new Date().toISOString();
       await supabase.from('crm_leads').update({
         etapa: 'fup_ativa', status: 'venda_pendente', updated_at: now, etapa_desde: now,
       }).eq('id', lead.id);
       onSave({ etapa: 'fup_ativa', status: 'venda_pendente' });
+      setEtapa('fup_ativa');
     }
 
     setDemandaSaving(false);
@@ -3299,8 +3306,18 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
           )}
 
           {/* ── TAB: DEMANDAS DA VENDA ── */}
-          {tab === 'demandas' && demandaVenda && (
+          {tab === 'demandas' && demandaVenda && (() => {
+            const demandaCompleta = demandaVenda.contrato_feito && demandaVenda.contrato_assinado &&
+              demandaVenda.sinal_pago && demandaVenda.entrada_paga &&
+              demandaVenda.onboarding_agendado && demandaVenda.grupo_criado &&
+              demandaVenda.membros_adicionados && demandaVenda.mensagem_saudacao;
+            return (
             <div className="space-y-4">
+              {demandaCompleta && (
+                <div className="bg-green-900/30 text-green-400 border border-green-500/30 p-3 rounded-xl text-xs font-bold text-center mb-4">
+                  Processo completo — todas as demandas foram atendidas
+                </div>
+              )}
               {/* Checklist que define a venda */}
               <div>
                 <p className="text-[9px] font-bold uppercase tracking-widest text-gray-600 mb-2">Validação da Venda</p>
@@ -3316,11 +3333,11 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
                       demandaVenda[field]
                         ? 'bg-brand-primary/10 border-brand-primary/30'
                         : 'bg-white/5 border-white/10 hover:border-white/20'
-                    } ${field === 'contrato_assinado' && !demandaVenda.contrato_feito ? 'opacity-40 pointer-events-none' : ''}`}>
+                    } ${demandaCompleta ? 'opacity-60 pointer-events-none' : field === 'contrato_assinado' && !demandaVenda.contrato_feito ? 'opacity-40 pointer-events-none' : ''}`}>
                       <input type="checkbox" checked={demandaVenda[field]} onChange={() => toggleDemanda(field)}
-                        className="w-4 h-4 rounded accent-brand-primary" />
+                        disabled={demandaCompleta} className="w-4 h-4 rounded accent-brand-primary" />
                       <span className={`text-xs ${demandaVenda[field] ? 'text-brand-primary font-semibold' : 'text-gray-400'}`}>{label}</span>
-                      {field === 'contrato_assinado' && !demandaVenda.contrato_feito && (
+                      {!demandaCompleta && field === 'contrato_assinado' && !demandaVenda.contrato_feito && (
                         <span className="text-[9px] text-gray-600 ml-auto">Faça o contrato primeiro</span>
                       )}
                     </label>
@@ -3351,16 +3368,17 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
                       demandaVenda[field]
                         ? 'bg-brand-primary/10 border-brand-primary/30'
                         : 'bg-white/5 border-white/10 hover:border-white/20'
-                    }`}>
+                    } ${demandaCompleta ? 'opacity-60 pointer-events-none' : ''}`}>
                       <input type="checkbox" checked={demandaVenda[field]} onChange={() => toggleDemanda(field)}
-                        className="w-4 h-4 rounded accent-brand-primary" />
+                        disabled={demandaCompleta} className="w-4 h-4 rounded accent-brand-primary" />
                       <span className={`text-xs ${demandaVenda[field] ? 'text-brand-primary font-semibold' : 'text-gray-400'}`}>{label}</span>
                     </label>
                   ))}
                 </div>
               </div>
             </div>
-          )}
+            );
+          })()}
         </div>
       </motion.div>
     </div>
