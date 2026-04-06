@@ -3107,6 +3107,28 @@ const ClientModal = ({ client, allTags, teamMembers, onClose, onUpdateClient, on
                     <Plus size={20} />
                   </button>
                 </div>
+                {/* Preview de menções reconhecidas */}
+                {(() => {
+                  const mentionRegex = /@([A-Za-zÀ-ÿ]+(?:\s[A-Za-zÀ-ÿ]+)*)/g;
+                  const matched: string[] = [];
+                  let m;
+                  while ((m = mentionRegex.exec(newComment)) !== null) {
+                    const name = m[1].trim();
+                    const found = teamMembers.find(t => t.name.toLowerCase().startsWith(name.toLowerCase()));
+                    if (found && !matched.includes(found.name)) matched.push(found.name);
+                  }
+                  if (matched.length === 0) return null;
+                  return (
+                    <div className="flex items-center gap-1.5 mt-2 flex-wrap">
+                      <span className="text-[10px] text-gray-500">Vai criar demanda para:</span>
+                      {matched.map(name => (
+                        <span key={name} className="text-[10px] font-bold text-brand-primary bg-brand-primary/10 px-2 py-0.5 rounded-full">
+                          @{name}
+                        </span>
+                      ))}
+                    </div>
+                  );
+                })()}
               </div>
             </div>
           </div>
