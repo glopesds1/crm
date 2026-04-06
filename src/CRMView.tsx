@@ -3654,6 +3654,7 @@ export default function CRMView({ userSession, teamMembers, openLeadByName, onLe
 
   const refreshDemandas = useCallback(async () => {
     if (userSession?.role !== 'admin' && userSession?.role !== 'comercial') return;
+    if (leads.length === 0) return;
     const { data: demandas } = await supabase.from('crm_demandas_venda').select('*');
     if (!demandas) return;
     const pendentes = demandas.filter((d: any) => {
@@ -3666,7 +3667,8 @@ export default function CRMView({ userSession, teamMembers, openLeadByName, onLe
       return { ...d, lead_nome: lead?.nome ?? 'Lead desconhecido', closer: lead?.closer_responsavel ?? '' };
     }).filter((d: any) => {
       if (userSession?.role === 'admin') return true;
-      return d.closer === userSession?.name;
+      const lead = leads.find(l => l.id === d.lead_id);
+      return d.closer === userSession?.name || lead?.sdr_responsavel === userSession?.name;
     });
     setDemandasPendentes(enriched);
   }, [leads, userSession]);
@@ -3680,6 +3682,7 @@ export default function CRMView({ userSession, teamMembers, openLeadByName, onLe
     const isResponsavelLead = (lead?.closer_responsavel === userSession?.name) || (lead?.sdr_responsavel === userSession?.name);
     return isResponsavelTarefa || isResponsavelLead;
   });
+  console.log('[debug tarefas]', { total: tarefas.length, userName: userSession?.name, pendentes: minhasTarefasPendentes.length });
 
   // ── Task alarm system ──────────────────────────────────────
   const [alarmTarefas, setAlarmTarefas] = useState<CRMTarefa[]>([]);
@@ -4065,7 +4068,7 @@ export default function CRMView({ userSession, teamMembers, openLeadByName, onLe
       </div>
 
       {/* ── Painel Pendências + Tarefas ── */}
-      {(userSession?.role === 'admin' || userSession?.role === 'comercial') && (demandasPendentes.length > 0 || minhasTarefasPendentes.length > 0) && (
+      {(userSession?.role === 'admin' || userSession?.role === 'comercial') && (
         <div className="grid grid-cols-2 gap-4 mb-4">
           {/* Lado esquerdo: Pendências de Venda */}
           <div className="bg-[#1a1f2e] rounded-2xl p-4 border border-white/5 max-h-52 overflow-y-auto">
