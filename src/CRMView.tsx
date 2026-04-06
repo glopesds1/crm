@@ -404,6 +404,21 @@ interface CRMTarefa {
   concluida: boolean;
 }
 
+interface CRMDemandaVenda {
+  id: string;
+  lead_id: string;
+  contrato_feito: boolean;
+  contrato_assinado: boolean;
+  sinal_pago: boolean;
+  entrada_paga: boolean;
+  onboarding_agendado: boolean;
+  grupo_criado: boolean;
+  membros_adicionados: boolean;
+  mensagem_saudacao: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
 // ── Etapas do pipeline ────────────────────────────────────────
 const ETAPAS = [
   { id: 'base',           label: 'Base de Leads',      color: 'border-gray-600',     badge: 'bg-gray-700 text-gray-300' },
@@ -990,64 +1005,23 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
           const vendaCc = valorCc ? parseFloat(valorCc) : null;
           const vendaMrr = prazoMeses && valorContrato ? parseFloat(valorContrato) / parseInt(prazoMeses) : null;
           await supabase.from('crm_leads').update({
-            etapa: 'fechado', status: 'ganho',
+            etapa: 'fup_ativa', status: 'venda_pendente',
             programa_apresentado: vendaPrograma,
             valor_contrato: vendaContrato,
             valor_cc: vendaCc,
             valor_mrr: vendaMrr,
             updated_at: now, etapa_desde: now,
           }).eq('id', leadId);
-          onLeadUpdated?.({ etapa: 'fechado', status: 'ganho', programa_apresentado: vendaPrograma ?? undefined, valor_contrato: vendaContrato ?? undefined, valor_cc: vendaCc ?? undefined, valor_mrr: vendaMrr ?? undefined } as Partial<CRMLead>);
+          onLeadUpdated?.({ etapa: 'fup_ativa', status: 'venda_pendente', programa_apresentado: vendaPrograma ?? undefined, valor_contrato: vendaContrato ?? undefined, valor_cc: vendaCc ?? undefined, valor_mrr: vendaMrr ?? undefined } as Partial<CRMLead>);
 
-          // Auto-create client
-          try {
-            const parsedContrato = valorContrato ? parseFloat(valorContrato) : 0;
-            const parsedMrr = prazoMeses && valorContrato ? parseFloat(valorContrato) / parseInt(prazoMeses) : 0;
-            const dur = parseInt(tempoContrato) || (parsedMrr ? Math.round(parsedContrato / parsedMrr) : 12);
-            const entryDate = new Date().toISOString().split('T')[0];
-            const clienteData = {
-              id: Date.now().toString(),
-              name: razaoSocial || leadName,
-              responsible: nomeResponsavel || (leadObj as any)?.nome_responsavel_financeiro || responsavelAtividade || (leadObj?.closer_responsavel ?? ''),
-              plan: vendaPrograma || 'Pro',
-              status: 'Ativo',
-              entry_date: entryDate,
-              exit_date: '',
-              contract_duration: dur,
-              docs: { access: '', transcription: '' },
-              tags: [],
-              platforms: [],
-              funnels: [],
-              onboarding_checklist: DEFAULT_ONBOARDING_ITEMS.map((label, i) => ({
-                id: `ob-${i}-${Date.now()}`,
-                label,
-                completed: false,
-              })),
-              monthly_meetings: [],
-              comments: [],
-              offers: [],
-              situation: '',
-              razao_social: razaoSocial || '',
-              tipo_pessoa: tipoPessoa || '',
-              cpf_cnpj: cpfCnpj || '',
-              endereco: endereco || '',
-              email_contato: emailContato || '',
-              telefone_contato: telefoneContato || '',
-              nome_responsavel_financeiro: nomeResponsavel || '',
-              valor_contrato: parsedContrato,
-              valor_cc: valorCc ? parseFloat(valorCc) : 0,
-              valor_mrr: parsedMrr,
-              forma_pagamento: formaPagamento || '',
-              data_primeiro_vencimento: dataPrimeiroVencimento || '',
-            };
-            console.log('[clients] Inserting:', JSON.stringify(clienteData, null, 2));
-            const { error: clientErr } = await supabase.from('clients').insert(clienteData);
-            if (clientErr) {
-              console.error('[clients] Insert error:', JSON.stringify(clientErr));
-            } else {
-              onClientCreated?.();
-            }
-          } catch (err) { console.error('Failed to create client:', err); }
+          // Criar registro de demandas da venda
+          await supabase.from('crm_demandas_venda').upsert({
+            lead_id: leadId,
+            contrato_feito: false, contrato_assinado: false,
+            sinal_pago: false, entrada_paga: false,
+            onboarding_agendado: false, grupo_criado: false,
+            membros_adicionados: false, mensagem_saudacao: false,
+          }, { onConflict: 'lead_id' });
 
 
         } else if (resultado === 'Perdido') {
@@ -1859,12 +1833,108 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
   const [ativFormTipo, setAtivFormTipo] = useState<'ligacao' | 'reuniao' | undefined>(undefined);
   const [concluindoTarefaViaAtiv, setConcluindoTarefaViaAtiv] = useState<string | null>(null);
   const [showAgendarTarefa, setShowAgendarTarefa] = useState(false);
-  const [agTipo, setAgTipo] = useState<'ligacao' | 'follow-up' | 'nota' | 'outro' | null>(null);
+  const [agTipo, setAgTipo] = useState<'ligacao' | 'follow-up' | null>(null);
   const [agTitulo, setAgTitulo] = useState('');
   const [agData, setAgData] = useState('');
   const [agResponsavel, setAgResponsavel] = useState('');
   const [agSaving, setAgSaving] = useState(false);
-  const [tab, setTab] = useState<'info' | 'timeline' | 'tarefas'>('info');
+  const [tab, setTab] = useState<'info' | 'timeline' | 'tarefas' | 'demandas'>('info');
+  const [demandaVenda, setDemandaVenda] = useState<CRMDemandaVenda | null>(null);
+  const [demandaSaving, setDemandaSaving] = useState(false);
+
+  useEffect(() => {
+    supabase.from('crm_demandas_venda').select('*').eq('lead_id', lead.id).maybeSingle()
+      .then(({ data }) => { if (data) setDemandaVenda(data); });
+  }, [lead.id]);
+
+  const toggleDemanda = async (field: keyof CRMDemandaVenda) => {
+    if (!demandaVenda || demandaSaving) return;
+    const newVal = !demandaVenda[field];
+    setDemandaSaving(true);
+
+    const updates: Partial<CRMDemandaVenda> = { [field]: newVal, updated_at: new Date().toISOString() };
+
+    if (field === 'contrato_feito' && !newVal) {
+      updates.contrato_assinado = false;
+    }
+    if (field === 'contrato_assinado' && newVal && !demandaVenda.contrato_feito) {
+      updates.contrato_feito = true;
+    }
+
+    const updated = { ...demandaVenda, ...updates };
+    setDemandaVenda(updated);
+
+    await supabase.from('crm_demandas_venda').update(updates).eq('id', demandaVenda.id);
+
+    const vendaValidada = (updated.contrato_assinado && updated.sinal_pago) || updated.entrada_paga;
+
+    if (vendaValidada && lead.etapa !== 'fechado') {
+      const now = new Date().toISOString();
+      await supabase.from('crm_leads').update({
+        etapa: 'fechado', status: 'ganho', updated_at: now, etapa_desde: now,
+      }).eq('id', lead.id);
+      onSave({ etapa: 'fechado', status: 'ganho' });
+
+      try {
+        const parsedContrato = lead.valor_contrato ?? 0;
+        const parsedMrr = lead.valor_mrr ?? 0;
+        const dur = parsedMrr > 0 ? Math.round(parsedContrato / parsedMrr) : 12;
+        const entryDate = new Date().toISOString().split('T')[0];
+        const clienteData = {
+          id: Date.now().toString(),
+          name: lead.empresa || lead.nome,
+          responsible: lead.closer_responsavel ?? '',
+          plan: lead.programa_apresentado || 'Pro',
+          status: 'Ativo',
+          entry_date: entryDate,
+          exit_date: '',
+          contract_duration: dur,
+          docs: { access: '', transcription: '' },
+          tags: [],
+          platforms: [],
+          funnels: [],
+          onboarding_checklist: DEFAULT_ONBOARDING_ITEMS.map((label, i) => ({
+            id: `ob-${i}-${Date.now()}`,
+            label,
+            completed: false,
+          })),
+          monthly_meetings: [],
+          comments: [],
+          offers: [],
+          situation: '',
+          razao_social: lead.empresa ?? '',
+          tipo_pessoa: '',
+          cpf_cnpj: '',
+          endereco: '',
+          email_contato: lead.email ?? '',
+          telefone_contato: lead.telefone ?? '',
+          nome_responsavel_financeiro: '',
+          valor_contrato: parsedContrato,
+          valor_cc: lead.valor_cc ?? 0,
+          valor_mrr: parsedMrr,
+          forma_pagamento: '',
+          data_primeiro_vencimento: '',
+        };
+        const { error: clientErr } = await supabase.from('clients').insert(clienteData);
+        if (!clientErr) onClientCreated?.();
+      } catch (err) { console.error('Failed to create client on venda validation:', err); }
+
+      syncPostgres(lead.lead_externo_id, {
+        etapa: 'fechado', status: 'ganho',
+        Data_Venda: now,
+      });
+    }
+
+    if (!vendaValidada && lead.etapa === 'fechado') {
+      const now = new Date().toISOString();
+      await supabase.from('crm_leads').update({
+        etapa: 'fup_ativa', status: 'venda_pendente', updated_at: now, etapa_desde: now,
+      }).eq('id', lead.id);
+      onSave({ etapa: 'fup_ativa', status: 'venda_pendente' });
+    }
+
+    setDemandaSaving(false);
+  };
   // ── Agendar Reunião (BANT) ──────────────────────────────────
   const [showAgendarReuniao, setShowAgendarReuniao] = useState(false);
   const [arTipo, setArTipo] = useState<'R1' | 'R2'>('R1');
@@ -2237,7 +2307,7 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
     if (rrValorCc) leadUpd.valor_cc = parseFloat(rrValorCc);
     if (computedMrr != null) leadUpd.valor_mrr = computedMrr;
     if (rrResultado === 'Venda') {
-      leadUpd.etapa = 'fechado'; leadUpd.status = 'ganho';
+      leadUpd.etapa = 'fup_ativa'; leadUpd.status = 'venda_pendente';
     } else if (rrResultado === 'Perdido') {
       leadUpd.etapa = 'perdido'; leadUpd.status = 'perdido';
       leadUpd.motivo_perda = rrMotivoPerda || null;
@@ -2256,48 +2326,15 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
     await supabase.from('crm_leads').update(leadUpd).eq('id', lead.id);
     await onSave(leadUpd);
 
-    // Auto-create client on Venda
+    // Criar registro de demandas da venda (não cria cliente ainda)
     if (rrResultado === 'Venda') {
-      try {
-        const parsedContrato = rrValorContrato ? parseFloat(rrValorContrato) : 0;
-        const parsedMrr = computedMrr ?? 0;
-        const dur = parsedMrr ? Math.round(parsedContrato / parsedMrr) : 12;
-        const entryDate = new Date().toISOString().split('T')[0];
-        const clienteData = {
-          id: Date.now().toString(),
-          name: lead.nome,
-          responsible: rrNomeResponsavel || (lead as any)?.nome_responsavel_financeiro || lead.closer_responsavel || '',
-          plan: lead.programa_apresentado === 'Pro' ? 'Pro' : lead.programa_apresentado === 'Lite' ? 'Lite' : 'Basic',
-          status: 'Onboarding',
-          entry_date: entryDate,
-          exit_date: '',
-          contract_duration: dur,
-          docs: { access: '', transcription: '' },
-          tags: [],
-          platforms: [],
-          funnels: [],
-          onboarding_checklist: [],
-          monthly_meetings: [],
-          comments: [],
-          offers: [],
-          situation: '',
-          razao_social: rrRazaoSocial || '',
-          tipo_pessoa: rrTipoPessoa || '',
-          cpf_cnpj: rrCpfCnpj || '',
-          endereco: rrEndereco || '',
-          email_contato: rrEmailContato || '',
-          telefone_contato: rrTelefoneContato || '',
-          nome_responsavel_financeiro: rrNomeResponsavel || '',
-          valor_contrato: parsedContrato,
-          valor_cc: rrValorCc ? parseFloat(rrValorCc) : 0,
-          valor_mrr: parsedMrr,
-          forma_pagamento: rrFormaPagamento || '',
-          data_primeiro_vencimento: rrDataPrimeiroVencimento || '',
-        };
-        console.log('[clients] Inserting:', JSON.stringify(clienteData, null, 2));
-        await supabase.from('clients').insert(clienteData);
-      } catch (err) { console.error('Failed to create client:', err); }
-
+      await supabase.from('crm_demandas_venda').upsert({
+        lead_id: lead.id,
+        contrato_feito: false, contrato_assinado: false,
+        sinal_pago: false, entrada_paga: false,
+        onboarding_agendado: false, grupo_criado: false,
+        membros_adicionados: false, mensagem_saudacao: false,
+      }, { onConflict: 'lead_id' });
     }
 
     // 3. comercial_tasks
@@ -2653,7 +2690,11 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
 
         {/* Tabs */}
         <div className="flex border-b border-white/5">
-          {[['info','Informações'], ['timeline','Atividades'], ['tarefas','Tarefas']].map(([id, label]) => (
+          {(() => {
+            const tabs: [string, string][] = [['info','Informações'], ['timeline','Atividades'], ['tarefas','Tarefas']];
+            if (demandaVenda) tabs.push(['demandas', 'Demandas da Venda']);
+            return tabs;
+          })().map(([id, label]) => (
             <button key={id} onClick={() => setTab(id as any)}
               className={`flex-1 py-2.5 text-[11px] font-bold uppercase tracking-widest transition-colors ${tab === id ? 'text-brand-primary border-b-2 border-brand-primary' : 'text-gray-500 hover:text-gray-300'}`}
             >{label} {id === 'timeline' && atividades.length > 0 && `(${atividades.length})`}</button>
@@ -3122,8 +3163,8 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
                 <div className="space-y-3 bg-white/[0.02] border border-white/10 rounded-xl p-4">
                   <p className="text-[9px] font-bold uppercase tracking-widest text-brand-primary">Agendar Próxima Atividade</p>
                   {/* Tipo da atividade */}
-                  <div className="grid grid-cols-4 gap-1.5">
-                    {([['ligacao', 'Ligação'], ['follow-up', 'Follow-up'], ['nota', 'Nota'], ['outro', 'Outro']] as const).map(([key, label]) => (
+                  <div className="grid grid-cols-2 gap-1.5">
+                    {([['ligacao', 'Ligação'], ['follow-up', 'Follow-up']] as const).map(([key, label]) => (
                       <button key={key} onClick={() => setAgTipo(key)}
                         className={`py-2 rounded-xl border text-[10px] font-bold transition-all flex items-center justify-center cursor-pointer ${agTipo === key ? 'bg-brand-primary/20 border-brand-primary text-brand-primary' : 'bg-white/5 border-white/10 text-gray-500 hover:text-gray-300'}`}
                       >{label}</button>
@@ -3254,6 +3295,70 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
                   )}
                 </div>
               ))}
+            </div>
+          )}
+
+          {/* ── TAB: DEMANDAS DA VENDA ── */}
+          {tab === 'demandas' && demandaVenda && (
+            <div className="space-y-4">
+              {/* Checklist que define a venda */}
+              <div>
+                <p className="text-[9px] font-bold uppercase tracking-widest text-gray-600 mb-2">Validação da Venda</p>
+                <p className="text-[9px] text-gray-500 mb-3">A venda só é contabilizada quando: (Contrato assinado + Sinal pago) ou (Entrada paga)</p>
+                <div className="space-y-2">
+                  {([
+                    ['contrato_feito', 'Contrato feito (enviado ao cliente)'],
+                    ['contrato_assinado', 'Contrato assinado'],
+                    ['sinal_pago', 'Sinal pago'],
+                    ['entrada_paga', 'Entrada paga (cash collect)'],
+                  ] as const).map(([field, label]) => (
+                    <label key={field} className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all ${
+                      demandaVenda[field]
+                        ? 'bg-brand-primary/10 border-brand-primary/30'
+                        : 'bg-white/5 border-white/10 hover:border-white/20'
+                    } ${field === 'contrato_assinado' && !demandaVenda.contrato_feito ? 'opacity-40 pointer-events-none' : ''}`}>
+                      <input type="checkbox" checked={demandaVenda[field]} onChange={() => toggleDemanda(field)}
+                        className="w-4 h-4 rounded accent-brand-primary" />
+                      <span className={`text-xs ${demandaVenda[field] ? 'text-brand-primary font-semibold' : 'text-gray-400'}`}>{label}</span>
+                      {field === 'contrato_assinado' && !demandaVenda.contrato_feito && (
+                        <span className="text-[9px] text-gray-600 ml-auto">Faça o contrato primeiro</span>
+                      )}
+                    </label>
+                  ))}
+                </div>
+                {/* Status da venda */}
+                {(() => {
+                  const v = (demandaVenda.contrato_assinado && demandaVenda.sinal_pago) || demandaVenda.entrada_paga;
+                  return (
+                    <div className={`mt-3 p-3 rounded-xl text-xs font-bold text-center ${v ? 'bg-green-900/30 text-green-400 border border-green-500/30' : 'bg-yellow-900/20 text-yellow-500 border border-yellow-500/20'}`}>
+                      {v ? 'Venda validada — contabilizada no dashboard' : 'Venda pendente de validação'}
+                    </div>
+                  );
+                })()}
+              </div>
+
+              {/* Checklist de processo */}
+              <div>
+                <p className="text-[9px] font-bold uppercase tracking-widest text-gray-600 mb-2">Processo de Ativação</p>
+                <div className="space-y-2">
+                  {([
+                    ['onboarding_agendado', 'Onboarding agendado'],
+                    ['grupo_criado', 'Grupo criado'],
+                    ['membros_adicionados', 'Adicionou os membros'],
+                    ['mensagem_saudacao', 'Enviou mensagem de saudação'],
+                  ] as const).map(([field, label]) => (
+                    <label key={field} className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all ${
+                      demandaVenda[field]
+                        ? 'bg-brand-primary/10 border-brand-primary/30'
+                        : 'bg-white/5 border-white/10 hover:border-white/20'
+                    }`}>
+                      <input type="checkbox" checked={demandaVenda[field]} onChange={() => toggleDemanda(field)}
+                        className="w-4 h-4 rounded accent-brand-primary" />
+                      <span className={`text-xs ${demandaVenda[field] ? 'text-brand-primary font-semibold' : 'text-gray-400'}`}>{label}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
             </div>
           )}
         </div>
@@ -3543,6 +3648,38 @@ export default function CRMView({ userSession, teamMembers, openLeadByName, onLe
   const [filtroTag, setFiltroTag] = useState('');
   const [filtroScore, setFiltroScore] = useState('Todos');
   const isAdmin = (userSession?.role ?? '').toLowerCase() === 'admin';
+
+  // ── Demandas pendentes ──────────────────────────────────────
+  const [demandasPendentes, setDemandasPendentes] = useState<(CRMDemandaVenda & { lead_nome: string; lead_id: string; closer: string })[]>([]);
+
+  const refreshDemandas = useCallback(async () => {
+    if (userSession?.role !== 'admin' && userSession?.role !== 'comercial') return;
+    const { data: demandas } = await supabase.from('crm_demandas_venda').select('*');
+    if (!demandas) return;
+    const pendentes = demandas.filter((d: any) => {
+      const vendaOk = (d.contrato_assinado && d.sinal_pago) || d.entrada_paga;
+      const processoOk = d.onboarding_agendado && d.grupo_criado && d.membros_adicionados && d.mensagem_saudacao;
+      return !vendaOk || !processoOk;
+    });
+    const enriched = pendentes.map((d: any) => {
+      const lead = leads.find(l => l.id === d.lead_id);
+      return { ...d, lead_nome: lead?.nome ?? 'Lead desconhecido', closer: lead?.closer_responsavel ?? '' };
+    }).filter((d: any) => {
+      if (userSession?.role === 'admin') return true;
+      return d.closer === userSession?.name;
+    });
+    setDemandasPendentes(enriched);
+  }, [leads, userSession]);
+
+  useEffect(() => { refreshDemandas(); }, [refreshDemandas]);
+
+  const minhasTarefasPendentes = tarefas.filter(t => {
+    if (t.concluida) return false;
+    const lead = leads.find(l => l.id === t.lead_id);
+    const isResponsavelTarefa = t.responsavel === userSession?.name;
+    const isResponsavelLead = (lead?.closer_responsavel === userSession?.name) || (lead?.sdr_responsavel === userSession?.name);
+    return isResponsavelTarefa || isResponsavelLead;
+  });
 
   // ── Task alarm system ──────────────────────────────────────
   const [alarmTarefas, setAlarmTarefas] = useState<CRMTarefa[]>([]);
@@ -3927,6 +4064,99 @@ export default function CRMView({ userSession, teamMembers, openLeadByName, onLe
         </div>
       </div>
 
+      {/* ── Painel Pendências + Tarefas ── */}
+      {(userSession?.role === 'admin' || userSession?.role === 'comercial') && (demandasPendentes.length > 0 || minhasTarefasPendentes.length > 0) && (
+        <div className="grid grid-cols-2 gap-4 mb-4">
+          {/* Lado esquerdo: Pendências de Venda */}
+          <div className="bg-[#1a1f2e] rounded-2xl p-4 border border-white/5 max-h-52 overflow-y-auto">
+            <p className="text-[9px] font-bold uppercase tracking-widest text-yellow-500 mb-3 flex items-center gap-2">
+              <FileText size={12} /> Pendências de Venda ({demandasPendentes.length})
+            </p>
+            {demandasPendentes.length === 0 ? (
+              <p className="text-xs text-gray-600">Nenhuma pendência</p>
+            ) : (
+              <div className="space-y-2">
+                {demandasPendentes.map(d => {
+                  const itens = [
+                    !d.contrato_feito && 'Contrato',
+                    d.contrato_feito && !d.contrato_assinado && 'Assinatura',
+                    !d.sinal_pago && 'Sinal',
+                    !d.entrada_paga && 'Entrada',
+                    !d.onboarding_agendado && 'Onboarding',
+                    !d.grupo_criado && 'Grupo',
+                    !d.membros_adicionados && 'Membros',
+                    !d.mensagem_saudacao && 'Saudação',
+                  ].filter(Boolean);
+                  const total = 8;
+                  const feitos = total - itens.length;
+                  return (
+                    <div key={d.id}
+                      onClick={() => {
+                        const lead = leads.find(l => l.id === d.lead_id);
+                        if (lead) setSelectedLead(lead);
+                      }}
+                      className="p-3 rounded-xl bg-white/5 border border-white/10 hover:border-yellow-500/30 cursor-pointer transition-all"
+                    >
+                      <div className="flex items-center justify-between mb-1.5">
+                        <span className="text-xs font-semibold text-white truncate max-w-[60%]">{d.lead_nome}</span>
+                        <span className="text-[9px] text-gray-500">{feitos}/{total}</span>
+                      </div>
+                      {/* Progress bar */}
+                      <div className="w-full h-1 rounded-full bg-white/10 mb-1.5">
+                        <div className="h-1 rounded-full bg-brand-primary transition-all" style={{ width: `${(feitos/total)*100}%` }} />
+                      </div>
+                      <div className="flex flex-wrap gap-1">
+                        {itens.map((item, i) => (
+                          <span key={i} className="text-[8px] px-1.5 py-0.5 rounded-full bg-yellow-900/30 text-yellow-500 border border-yellow-500/20">{item}</span>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* Lado direito: Tarefas Agendadas */}
+          <div className="bg-[#1a1f2e] rounded-2xl p-4 border border-white/5 max-h-52 overflow-y-auto">
+            <p className="text-[9px] font-bold uppercase tracking-widest text-blue-400 mb-3 flex items-center gap-2">
+              <Calendar size={12} /> Tarefas Agendadas ({minhasTarefasPendentes.length})
+            </p>
+            {minhasTarefasPendentes.length === 0 ? (
+              <p className="text-xs text-gray-600">Nenhuma tarefa pendente</p>
+            ) : (
+              <div className="space-y-2">
+                {minhasTarefasPendentes
+                  .sort((a, b) => new Date(a.data_agendada ?? 0).getTime() - new Date(b.data_agendada ?? 0).getTime())
+                  .map(t => {
+                    const lead = leads.find(l => l.id === t.lead_id);
+                    const isOverdue = t.data_agendada && parseDateSP(t.data_agendada) < new Date();
+                    return (
+                      <div key={t.id}
+                        onClick={() => { if (lead) setSelectedLead(lead); }}
+                        className={`p-3 rounded-xl border cursor-pointer transition-all ${isOverdue ? 'bg-red-900/10 border-red-500/30 hover:border-red-500/50' : 'bg-white/5 border-white/10 hover:border-blue-500/30'}`}
+                      >
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-xs font-semibold text-white truncate max-w-[60%]">{t.titulo}</span>
+                          <span className={`text-[9px] px-1.5 py-0.5 rounded-full ${t.tipo === 'ligacao' ? 'bg-blue-900/50 text-blue-300' : 'bg-purple-900/50 text-purple-300'}`}>
+                            {t.tipo === 'ligacao' ? 'Ligação' : 'Follow-up'}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] text-gray-500">{lead?.nome ?? '—'}</span>
+                          <span className={`text-[10px] ${isOverdue ? 'text-red-400 font-bold' : 'text-gray-500'}`}>
+                            {t.data_agendada ? fmtDateSmartSP(t.data_agendada) : '—'}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Kanban */}
       <div className="overflow-x-auto pb-4">
         <div className="flex gap-4 min-w-max">
@@ -3990,7 +4220,7 @@ export default function CRMView({ userSession, teamMembers, openLeadByName, onLe
       </div>
 
       {selectedLead && (
-        <LeadModal lead={selectedLead} onClose={() => setSelectedLead(null)}
+        <LeadModal lead={selectedLead} onClose={() => { setSelectedLead(null); refreshDemandas(); }}
           onSave={handleSaveLead} onDelete={handleDeleteLead} userSession={userSession} teamMembers={teamMembers} onClientCreated={onClientCreated}
           onTarefaCreated={(tarefa) => setTarefas(prev => [...prev, tarefa])}
         />
