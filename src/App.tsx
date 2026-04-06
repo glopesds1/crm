@@ -1822,18 +1822,20 @@ const UserMenuHeader = ({ isOpen, onClose, onLogout }: {
   );
 };
 
-const KanbanFilterPanel = ({ 
-  isOpen, 
-  onClose, 
-  filters, 
+const KanbanFilterPanel = ({
+  isOpen,
+  onClose,
+  filters,
   onFilterChange,
-  teamMembers 
-}: { 
-  isOpen: boolean, 
-  onClose: () => void, 
+  teamMembers,
+  allTags,
+}: {
+  isOpen: boolean,
+  onClose: () => void,
   filters: any,
   onFilterChange: (newFilters: any) => void,
-  teamMembers: TeamMember[]
+  teamMembers: TeamMember[],
+  allTags: Record<string, Tag>,
 }) => {
   if (!isOpen) return null;
 
@@ -1895,8 +1897,35 @@ const KanbanFilterPanel = ({
           </div>
         </div>
 
-        <button 
-          onClick={() => onFilterChange({ plans: [], responsible: 'all', status: 'Ativo' })}
+        {Object.keys(allTags).length > 0 && (
+          <div>
+            <label className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-3 block">Etiqueta</label>
+            <div className="flex flex-wrap gap-2">
+              {Object.values(allTags).map(tag => (
+                <button
+                  key={tag.id}
+                  onClick={() => {
+                    const newTags = filters.tags.includes(tag.id)
+                      ? filters.tags.filter((t: string) => t !== tag.id)
+                      : [...filters.tags, tag.id];
+                    onFilterChange({ ...filters, tags: newTags });
+                  }}
+                  className="px-3 py-1.5 rounded-lg border text-[10px] font-bold transition-all"
+                  style={
+                    filters.tags.includes(tag.id)
+                      ? { backgroundColor: tag.color + '22', borderColor: tag.color, color: tag.color }
+                      : { backgroundColor: 'rgba(255,255,255,0.05)', borderColor: 'rgba(255,255,255,0.1)', color: '#6b7280' }
+                  }
+                >
+                  {tag.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <button
+          onClick={() => onFilterChange({ plans: [], responsible: 'all', status: 'Ativo', tags: [] })}
           className="w-full py-2.5 text-[10px] font-bold uppercase tracking-widest text-gray-500 hover:text-white transition-colors"
         >
           Limpar Filtros
@@ -3887,7 +3916,7 @@ export default function App() {
   const [isSupportModalOpen, setIsSupportModalOpen] = useState(false);
   const [supportText, setSupportText] = useState('');
   const [isFilterOpen, setIsFilterOpen] = useState(false);
-  const [kanbanFilters, setKanbanFilters] = useState({ plans: [] as string[], responsible: 'all', status: 'Ativo' });
+  const [kanbanFilters, setKanbanFilters] = useState({ plans: [] as string[], responsible: 'all', status: 'Ativo', tags: [] as string[] });
   const [kanbanOrder, setKanbanOrder] = useState<Record<string, string[]>>(() => {
     try { return JSON.parse(localStorage.getItem('kanban_order') || '{}'); } catch { return {}; }
   });
@@ -4056,7 +4085,8 @@ export default function App() {
       const matchesPlan = kanbanFilters.plans.length === 0 || kanbanFilters.plans.includes(c.plan.toUpperCase());
       const matchesResponsible = kanbanFilters.responsible === 'all' || c.responsible === kanbanFilters.responsible;
       const matchesStatus = kanbanFilters.status === 'Ativo' ? c.isActive : !c.isActive;
-      return matchesSearch && matchesPlan && matchesResponsible && matchesStatus;
+      const matchesTags = kanbanFilters.tags.length === 0 || kanbanFilters.tags.every((tagId: string) => c.tags.includes(tagId));
+      return matchesSearch && matchesPlan && matchesResponsible && matchesStatus && matchesTags;
     });
   }, [clients, searchQuery, kanbanFilters]);
 
@@ -4618,12 +4648,13 @@ export default function App() {
             >
               <Filter size={20} />
             </button>
-            <KanbanFilterPanel 
-              isOpen={isFilterOpen} 
-              onClose={() => setIsFilterOpen(false)} 
-              filters={kanbanFilters} 
+            <KanbanFilterPanel
+              isOpen={isFilterOpen}
+              onClose={() => setIsFilterOpen(false)}
+              filters={kanbanFilters}
               onFilterChange={setKanbanFilters}
               teamMembers={teamMembers}
+              allTags={allTags}
             />
           </div>
         </div>
