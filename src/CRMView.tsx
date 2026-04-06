@@ -3653,7 +3653,8 @@ export default function CRMView({ userSession, teamMembers, openLeadByName, onLe
   const [demandasPendentes, setDemandasPendentes] = useState<(CRMDemandaVenda & { lead_nome: string; lead_id: string; closer: string })[]>([]);
 
   const refreshDemandas = useCallback(async () => {
-    if (userSession?.role !== 'admin' && userSession?.role !== 'comercial') return;
+    const role = (userSession?.role ?? '').toLowerCase();
+    if (role !== 'admin' && role !== 'comercial') return;
     if (leads.length === 0) return;
     const { data: demandas } = await supabase.from('crm_demandas_venda').select('*');
     if (!demandas) return;
@@ -3666,7 +3667,7 @@ export default function CRMView({ userSession, teamMembers, openLeadByName, onLe
       const lead = leads.find(l => l.id === d.lead_id);
       return { ...d, lead_nome: lead?.nome ?? 'Lead desconhecido', closer: lead?.closer_responsavel ?? '' };
     }).filter((d: any) => {
-      if (userSession?.role === 'admin') return true;
+      if ((userSession?.role ?? '').toLowerCase() === 'admin') return true;
       const lead = leads.find(l => l.id === d.lead_id);
       return d.closer === userSession?.name || lead?.sdr_responsavel === userSession?.name;
     });
@@ -4068,7 +4069,7 @@ export default function CRMView({ userSession, teamMembers, openLeadByName, onLe
       </div>
 
       {/* ── Painel Pendências + Tarefas ── */}
-      {(userSession?.role === 'admin' || userSession?.role === 'comercial') && (
+      {((userSession?.role ?? '').toLowerCase() === 'admin' || (userSession?.role ?? '').toLowerCase() === 'comercial') && (
         <div className="grid grid-cols-2 gap-4 mb-4">
           {/* Lado esquerdo: Pendências de Venda */}
           <div className="bg-[#1a1f2e] rounded-2xl p-4 border border-white/5 max-h-52 overflow-y-auto">
