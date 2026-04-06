@@ -2676,8 +2676,6 @@ const ClientModal = ({ client, allTags, teamMembers, onClose, onUpdateClient, on
   onOpenClientCrm?: (tenantId: string) => void,
 }) => {
   const [newComment, setNewComment] = useState('');
-  const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
-  const [editingCommentText, setEditingCommentText] = useState('');
   const [editName, setEditName] = useState(client.name);
   const [editResponsible, setEditResponsible] = useState(client.responsible);
   const [originalName] = useState(client.name);
@@ -2748,15 +2746,6 @@ const ClientModal = ({ client, allTags, teamMembers, onClose, onUpdateClient, on
     setNewComment('');
   };
 
-  const handleSaveEditComment = (commentId: string) => {
-    if (!editingCommentText.trim()) return;
-    const updated = client.comments.map(c =>
-      c.id === commentId ? { ...c, text: editingCommentText.trim() } : c
-    );
-    onUpdateClient({ ...client, comments: updated });
-    setEditingCommentId(null);
-    setEditingCommentText('');
-  };
 
   return (
     <motion.div
@@ -3041,38 +3030,21 @@ const ClientModal = ({ client, allTags, teamMembers, onClose, onUpdateClient, on
                       <div className="flex items-center gap-2 mb-1">
                         <span className="text-xs font-bold text-white">{comment.author}</span>
                         <span className="text-[9px] text-gray-500">{comment.date}</span>
-                        {comment.author === userSession.name && editingCommentId !== comment.id && (
+                        {comment.author === userSession.name && (
                           <button
-                            onClick={() => { setEditingCommentId(comment.id); setEditingCommentText(comment.text); }}
-                            className="text-[9px] text-gray-600 hover:text-brand-primary transition-colors ml-1"
+                            onClick={() => {
+                              if (!confirm('Apagar esta mensagem?')) return;
+                              onUpdateClient({ ...client, comments: client.comments.filter(c => c.id !== comment.id) });
+                            }}
+                            className="text-[9px] text-gray-600 hover:text-red-400 transition-colors ml-1"
                           >
-                            Editar
+                            Apagar
                           </button>
                         )}
                       </div>
-                      {editingCommentId === comment.id ? (
-                        <div className="space-y-2">
-                          <textarea
-                            autoFocus
-                            className="w-full bg-white/5 border border-brand-primary/40 rounded-xl px-3 py-2 text-xs text-white resize-none outline-none focus:border-brand-primary/70"
-                            rows={3}
-                            value={editingCommentText}
-                            onChange={e => setEditingCommentText(e.target.value)}
-                            onKeyDown={e => {
-                              if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSaveEditComment(comment.id); }
-                              if (e.key === 'Escape') { setEditingCommentId(null); }
-                            }}
-                          />
-                          <div className="flex gap-2 justify-end">
-                            <button onClick={() => setEditingCommentId(null)} className="text-[10px] text-gray-500 hover:text-white transition-colors px-2 py-1">Cancelar</button>
-                            <button onClick={() => handleSaveEditComment(comment.id)} className="text-[10px] font-bold bg-brand-primary text-black px-3 py-1 rounded-lg hover:bg-brand-primary/90 transition-colors">Salvar</button>
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="p-3 rounded-xl bg-white/5 border border-white/5">
-                          <p className="text-xs text-gray-400 leading-relaxed">{comment.text}</p>
-                        </div>
-                      )}
+                      <div className="p-3 rounded-xl bg-white/5 border border-white/5">
+                        <p className="text-xs text-gray-400 leading-relaxed">{comment.text}</p>
+                      </div>
                     </div>
                   </div>
                 )) : (
