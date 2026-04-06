@@ -207,11 +207,20 @@ export default function LandingPagesView() {
   }
 
   async function deleteClient(id: string) {
-    if (!confirm('Remover cliente e todas as suas páginas?')) return;
+    if (!confirm('Remover cliente e todas as suas páginas?\n\nOs repositórios GitHub e projetos Cloudflare também serão excluídos.')) return;
+    const clientOffers = offersForClient(id);
+    // Deletar GitHub + Cloudflare de cada oferta
+    for (const offer of clientOffers) {
+      if (offer.github_repo || offer.cf_project) {
+        await supabase.functions.invoke('lp-delete', {
+          body: { repoFullName: offer.github_repo || undefined, cfProject: offer.cf_project || undefined },
+        });
+      }
+    }
     await supabase.from('lp_clients').delete().eq('id', id);
     setClients(c => c.filter(x => x.id !== id));
     setOffers(o => o.filter(x => x.client_id !== id));
-    push('Cliente removido.', 'info');
+    push('Cliente e páginas removidos.', 'info');
   }
 
   // ─── Ações: Oferta ────────────────────────────────────────────────────────────
@@ -237,10 +246,29 @@ export default function LandingPagesView() {
   }
 
   async function deleteOffer(id: string) {
-    if (!confirm('Remover esta oferta?')) return;
-    await supabase.from('lp_offers').delete().eq('id', id);
-    setOffers(o => o.filter(x => x.id !== id));
-    push('Oferta removida.', 'info');
+    const offer = offers.find(o => o.id === id);
+    const hasExternal = offer?.github_repo || offer?.cf_project;
+    const msg = hasExternal
+      ? 'Remover esta página?\n\nO repositório GitHub e o projeto Cloudflare também serão excluídos.'
+      : 'Remover esta página?';
+    if (!confirm(msg)) return;
+
+    setActionLoading(id);
+    try {
+      if (offer?.github_repo || offer?.cf_project) {
+        const { data } = await supabase.functions.invoke('lp-delete', {
+          body: { repoFullName: offer?.github_repo || undefined, cfProject: offer?.cf_project || undefined },
+        });
+        if (data?.errors?.length) {
+          push('Aviso: ' + data.errors.join(', '), 'error');
+        }
+      }
+      await supabase.from('lp_offers').delete().eq('id', id);
+      setOffers(o => o.filter(x => x.id !== id));
+      push('Página removida.', 'info');
+    } finally {
+      setActionLoading(null);
+    }
   }
 
   // ─── Ações: Edge Functions ────────────────────────────────────────────────────
