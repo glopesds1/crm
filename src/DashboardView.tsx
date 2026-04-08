@@ -187,6 +187,7 @@ export default function DashboardView({ userSession }: { userSession: any }) {
           .limit(20);
         result = { semanal };
       } else if (p === 'reunioes') {
+        console.log('[fetchData reunioes] di =', di, 'closer =', closerParam);
         const [dia, negociacao, disponibilidade] = await Promise.all([
           supabase.rpc('dashboard_reunioes_dia', { di, p_closer: closerParam }),
           supabase.rpc('dashboard_reunioes_negociacao', { di }),
