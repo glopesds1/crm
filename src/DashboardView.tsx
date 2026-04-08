@@ -1217,47 +1217,8 @@ function PageAnalise({ data, range }: { data: any; range: DateRange }) {
   return (
     <div className="space-y-4">
 
-      {/* Performance por etapa de reunião (por_tp) + Closer por TP */}
+      {/* Linha 1: Performance por Closer | Ticket e CC Médios por Closer */}
       <div className="grid grid-cols-2 gap-4">
-        <div className="glass-card p-6">
-          <h3 className="text-sm font-bold uppercase tracking-widest text-brand-primary mb-3">Performance por Etapa de Reunião</h3>
-          {porTp.length === 0 ? <Empty /> : (() => {
-            const totM = porTp.reduce((s, r) => s + (Number(r.marcadas) || 0), 0);
-            const totR = porTp.reduce((s, r) => s + (Number(r.realizadas) || 0), 0);
-            const totV = porTp.reduce((s, r) => s + (Number(r.vendas) || 0), 0);
-            const totShow = totM > 0 ? (totR / totM * 100).toFixed(1) : '0.0';
-            const totConv = totR > 0 ? (totV / totR * 100).toFixed(1) : '0.0';
-            const rows = [...porTp, { tp: 'TOTAL', marcadas: totM, realizadas: totR, show_rate: parseFloat(totShow), vendas: totV, tx_conversao: parseFloat(totConv) }];
-            return (
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className="border-b border-white/10">
-                    {['TP', 'Marcadas', 'Realizadas', 'Show Rate', 'Vendas', 'Conversão'].map(h => (
-                      <th key={h} className="py-2 px-2 text-[9px] font-bold uppercase tracking-widest text-center" style={{ color: '#aaa' }}>{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.map(r => {
-                    const isTotal = r.tp === 'TOTAL';
-                    const color = isTotal ? '#00FF88' : (tpColors[r.tp] ?? '#fff');
-                    return (
-                      <tr key={r.tp} className={`border-b border-white/5 ${isTotal ? 'bg-white/5' : ''}`}>
-                        <td className="py-2 px-2 text-center font-bold" style={{ color }}>{r.tp}</td>
-                        <td className="py-2 px-2 text-center text-white">{fmt(r.marcadas)}</td>
-                        <td className="py-2 px-2 text-center text-white">{fmt(r.realizadas)}</td>
-                        <td className="py-2 px-2 text-center text-white">{r.show_rate?.toFixed(1)}%</td>
-                        <td className="py-2 px-2 text-center text-white">{fmt(r.vendas)}</td>
-                        <td className="py-2 px-2 text-center text-white">{r.tx_conversao?.toFixed(1)}%</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            );
-          })()}
-        </div>
-
         {metasClosers.length > 0 && (
           <div className="glass-card p-6">
             <h3 className="text-sm font-bold uppercase tracking-widest text-brand-primary mb-3">Performance por Closer</h3>
@@ -1325,10 +1286,64 @@ function PageAnalise({ data, range }: { data: any; range: DateRange }) {
             })()}
           </div>
         )}
+
+        <div className="glass-card p-6 space-y-4">
+          <h3 className="text-sm font-bold uppercase tracking-widest text-brand-primary">Ticket e CC Médios por Closer</h3>
+          {closers.length === 0 ? <Empty /> : (
+            <Table
+              cols={['Closer', 'Ticket Médio', 'CC Médio']}
+              rows={closers.filter((c: any) => c.vendas > 0).map((c: any, i: number) => [
+                `${i + 1}. ${c.closer}`,
+                fmtBRL(c.ticket_medio),
+                fmtBRL(c.cc_medio),
+              ])}
+            />
+          )}
+        </div>
       </div>
 
-      {/* Linha 1: Ticket/CC por Etapa (barras) | Ticket/CC por Closer (tabela) */}
-      <div className="grid grid-cols-2 gap-4">
+      {/* Linha 2: Performance por Etapa de Reunião (largura total) */}
+      <div className="glass-card p-6">
+        <h3 className="text-sm font-bold uppercase tracking-widest text-brand-primary mb-3">Performance por Etapa de Reunião</h3>
+        {porTp.length === 0 ? <Empty /> : (() => {
+          const totM = porTp.reduce((s, r) => s + (Number(r.marcadas) || 0), 0);
+          const totR = porTp.reduce((s, r) => s + (Number(r.realizadas) || 0), 0);
+          const totV = porTp.reduce((s, r) => s + (Number(r.vendas) || 0), 0);
+          const totShow = totM > 0 ? (totR / totM * 100).toFixed(1) : '0.0';
+          const totConv = totR > 0 ? (totV / totR * 100).toFixed(1) : '0.0';
+          const rows = [...porTp, { tp: 'TOTAL', marcadas: totM, realizadas: totR, show_rate: parseFloat(totShow), vendas: totV, tx_conversao: parseFloat(totConv) }];
+          return (
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-white/10">
+                  {['TP', 'Marcadas', 'Realizadas', 'Show Rate', 'Vendas', 'Conversão'].map(h => (
+                    <th key={h} className="py-2 px-3 text-xs font-bold uppercase tracking-widest text-center" style={{ color: '#aaa' }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map(r => {
+                  const isTotal = r.tp === 'TOTAL';
+                  const color = isTotal ? '#00FF88' : (tpColors[r.tp] ?? '#fff');
+                  return (
+                    <tr key={r.tp} className={`border-b border-white/5 ${isTotal ? 'bg-white/5' : ''}`}>
+                      <td className="py-2.5 px-3 text-center font-bold" style={{ color }}>{r.tp}</td>
+                      <td className="py-2.5 px-3 text-center text-white">{fmt(r.marcadas)}</td>
+                      <td className="py-2.5 px-3 text-center text-white">{fmt(r.realizadas)}</td>
+                      <td className="py-2.5 px-3 text-center text-white">{r.show_rate?.toFixed(1)}%</td>
+                      <td className="py-2.5 px-3 text-center text-white">{fmt(r.vendas)}</td>
+                      <td className="py-2.5 px-3 text-center text-white">{r.tx_conversao?.toFixed(1)}%</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          );
+        })()}
+      </div>
+
+      {/* Linha 3: Ticket/CC por Etapa | Vendas por Etapa | Vendas por Programa */}
+      <div className="grid grid-cols-3 gap-4">
         <div className="glass-card p-6 space-y-4">
           <h3 className="text-sm font-bold uppercase tracking-widest text-brand-primary">Ticket e CC por Etapa de Fechamento</h3>
           {etapas.length === 0 ? <Empty /> : (
@@ -1346,23 +1361,6 @@ function PageAnalise({ data, range }: { data: any; range: DateRange }) {
           )}
         </div>
 
-        <div className="glass-card p-6 space-y-4">
-          <h3 className="text-sm font-bold uppercase tracking-widest text-brand-primary">Ticket e CC Médios por Closer</h3>
-          {closers.length === 0 ? <Empty /> : (
-            <Table
-              cols={['Closer', 'Ticket Médio', 'CC Médio']}
-              rows={closers.filter((c: any) => c.vendas > 0).map((c: any, i: number) => [
-                `${i + 1}. ${c.closer}`,
-                fmtBRL(c.ticket_medio),
-                fmtBRL(c.cc_medio),
-              ])}
-            />
-          )}
-        </div>
-      </div>
-
-      {/* Linha 2: Vendas por Etapa | Vendas por Programa */}
-      <div className="grid grid-cols-2 gap-4">
         <div className="glass-card p-6 space-y-2">
           <h3 className="text-sm font-bold uppercase tracking-widest text-brand-primary">Vendas por Etapa de Fechamento</h3>
           {etapaPizza.length === 0 ? <Empty /> : (
