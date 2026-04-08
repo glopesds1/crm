@@ -12,8 +12,6 @@ import {
 } from 'lucide-react';
 
 // ── Config ────────────────────────────────────────────────────
-const WEBHOOK_BASE = import.meta.env.VITE_WEBHOOK_BASE ?? 'https://webhook.m2black.com/webhook/dashboard';
-
 const BRAND = '#00FF88';
 const COLORS = ['#00FF88', '#00B4D8', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899', '#14B8A6'];
 
@@ -154,24 +152,93 @@ export default function DashboardView({ userSession }: { userSession: any }) {
     try {
       const di = r.inicio;
       const df = r.fim;
-      const isComercial = (userSession?.role ?? '').toLowerCase() === 'comercial';
-      const closerParam = isComercial && userSession?.name ? `&closer=${encodeURIComponent(userSession.name)}` : '';
-      const url = `${WEBHOOK_BASE}?page=${p}&data_inicio=${di}&data_fim=${df}${closerParam}`;
-      const res = await fetch(url);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const text = await res.text();
-      if (!text || !text.trim()) { setData({}); return; }
-      let json: any;
-      try { json = JSON.parse(text); } catch { setData({}); return; }
-      setData(json);
+      const closerParam = ((userSession?.role ?? '').toLowerCase() === 'comercial' && userSession?.name) ? userSession.name : '';
+      let result: any = {};
+
+      if (p === 'overview') {
+        const [kpis, vendas_mes, custos] = await Promise.all([
+          supabase.rpc('dashboard_overview_kpis', { di, df }),
+          supabase.rpc('dashboard_overview_vendas_mes', { di, df }),
+          supabase.rpc('dashboard_overview_custos', { di, df }),
+        ]);
+        result = {
+          kpis: kpis.data,
+          vendas_mes: vendas_mes.data,
+          custos: custos.data,
+        };
+      } else if (p === 'metas') {
+        const [realizado, closers, sdrs, vendas_lista] = await Promise.all([
+          supabase.rpc('dashboard_metas_realizado', { di, df }),
+          supabase.rpc('dashboard_metas_closer', { di, df }),
+          supabase.rpc('dashboard_metas_sdr', { di, df }),
+          supabase.rpc('dashboard_metas_vendas_lista', { di, df }),
+        ]);
+        result = {
+          realizado: realizado.data,
+          closers: closers.data,
+          sdrs: sdrs.data,
+          vendas_lista: vendas_lista.data,
+        };
+      } else if (p === 'semanal') {
+        const { data: semanal } = await supabase
+          .from('view_producao_semanal_total')
+          .select('*')
+          .order('semana_inicio', { ascending: false })
+          .limit(20);
+        result = { semanal };
+      } else if (p === 'reunioes') {
+        const [dia, negociacao, disponibilidade] = await Promise.all([
+          supabase.rpc('dashboard_reunioes_dia', { di, p_closer: closerParam }),
+          supabase.rpc('dashboard_reunioes_negociacao', { di }),
+          supabase.rpc('dashboard_disponibilidade', { di }),
+        ]);
+        result = {
+          dia: dia.data,
+          negociacao: negociacao.data,
+          disponibilidade: disponibilidade.data,
+        };
+      } else if (p === 'analise') {
+        const [etapa, programa, motivos, etapa_pizza, closers] = await Promise.all([
+          supabase.rpc('dashboard_analise_etapa', { di, df }),
+          supabase.rpc('dashboard_analise_programa', { di, df }),
+          supabase.rpc('dashboard_analise_motivos', { di, df }),
+          supabase.rpc('dashboard_analise_etapa', { di, df }),
+          supabase.rpc('dashboard_kpi_closer', { di, df }),
+        ]);
+        result = {
+          etapa: etapa.data,
+          programa: programa.data,
+          motivos: motivos.data,
+          etapa_pizza: etapa_pizza.data,
+          closers: closers.data,
+        };
+      } else if (p === 'anuncios') {
+        const [funil, custos] = await Promise.all([
+          supabase.rpc('dashboard_anuncios_funil', { di, df }),
+          supabase.rpc('dashboard_overview_custos', { di, df }),
+        ]);
+        result = {
+          funil: funil.data,
+          custos: custos.data,
+        };
+      } else if (p === 'sdr') {
+        const [producao, leads_semanal] = await Promise.all([
+          supabase.rpc('dashboard_sdr_producao', { di, df }),
+          supabase.rpc('dashboard_sdr_leads_semanal'),
+        ]);
+        result = {
+          producao: producao.data,
+          leads_semanal: leads_semanal.data,
+        };
+      }
+
+      setData(result);
     } catch (e: any) {
-      setError(e.message === 'Failed to fetch'
-        ? 'Requisição bloqueada — desative o bloqueador de anúncios para este site e recarregue.'
-        : (e.message ?? 'Erro ao buscar dados'));
+      setError(e.message ?? 'Erro ao buscar dados');
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [userSession]);
 
   // Período padrão por aba
   const periodoPadraoAba: Record<string, string> = {
@@ -336,9 +403,9 @@ export default function DashboardView({ userSession }: { userSession: any }) {
 
 // ── PAGE: Overview ────────────────────────────────────────────
 function PageOverview({ data, range, userSession }: { data: any; range: any; userSession: any }) {
-  const kpis   = Array.isArray(data?.kpis)      ? data.kpis[0]   : data?.kpis;
+  const kpis   = data?.kpis;
   const meses  = Array.isArray(data?.vendas_mes) ? data.vendas_mes : [];
-  const custos = Array.isArray(data?.custos)     ? data.custos[0] : data?.custos;
+  const custos = data?.custos;
 
   // Metas editáveis (Supabase)
   const [metas, setMetas] = useState<Record<string, number>>({
@@ -381,14 +448,8 @@ function PageOverview({ data, range, userSession }: { data: any; range: any; use
     const dias = Math.round((new Date(range.fim).getTime() - new Date(range.inicio).getTime()) / 86400000);
     const ant_fim   = format(new Date(new Date(range.inicio).getTime() - 86400000), 'yyyy-MM-dd');
     const ant_ini   = format(new Date(new Date(range.inicio).getTime() - dias * 86400000), 'yyyy-MM-dd');
-    fetch(`${import.meta.env.VITE_WEBHOOK_BASE ?? 'https://webhook.m2black.com/webhook/dashboard'}?page=overview&data_inicio=${ant_ini}&data_fim=${ant_fim}`)
-      .then(r => r.json())
-      .then(d => {
-        // custos vem no array do merge — encontra pelo campo verba_midia
-        const all = Array.isArray(d?.custos) ? d.custos : [d?.custos];
-        const c = all.find((x: any) => x?.verba_midia !== undefined) ?? all[0];
-        setCustosAnt(c);
-      })
+    Promise.resolve(supabase.rpc('dashboard_overview_custos', { di: ant_ini, df: ant_fim }))
+      .then(({ data: c }) => setCustosAnt(c))
       .catch(() => {});
   }, [range]);
 
@@ -587,7 +648,7 @@ function PageOverview({ data, range, userSession }: { data: any; range: any; use
 
 // ── PAGE: Metas ───────────────────────────────────────────────
 function PageMetas({ data, userSession, range }: { data: any; userSession: any; range: DateRange }) {
-  const m       = Array.isArray(data?.metas)   ? data.metas[0]   : data?.metas;
+  const m       = data?.realizado;
   const closers: any[] = Array.isArray(data?.closers) ? data.closers : data?.closers ? [data.closers] : [];
   const sdrs:    any[] = Array.isArray(data?.sdrs)    ? data.sdrs    : data?.sdrs    ? [data.sdrs]    : [];
   const vendasLista: any[] = Array.isArray(data?.vendas_lista) ? data.vendas_lista : data?.vendas_lista ? [data.vendas_lista] : [];
@@ -1112,27 +1173,27 @@ function PageReunioes({ data }: { data: any }) {
 // ── PAGE: Análise de Vendas ───────────────────────────────────
 function PageAnalise({ data, range }: { data: any; range: DateRange }) {
   const toArr = (d: any) => Array.isArray(d) ? d : d ? [d] : [];
-  const etapas     = toArr(data?.etapas).map((x: any) => ({ ...x, vendas: +x.vendas, ticket_medio: +x.ticket_medio, cc_medio: +x.cc_medio }));
+  const etapas     = toArr(data?.etapa).map((x: any) => ({ ...x, vendas: +x.vendas, ticket_medio: +x.ticket_medio, cc_medio: +x.cc_medio }));
   const etapaPizza = toArr(data?.etapa_pizza).map((x: any) => ({ ...x, vendas: +x.vendas, pct_total: +x.pct_total }));
-  const programas  = toArr(data?.programas).map((x: any) => ({ ...x, vendas: +x.vendas, pct_total: +x.pct_total }));
+  const programas  = toArr(data?.programa).map((x: any) => ({ ...x, vendas: +x.vendas, pct_total: +x.pct_total }));
   const motivos    = toArr(data?.motivos).map((x: any) => ({ ...x, quantidade: +x.quantidade, pct_total: +x.pct_total }));
   const closers    = toArr(data?.closers).map((x: any) => ({ ...x, vendas: +x.vendas }));
-  console.log('[perf vendas analise]', closers);
 
   // Fetch dados de metas (por_tp + closers por TP)
   const [metasData, setMetasData] = useState<any>(null);
   useEffect(() => {
     (async () => {
       try {
-        const res = await fetch(`${WEBHOOK_BASE}?page=metas&data_inicio=${range.inicio}&data_fim=${range.fim}`);
-        if (!res.ok) return;
-        const json = await res.json();
-        setMetasData(json);
+        const [realizado, closers] = await Promise.all([
+          supabase.rpc('dashboard_metas_realizado', { di: range.inicio, df: range.fim }),
+          supabase.rpc('dashboard_metas_closer', { di: range.inicio, df: range.fim }),
+        ]);
+        setMetasData({ realizado: realizado.data, closers: closers.data });
       } catch { /* silently fail */ }
     })();
   }, [range.inicio, range.fim]);
 
-  const metasM = Array.isArray(metasData?.metas) ? metasData.metas[0] : metasData?.metas;
+  const metasM = metasData?.realizado;
   const porTp: { tp: string; marcadas: number; realizadas: number; show_rate: number; vendas: number; tx_conversao: number }[] =
     metasM ? (typeof metasM.por_tp === 'string' ? JSON.parse(metasM.por_tp) : (metasM.por_tp || [])) : [];
   const metasClosers: any[] = Array.isArray(metasData?.closers) ? metasData.closers : metasData?.closers ? [metasData.closers] : [];
@@ -1367,7 +1428,7 @@ function PageAnalise({ data, range }: { data: any; range: DateRange }) {
 function PageAnuncios({ data }: { data: any }) {
   const funil: any[] = Array.isArray(data?.funil) ? data.funil
     : data?.funil ? [data.funil] : [];
-  const custos = Array.isArray(data?.custos) ? data.custos[0] : data?.custos;
+  const custos = data?.custos;
 
   // Color scale per column threshold
   // lead→mql: green ≥30%, mql→rm: green ≥40%, rm→rr: green ≥40%, rr→venda: green ≥20%
