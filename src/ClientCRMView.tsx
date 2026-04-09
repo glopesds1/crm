@@ -7,7 +7,13 @@ import {
   PhoneCall, Video, Image as ImageIcon, Upload, Bell, Volume2,
   Briefcase, MapPin, Target, TrendingUp, Save, MoreHorizontal,
   Mic, Square, Loader2, ThumbsUp, AlertTriangle, ChevronRight,
+  BarChart2, Activity, RefreshCw,
 } from 'lucide-react';
+import {
+  BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid,
+  Tooltip, Legend, ResponsiveContainer
+} from 'recharts';
+import { format, subDays, startOfMonth, endOfMonth, startOfYear, endOfYear } from 'date-fns';
 import * as XLSX from 'xlsx';
 import type {
   CrmClientTenant, CrmClientStage, CrmClientLead,
@@ -103,6 +109,56 @@ function saveLeadScoreRespostas(tenantId: string, leadId: string, respostas: Lea
   } catch { /* silent */ }
 }
 
+// ── Dashboard Mock Data ─────────────────────────────────────
+const BRAND_COLOR = '#00FF88';
+const CHART_COLORS = ['#00FF88', '#00B4D8', '#F59E0B', '#EF4444', '#8B5CF6'];
+
+function getDashboardMockData() {
+  const key = 'm2_dashboard_mock';
+  const saved = localStorage.getItem(key);
+  if (saved) { try { return JSON.parse(saved); } catch {} }
+
+  const mock = {
+    kpis: {
+      leads: 247, mqls: 89, reunioes_marcadas: 52, reunioes_realizadas: 38, vendas: 12,
+      total_contrato: 384000, total_cc: 127500, total_mrr: 18400,
+      ticket_medio: 32000, cc_medio: 10625, mrr_medio: 1533,
+      tmf_dias: 43,
+      tx_lead_mql: 36.0, tx_mql_rm: 58.4, tx_rm_rr: 73.1, tx_conversao: 31.6,
+    },
+    custos: {
+      verba_midia: 12500, custo_mql: 140.45, custo_rm: 240.38, custo_rr: 328.95, cac: 1041.67,
+    },
+    vendas_mes: [
+      { mes: '2026-01-01', total_contrato: 48000, total_cc: 16000, ticket_medio: 24000 },
+      { mes: '2026-02-01', total_contrato: 72000, total_cc: 24000, ticket_medio: 36000 },
+      { mes: '2026-03-01', total_contrato: 96000, total_cc: 31500, ticket_medio: 32000 },
+      { mes: '2026-04-01', total_contrato: 84000, total_cc: 28000, ticket_medio: 28000 },
+    ],
+    metas: { meta_leads: 300, meta_mql: 100, meta_rm: 60, meta_rr: 45, meta_vendas: 15 },
+  };
+  localStorage.setItem(key, JSON.stringify(mock));
+  return mock;
+}
+
+const fmtBRLDash = (v: number | string | null | undefined) => {
+  if (v == null || v === '') return '—';
+  const n = typeof v === 'string' ? parseFloat(v) : Number(v);
+  if (isNaN(n)) return '—';
+  return `R$ ${n.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+};
+const fmtNum = (v: number | string | null | undefined) => {
+  if (v == null || v === '') return '—';
+  const n = typeof v === 'string' ? parseFloat(v) : v;
+  if (isNaN(n)) return '—';
+  return n.toLocaleString('pt-BR');
+};
+const fmtMesDash = (iso: string) => {
+  const d = new Date(iso);
+  const meses = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+  return `${meses[d.getMonth()]}/${String(d.getFullYear()).slice(2)}`;
+};
+
 const playAlarmSound = () => {
   try {
     const ctx = new AudioContext();
@@ -142,6 +198,7 @@ export default function ClientCRMView({ clients, selectedTenantId, onBack, tenan
   const [selectedLead, setSelectedLead] = useState<CrmClientLead | null>(null);
   const [showNewLeadModal, setShowNewLeadModal] = useState(false);
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
+  const [crmSubView, setCrmSubView] = useState<'kanban' | 'dashboard'>('kanban');
   const [alarmTarefa, setAlarmTarefa] = useState<CrmClientTarefa | null>(null);
   const dismissedAlarms = useRef(new Set<string>());
 
@@ -359,37 +416,61 @@ export default function ClientCRMView({ clients, selectedTenantId, onBack, tenan
         {!isClientView && <button onClick={handleBackToList} className="p-2 rounded-lg hover:bg-white/5"><ArrowLeft className="w-5 h-5 text-white/60" /></button>}
         <h1 className="text-xl font-bold text-white truncate">{activeClient?.name ?? 'CRM'}</h1>
 
-        <div className="flex-1 max-w-sm relative">
-          <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-white/30" />
-          <input type="text" placeholder="Buscar leads..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
-            className="w-full bg-white/5 border border-white/10 rounded-xl pl-10 pr-4 py-2 text-sm text-white placeholder-white/30 focus:outline-none focus:border-brand-primary" />
+        {/* Sub-tabs: Kanban | Dashboard */}
+        <div className="flex gap-1 bg-white/5 rounded-lg p-0.5">
+          <button onClick={() => setCrmSubView('kanban')}
+            className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${
+              crmSubView === 'kanban' ? 'bg-brand-primary/20 text-brand-primary' : 'text-white/40 hover:text-white/60'
+            }`}>
+            Kanban
+          </button>
+          <button onClick={() => setCrmSubView('dashboard')}
+            className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${
+              crmSubView === 'dashboard' ? 'bg-brand-primary/20 text-brand-primary' : 'text-white/40 hover:text-white/60'
+            }`}>
+            Dashboard
+          </button>
         </div>
 
-        {/* Filters */}
-        <select value={filterResponsavel} onChange={e => setFilterResponsavel(e.target.value)}
-          className="bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs text-white/70 focus:outline-none focus:border-brand-primary">
-          <option value="">Todos os responsáveis</option>
-          {uniqueResponsaveis.map(r => <option key={r} value={r}>{r}</option>)}
-        </select>
+        {crmSubView === 'kanban' && (
+          <>
+            <div className="flex-1 max-w-sm relative">
+              <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-white/30" />
+              <input type="text" placeholder="Buscar leads..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
+                className="w-full bg-white/5 border border-white/10 rounded-xl pl-10 pr-4 py-2 text-sm text-white placeholder-white/30 focus:outline-none focus:border-brand-primary" />
+            </div>
 
-        <select value={filterEtiqueta} onChange={e => setFilterEtiqueta(e.target.value)}
-          className="bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs text-white/70 focus:outline-none focus:border-brand-primary">
-          <option value="">Todas as etiquetas</option>
-          {uniqueEtiquetas.map(t => <option key={t} value={t}>{t}</option>)}
-        </select>
+            {/* Filters */}
+            <select value={filterResponsavel} onChange={e => setFilterResponsavel(e.target.value)}
+              className="bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs text-white/70 focus:outline-none focus:border-brand-primary">
+              <option value="">Todos os responsáveis</option>
+              {uniqueResponsaveis.map(r => <option key={r} value={r}>{r}</option>)}
+            </select>
 
-        <select value={sortBy} onChange={e => setSortBy(e.target.value as typeof sortBy)}
-          className="bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs text-white/70 focus:outline-none focus:border-brand-primary">
-          <option value="recent">Mais recentes</option>
-          <option value="oldest">Mais antigos</option>
-          <option value="value">Maior valor</option>
-        </select>
+            <select value={filterEtiqueta} onChange={e => setFilterEtiqueta(e.target.value)}
+              className="bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs text-white/70 focus:outline-none focus:border-brand-primary">
+              <option value="">Todas as etiquetas</option>
+              {uniqueEtiquetas.map(t => <option key={t} value={t}>{t}</option>)}
+            </select>
 
-        <button onClick={() => setShowNewLeadModal(true)} className="flex items-center gap-2 bg-brand-primary text-black font-bold rounded-xl px-4 py-2 text-sm hover:brightness-110">
-          <Plus className="w-4 h-4" /> Novo Lead
-        </button>
+            <select value={sortBy} onChange={e => setSortBy(e.target.value as typeof sortBy)}
+              className="bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs text-white/70 focus:outline-none focus:border-brand-primary">
+              <option value="recent">Mais recentes</option>
+              <option value="oldest">Mais antigos</option>
+              <option value="value">Maior valor</option>
+            </select>
+
+            <button onClick={() => setShowNewLeadModal(true)} className="flex items-center gap-2 bg-brand-primary text-black font-bold rounded-xl px-4 py-2 text-sm hover:brightness-110">
+              <Plus className="w-4 h-4" /> Novo Lead
+            </button>
+          </>
+        )}
       </div>
 
+      {crmSubView === 'dashboard' ? (
+        <ClientDashboard />
+      ) : (
+      <>
       {/* Kanban columns */}
       <div className="flex-1 overflow-x-auto p-4">
         <div className="flex gap-4 h-full min-w-max">
@@ -498,6 +579,8 @@ export default function ClientCRMView({ clients, selectedTenantId, onBack, tenan
           </motion.div>
         )}
       </AnimatePresence>
+      </>
+      )}
     </div>
   );
 }
@@ -1599,5 +1682,186 @@ function NewLeadModal({ tenantId, stages, onClose, onCreate }: NewLeadModalProps
         </form>
       </motion.div>
     </motion.div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════
+// Client Dashboard — Overview com métricas de tráfego
+// ══════════════════════════════════════════════════════════════
+function ClientDashboard() {
+  const today = new Date();
+  const [periodo, setPeriodo] = useState('ano');
+  const [range, setRange] = useState({
+    inicio: format(startOfYear(today), 'yyyy-MM-dd'),
+    fim: format(endOfYear(today), 'yyyy-MM-dd'),
+  });
+
+  const mockData = getDashboardMockData();
+  const kpis = mockData.kpis;
+  const custos = mockData.custos;
+  const metas = mockData.metas;
+  const meses = mockData.vendas_mes;
+
+  const PRESETS = [
+    { id: 'ano', label: 'Este ano', inicio: format(startOfYear(today), 'yyyy-MM-dd'), fim: format(endOfYear(today), 'yyyy-MM-dd') },
+    { id: 'mes', label: 'Este mês', inicio: format(startOfMonth(today), 'yyyy-MM-dd'), fim: format(today, 'yyyy-MM-dd') },
+    { id: '90d', label: '90 dias', inicio: format(subDays(today, 90), 'yyyy-MM-dd'), fim: format(today, 'yyyy-MM-dd') },
+  ];
+
+  const chartData = meses.map((m: any) => ({
+    name: fmtMesDash(m.mes),
+    Contrato: m.total_contrato,
+    Entrada: m.total_cc,
+    'Ticket Médio': m.ticket_medio,
+  }));
+
+  const etapas = [
+    { label: 'Leads', value: kpis.leads, taxa: kpis.tx_lead_mql, meta: metas.meta_leads, w: 100 },
+    { label: 'MQL', value: kpis.mqls, taxa: kpis.tx_mql_rm, meta: metas.meta_mql, w: 85 },
+    { label: 'Reuniões Marcadas', value: kpis.reunioes_marcadas, taxa: kpis.tx_rm_rr, meta: metas.meta_rm, w: 70 },
+    { label: 'Reuniões Realizadas', value: kpis.reunioes_realizadas, taxa: kpis.tx_conversao, meta: metas.meta_rr, w: 55 },
+    { label: 'Vendas', value: kpis.vendas, taxa: null, meta: metas.meta_vendas, w: 40 },
+  ];
+
+  return (
+    <div className="space-y-6 p-4">
+      {/* Header + Period selector */}
+      <div className="flex flex-wrap justify-between items-start gap-4">
+        <div>
+          <h2 className="text-xl font-bold text-white">Dashboard</h2>
+          <p className="text-xs text-white/40 mt-1">Métricas de tráfego e performance comercial</p>
+        </div>
+        <div className="flex flex-wrap gap-2 items-center">
+          {PRESETS.map(p => (
+            <button key={p.id}
+              onClick={() => { setPeriodo(p.id); setRange({ inicio: p.inicio, fim: p.fim }); }}
+              className={`px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all border ${
+                periodo === p.id
+                  ? 'bg-brand-primary/20 border-brand-primary text-brand-primary'
+                  : 'bg-white/5 border-white/10 text-gray-400 hover:border-white/20'
+              }`}>
+              {p.label}
+            </button>
+          ))}
+          <div className="flex items-center gap-2 bg-white/5 border border-white/10 rounded-lg px-3 py-1.5">
+            <input type="date" value={range.inicio}
+              onChange={e => { setPeriodo('custom'); setRange(r => ({ ...r, inicio: e.target.value })); }}
+              className="bg-transparent text-xs text-gray-300 focus:outline-none [&::-webkit-calendar-picker-indicator]:brightness-75" />
+            <span className="text-xs text-gray-600">→</span>
+            <input type="date" value={range.fim}
+              onChange={e => { setPeriodo('custom'); setRange(r => ({ ...r, fim: e.target.value })); }}
+              className="bg-transparent text-xs text-gray-300 focus:outline-none [&::-webkit-calendar-picker-indicator]:brightness-75" />
+          </div>
+        </div>
+      </div>
+
+      {/* 3 KPIs grandes */}
+      <div className="grid grid-cols-3 gap-4">
+        {[
+          { label: 'Contrato', value: fmtBRLDash(kpis.total_contrato) },
+          { label: 'Entrada', value: fmtBRLDash(kpis.total_cc) },
+          { label: 'MRR Adicionado', value: fmtBRLDash(kpis.total_mrr) },
+        ].map(k => (
+          <div key={k.label} className="bg-[#0d1117]/80 border border-white/10 rounded-2xl p-6 text-center space-y-2">
+            <p className="text-[10px] font-bold uppercase tracking-widest text-brand-primary">{k.label}</p>
+            <p className="text-2xl font-extrabold text-white">{k.value}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* Grid 3 colunas: Funil | Investimento | Performance */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+
+        {/* Funil de Etapas */}
+        <div className="bg-[#0d1117]/80 border border-white/10 rounded-2xl p-6">
+          <h3 className="text-[10px] font-bold uppercase tracking-widest text-brand-primary mb-5">Etapas</h3>
+          <div className="space-y-0">
+            {etapas.map((e, i) => (
+              <div key={e.label}>
+                <div className="flex items-center" style={{ paddingLeft: `${(100 - e.w) / 2}%`, paddingRight: `${(100 - e.w) / 2}%` }}>
+                  <div className="flex-1 bg-white/10 rounded-xl px-3 py-2 flex items-center justify-between">
+                    <span className="text-xs font-bold text-gray-300">{e.label}</span>
+                    <span className="text-xl font-extrabold text-white">{fmtNum(e.value)}</span>
+                  </div>
+                </div>
+                {e.taxa !== null && i < etapas.length - 1 && (
+                  <div className="flex items-center justify-center gap-3 py-1.5">
+                    <div className="flex-1 h-px bg-white/5" />
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-bold text-gray-300">{e.taxa.toFixed(1)}%</span>
+                      <span className="text-gray-600">|</span>
+                      <span className="text-[10px] font-bold text-gray-500">Meta: {e.meta}</span>
+                    </div>
+                    <div className="flex-1 h-px bg-white/5" />
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Investimento */}
+        <div className="bg-[#0d1117]/80 border border-white/10 rounded-2xl p-6">
+          <h3 className="text-[10px] font-bold uppercase tracking-widest text-brand-primary mb-5">Investimento</h3>
+          <div className="space-y-0">
+            {[
+              { label: 'Verba Mídia', value: fmtBRLDash(custos.verba_midia) },
+              { label: 'Custo / MQL', value: fmtBRLDash(custos.custo_mql) },
+              { label: 'Custo / RM', value: fmtBRLDash(custos.custo_rm) },
+              { label: 'Custo / RR', value: fmtBRLDash(custos.custo_rr) },
+              { label: 'CAC', value: fmtBRLDash(custos.cac) },
+            ].map(row => (
+              <div key={row.label} className="flex items-center justify-between py-3 border-b border-white/5 last:border-0">
+                <span className="text-sm font-semibold text-gray-300">{row.label}</span>
+                <span className="text-lg font-extrabold text-white">{row.value}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Performance Comercial */}
+        <div className="bg-[#0d1117]/80 border border-white/10 rounded-2xl p-6">
+          <h3 className="text-[10px] font-bold uppercase tracking-widest text-brand-primary mb-5">Performance Comercial</h3>
+          <div className="space-y-0">
+            {[
+              { label: 'Ticket Médio', value: fmtBRLDash(kpis.ticket_medio) },
+              { label: 'Entrada Média', value: fmtBRLDash(kpis.cc_medio) },
+              { label: 'MRR Médio', value: fmtBRLDash(kpis.mrr_medio) },
+              { label: 'TMF', value: `${Math.round(kpis.tmf_dias)} dias` },
+              { label: 'Vendas', value: String(kpis.vendas) },
+            ].map(row => (
+              <div key={row.label} className="flex items-center justify-between py-3 border-b border-white/5 last:border-0">
+                <span className="text-sm font-semibold text-gray-300">{row.label}</span>
+                <span className="text-lg font-extrabold text-white">{row.value}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Gráfico de Vendas por Mês */}
+      {chartData.length > 0 && (
+        <div className="bg-[#0d1117]/80 border border-white/10 rounded-2xl p-6 space-y-4">
+          <h3 className="text-[10px] font-bold uppercase tracking-widest text-brand-primary">Vendas por Mês</h3>
+          <ResponsiveContainer width="100%" height={260}>
+            <BarChart data={chartData} barGap={4} barCategoryGap="30%">
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" vertical={false} />
+              <XAxis dataKey="name" stroke="#444" tick={{ fill: '#aaa', fontSize: 10 }} tickLine={false} axisLine={false} />
+              <YAxis yAxisId="left" stroke="#444" fontSize={10} tickLine={false} axisLine={false} tickFormatter={(v: number) => `R$${v/1000}k`} />
+              <YAxis yAxisId="right" orientation="right" stroke="#444" fontSize={10} tickLine={false} axisLine={false} tickFormatter={(v: number) => `R$${v/1000}k`} />
+              <Tooltip
+                contentStyle={{ backgroundColor: '#0d1117', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 12, fontSize: 12 }}
+                labelStyle={{ color: '#fff', fontWeight: 700 }}
+                formatter={(value: number, name: string) => [fmtBRLDash(value), name]}
+              />
+              <Legend wrapperStyle={{ fontSize: 10, paddingTop: 16 }} />
+              <Bar yAxisId="left" dataKey="Contrato" fill={BRAND_COLOR} fillOpacity={0.75} radius={[4,4,0,0]} />
+              <Bar yAxisId="left" dataKey="Entrada" fill="#0f2a44" fillOpacity={1} radius={[4,4,0,0]} />
+              <Line yAxisId="right" type="monotone" dataKey="Ticket Médio" stroke="#888" strokeWidth={2} dot={{ fill: '#888', r: 3 }} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+    </div>
   );
 }
