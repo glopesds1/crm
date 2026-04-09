@@ -26,9 +26,8 @@ Arquivo `.env` na raiz (nunca commitar — está no .gitignore):
 
 ```
 VITE_SUPABASE_URL=https://nlvjlgjztngiixcpumfe.supabase.co
-VITE_SUPABASE_KEY=sb_publishable_8GYm9Gs9VLyYHJgc3oZgmw_GyXrbOXj
-VITE_WEBHOOK_BASE=https://webhook.m2black.com/webhook/dashboard
-VITE_SYNC_CRM_WEBHOOK=https://webhook.m2black.com/webhook/sync-crm-leads
+VITE_SUPABASE_KEY=(anon key)
+VITE_SUPABASE_SERVICE_KEY=(service_role key — usado só pelo supabaseAdmin no frontend pra operações admin)
 ```
 
 ---
@@ -41,64 +40,133 @@ VITE_SYNC_CRM_WEBHOOK=https://webhook.m2black.com/webhook/sync-crm-leads
 - **Gráficos:** recharts
 - **PDF:** jsPDF + jspdf-autotable
 - **Datas:** date-fns (v4) — NÃO usar `format()` do date-fns no CRM; usar helpers `fmtDateSP`/`parseDateSP` com timezone fixo `America/Sao_Paulo`
-- **Backend:** Supabase (PostgreSQL gerenciado) — plano Nano
-- **Banco externo:** PostgreSQL no Railway (dados de leads e métricas de campanha)
+- **Backend:** Supabase (PostgreSQL gerenciado) — ÚNICO banco de dados
 - **Automações:** n8n self-hosted em `webhook.m2black.com`
+- **Auth:** Supabase Auth (signInWithPassword, resetPassword, MFA)
+- **RLS:** Habilitado em todas as tabelas (exceto analises_ligacao, lp_clients, lp_offers). Policy: `auth_full_access` permite tudo pra `authenticated`.
 - **Cor brand:** `#00FF88` (brand-primary)
 - **Tema:** dark, CSS variables definidas em `src/index.css`
 
 ---
 
-## Arquitetura dos Arquivos
+## Arquitetura dos Arquivos (estado atual — monolitos a reestruturar)
 
 ```
 src/
   App.tsx           ← monolito principal (~3600 linhas) com navegação, kanban de clientes,
                       gestão de equipe, configurações, notificações, módulo Comercial
-  DashboardView.tsx ← dashboard comercial com 7 sub-páginas, busca dados via webhook n8n
+  DashboardView.tsx ← dashboard comercial com 7 sub-páginas, busca dados via supabase.rpc()
   CRMView.tsx       ← pipeline de leads (kanban CRM) com Supabase direto
   PlaybooksView.tsx ← catálogo de PDFs em /public/playbooks/
   types.ts          ← tipos compartilhados
   constants.ts      ← colunas kanban, mock data, config inicial
   lib/
-    supabase.ts     ← cliente Supabase (lê env vars)
+    supabase.ts     ← cliente Supabase (anon key) + supabaseAdmin (service_role key)
     database.ts     ← CRUD para clients, team_members, tags, agency_config, comercial_tasks
 ```
 
+### Estrutura alvo (reestruturação pendente)
+
+```
+src/
+├── auth/
+│   └── AuthProvider.tsx, LoginPage.tsx, useSession.ts
+├── shared/
+│   ├── hooks/ (useSupabase.ts, useRealtime.ts)
+│   ├── components/ (Layout.tsx, Sidebar.tsx, DatePicker.tsx, Lightbox.tsx)
+│   ├── lib/ (supabase.ts, dateHelpers.ts, formatters.ts)
+│   └── types.ts
+├── dashboard/
+│   ├── DashboardPage.tsx
+│   ├── hooks/ (useDashboardData.ts)
+│   └── components/ (OverviewTab, MetasMensaisTab, SemanalTab, ReunioesTab, FunisTab, KPIVendasTab, KPIPreVendasTab)
+├── crm/
+│   ├── CRMPage.tsx
+│   ├── hooks/ (useLeads.ts, useAtividades.ts, useTarefas.ts)
+│   └── components/ (KanbanBoard, LeadCard, LeadModal/, AtividadeForm, PainelBANT, TaskAlarm)
+├── relatorio/
+│   ├── RelatorioPage.tsx
+│   ├── hooks/ (useRelatorioData.ts)
+│   └── components/ (RelatorioGrid, Filtros)
+├── playbooks/
+│   └── PlaybooksPage.tsx
+└── App.tsx (~100 linhas, só rotas + AuthProvider)
+```
+
+**Regra:** cada pasta só importa de `shared/` e de si mesma. Nenhum módulo importa de outro módulo.
+
 ---
 
-## Banco de Dados — Supabase
+## Banco de Dados — Supabase (ÚNICO)
 
-**Tabelas principais:**
-- `clients` — clientes da agência (gestão de entregas)
-- `team_members` — membros da equipe com roles
-- `tags` — etiquetas de clientes
-- `agency_config` — configuração da agência (logo, nome)
-- `comercial_tasks` — registros de atividades comerciais (pré-vendas/vendas)
+### Tabelas do CRM (aquisição)
+- `crm_leads` — leads do pipeline com datas completas (data_entrada, data_mql, data_reuniao_marcada, data_reuniao_realizada, data_tp, data_fechamento), lead_score, lead_grade, closer_responsavel, sdr_responsavel, soft delete (deletado_em)
+- `crm_atividades` — timeline de atividades por lead (FK → crm_leads)
+- `crm_tarefas` — tarefas agendadas por lead (FK → crm_leads)
+- `crm_demandas_venda` — checklist pós-venda (contrato, assinatura, sinal, entrada, onboarding, grupo, membros, mensagem)
+- `comercial_tasks` — log flat de atividades comerciais (relatório) — a ser eliminado
+- `reunioes` — log de reuniões (event-log model) com crm_lead_id, lead_externo_id, tp, status, closer, sdr, dados financeiros
+- `meta_insights_campaign_daily` — dados de campanha Meta Ads por dia
+- `meta_leads_historico` — log de alterações de leads (alimentado por trigger)
+- `touchpoints_agendados` — touchpoints WhatsApp pré-reunião
+- `fluxo_controle` — controle do fluxo de nurturing
+- `fluxo_sequencia` — sequência de templates do fluxo
 
-**Tabelas do CRM:**
-- `crm_leads` — leads do pipeline (sincronizado do Railway via n8n)
-- `crm_atividades` — timeline de atividades por lead
-- `crm_tarefas` — tarefas agendadas por lead
+### Tabelas de metas
+- `metas` — tabela UNIFICADA com tipo/periodo/metrica/valor (substituiu 5 tabelas)
+- `dashboard_metas`, `dashboard_metas_etapas`, `dashboard_metas_semanal`, `metas_mensais`, `comercial_metas_funil` — tabelas antigas, ainda lidas pelo frontend, a serem migradas pra `metas`
 
-**Tabelas de metas do Dashboard:**
-- `dashboard_metas_etapas` — taxas % de conversão entre etapas do funil (Overview)
-- `dashboard_metas` — metas de quantidade mensal (RM, RR, Vendas)
-- `dashboard_metas_semanal` — metas semanais (RM, RR, Vendas, Contrato, CC)
-- `metas_mensais` — metas financeiras mensais (meta_contrato, meta_cc)
+### Tabelas de operação/clientes
+- `clients` — clientes da agência
+- `team_members` — membros da equipe com roles + auth_user_id (vinculado ao Supabase Auth)
+- `tags` — etiquetas
+- `agency_config` — configuração da agência
+- `demands` — demandas de operação
 
-**RLS:** desabilitado em todas as tabelas (desenvolvimento). Habilitar antes de liberar para clientes.
+### Filas de processamento (trigger-based)
+- `agendamento_queue` — fila pra agendamento/cancelamento de reuniões (trigger: processar_agendamento)
+- `fluxo_queue` — fila pra mudanças de status no fluxo (trigger: processar_fluxo_queue)
+- `touchpoints_queue` — fila pra marcar touchpoints como enviado/cancelado (trigger: processar_touchpoints_queue)
+
+### Views
+- `view_producao_semanal_total` — produção semanal (RM, RR, vendas, contrato, CC)
+- `fluxo_leads_para_envio` — leads prontos pra receber mensagem do fluxo
+
+### Functions (RPC) — Dashboard
+- `dashboard_overview_kpis(di, df)` — KPIs gerais + TMF
+- `dashboard_overview_vendas_mes(di, df)` — vendas por mês
+- `dashboard_overview_custos(di, df)` — custos (verba, CPL, CAC, etc.)
+- `dashboard_metas_realizado(di, df)` — realizado vs meta + por_tp
+- `dashboard_metas_closer(di, df)` — performance por closer
+- `dashboard_metas_sdr(di, df)` — performance por SDR
+- `dashboard_metas_vendas_lista(di, df)` — lista de vendas do período
+- `dashboard_reunioes_dia(di, p_closer)` — reuniões do dia
+- `dashboard_reunioes_negociacao(di)` — reuniões de negociação (R2+)
+- `dashboard_disponibilidade(di)` — horários ocupados
+- `dashboard_analise_etapa(di, df)` — vendas por etapa
+- `dashboard_analise_programa(di, df)` — vendas por programa
+- `dashboard_analise_motivos(di, df)` — motivos de não-fechamento
+- `dashboard_kpi_closer(di, df)` — KPI por closer com ticket/CC
+- `dashboard_sdr_producao(di, df)` — produção SDR
+- `dashboard_sdr_leads_semanal()` — leads semanal
+- `dashboard_anuncios_funil(di, df)` — funil por anúncio
+
+### Triggers
+- `trg_log_alteracoes_crm_leads` — loga alterações em meta_leads_historico
+- `trg_processar_agendamento` — processa agendamento_queue
+- `trg_processar_fluxo` — processa fluxo_queue
+- `trg_processar_touchpoints` — processa touchpoints_queue
 
 ---
 
-## Banco de Dados — Railway (PostgreSQL externo)
+## Segurança
 
-Tabelas principais:
-- `meta_leads_nt` — leads vindos do Facebook Lead Ads (1900+ registros)
-- `meta_insights_campaign_daily` — métricas de campanha Meta Ads
-- `view_producao_semanal_total` — view de produção semanal agregada
-
-O n8n sincroniza `meta_leads_nt` → `crm_leads` no Supabase a cada 30min.
+- **RLS:** Habilitado em todas as tabelas (exceto analises_ligacao, lp_clients, lp_offers)
+- **Policy:** `auth_full_access` — `authenticated` pode tudo (SELECT, INSERT, UPDATE, DELETE)
+- **anon:** Bloqueado de tudo (sem policy)
+- **service_role:** Usado pelo n8n (ignora RLS)
+- **Frontend:** Usa anon key → após login vira authenticated → RLS permite acesso
+- **Senhas:** Gerenciadas pelo Supabase Auth (não mais em texto na tabela)
 
 ---
 
@@ -124,168 +192,81 @@ base → triagem → rm_marcada → rm_realizada → fup_ativa → fechado
                                                         ↘ desqualificado
 ```
 
-**Regra importante:** todos os leads entram em `base`, independente de ter Data_MQL. MQL é etiqueta, não etapa.
+**Etiquetas:** MQL, No-show, Programa Pro, Programa Lite, Programa Basic, Contrato na Mão, Link na Mão
 
-**Etiquetas disponíveis:** MQL, No-show, Programa Pro, Programa Lite, Programa Basic, Contrato na Mão, Link na Mão
-
-**Permissões CRM:** admin vê todos os leads; SDR/Closer vê apenas os que estão como responsável.
-
----
-
-## CRM — Registrar Atividade (NovaAtividadeForm)
-
-**Campos do formulário:**
-1. **Tipo:** Ligação ou Reunião
-2. **Responsável pela atividade:** seletor com membros da equipe comercial, pré-selecionado com o responsável pela oportunidade (`lead.responsavel`)
-3. **Print da tela:** obrigatório para TODAS as atividades (ligação e reunião)
-4. Campos específicos por tipo (veja abaixo)
-
-**Ligação → Atendeu:**
-- Touchpoint (número)
-- Botão "Agendar Reunião" → abre painel BANT completo (substitui o antigo checkbox "Marcou reunião")
-
-**Ligação → Não atendeu:**
-- Motivo (select)
-
-**Painel BANT (agendamento de reunião dentro da ligação):**
-- Tipo (R1/R2), Duração, Data/hora*, Closer responsável*, SDR responsável*
-- BANT: Faturamento, Budget, Momento, Captação, Autoridade, Necessidade, Timing
-- Desafio/dor/observações
-- Ao salvar: envia ao webhook `agendar-reuniao`, cria tarefa em `crm_tarefas`, move lead para `rm_marcada`, atualiza responsável do lead para o Closer selecionado
-
-**Regra de responsável no relatório (`comercial_tasks.collaborator`):**
-- **Ligações e reuniões:** `collaborator` = responsável pela atividade (campo selecionado no form, default = responsável pela oportunidade)
-- **Tarefas agendadas:** `collaborator` = responsável pela tarefa (`tarefa.responsavel`), mesmo que diferente do responsável pelo lead
-
-**Onde NÃO aparece mais:**
-- "Resumo da ligação" — removido do form de ligação
-- "Agendar próxima atividade" — removido do form, movido para aba Tarefas
-- Botão "Agendar Reunião" — removido da aba Informações (fica apenas dentro do form de ligação atendida)
-
----
-
-## CRM — Card do Lead (LeadModal)
-
-**Aba Informações:** telefone, origem, área de atuação, faturamento, responsável, etapa, etiquetas, observações, negociação (se aplicável). Botões: "Registrar atividade" e "Agendar Tarefa" (redireciona para aba Tarefas).
-
-**Aba Timeline:** histórico de atividades do lead.
-
-**Aba Tarefas:** lista de tarefas agendadas com botão "Agendar próxima atividade" (form inline: título*, data/hora*, responsável).
-
----
-
-## CRM — Tarefas Agendadas
-
-**Fluxo de conclusão:**
-1. Usuário clica "Concluir" na tarefa (modal ou popup de alarme)
-2. Painel de upload abre — é obrigatório anexar print antes de confirmar
-3. Imagem é enviada ao bucket `comercial-prints` no Supabase Storage
-4. Ao confirmar:
-   - `crm_tarefas` → marca `concluida: true`
-   - `crm_atividades` → insere registro tipo `'tarefa'` com `imagem_url` (aparece na timeline do lead como "Tarefa Concluída")
-   - `comercial_tasks` → insere no relatório com `category: 'Tarefa'`
-
-**Notificações (alarme de tarefas):**
-- Aparecem apenas para o responsável pela tarefa (`tarefa.responsavel`) ou o responsável pela oportunidade (`lead.responsavel`)
-- Admin **não** recebe notificações de todas as tarefas — somente das que é responsável
-
-**Helpers de timezone (topo de CRMView.tsx):**
-- `SP_TZ = 'America/Sao_Paulo'` — constante de timezone
-- `localDatetimeToISO(dt)` — converte datetime-local para ISO com offset `-03:00`
-- `parseDateSP(iso)` — parse de data do Supabase, trata strings sem offset como São Paulo
-- `fmtDateSP(iso, opts?)` — formata data usando `Intl.DateTimeFormat` com timezone SP
+**Responsáveis:**
+- `sdr_responsavel` — SDR que trabalhou o lead (nunca sobrescrito)
+- `closer_responsavel` — closer atribuído na reunião
 
 ---
 
 ## Dashboard Comercial — Sub-páginas
 
-7 sub-páginas com seletor de período independente por aba:
+7 sub-páginas, TODAS leem do Supabase via `supabase.rpc()` (sem webhook n8n):
 
-| Aba | Seletor | Padrão |
-|---|---|---|
-| Overview | ✅ | Este ano |
-| Metas Mensais | ✅ | Este mês |
-| Semanal | ❌ (fixo) | — |
-| Reuniões do Dia | ❌ (fixo = hoje) | — |
-| Funis | ✅ | Este mês |
-| KPI's Vendas | ✅ | 90 dias |
-| KPI's Pré-vendas | ✅ | 90 dias |
-
-**Webhook URL:** `https://webhook.m2black.com/webhook/dashboard?page=PAGE&data_inicio=YYYY-MM-DD&data_fim=YYYY-MM-DD`
-
-**Pages:** `overview` | `metas` | `semanal` | `reunioes` | `analise` | `anuncios` | `sdr`
+| Aba | Functions RPC |
+|---|---|
+| Overview | `dashboard_overview_kpis`, `dashboard_overview_vendas_mes`, `dashboard_overview_custos` |
+| Metas Mensais | `dashboard_metas_realizado`, `dashboard_metas_closer`, `dashboard_metas_sdr`, `dashboard_metas_vendas_lista` |
+| Semanal | `view_producao_semanal_total` (view, não RPC) |
+| Reuniões do Dia | `dashboard_reunioes_dia`, `dashboard_reunioes_negociacao`, `dashboard_disponibilidade` |
+| Funis | `dashboard_analise_etapa`, `dashboard_analise_programa`, `dashboard_analise_motivos`, `dashboard_kpi_closer` |
+| KPI's Vendas | `dashboard_kpi_closer`, `dashboard_analise_etapa`, `dashboard_analise_programa` |
+| KPI's Pré-vendas | `dashboard_sdr_producao`, `dashboard_sdr_leads_semanal`, `dashboard_anuncios_funil` |
 
 ---
 
-## n8n Workflows Relevantes
+## n8n Workflows
 
-- **Sync CRM:** `POST https://webhook.m2black.com/webhook/sync-crm-leads` — sincroniza Railway → Supabase crm_leads em lotes de 50
-- **Agendar Reunião:** `POST https://webhook.m2black.com/webhook/agendar-reuniao` — recebe payload BANT e notifica o closer
-- **Dashboard API:** responde ao webhook do dashboard com dados do Railway
-- **Supabase Keepalive:** pinga o Supabase a cada 5 dias para evitar pause no plano Nano
+| # | Workflow | Trigger | O que faz |
+|---|----------|---------|-----------|
+| 1 | Sync Meta Leads → CRM | Schedule 30min | Sheets → Supabase crm_leads |
+| 2 | Agendamento Reunião CRM | Webhook | Calendar + WhatsApp + agendamento_queue |
+| 3 | Calendar Sync | Google Calendar Trigger | Cancelamento → agendamento_queue |
+| 4 | Touchpoints Reunião | Webhook | Cria touchpoints pré-reunião |
+| 5 | Dispatcher Touchpoints | Schedule 5min | Envia WhatsApp dos touchpoints |
+| 6 | Detector Leads Novos | Schedule 30min | Detecta leads MQL → fluxo_controle |
+| 7 | Monitor Mudança Status | Schedule 15min | Pausa/encerra/followup no fluxo |
+| 8 | Dispatcher Mensagens | Schedule | Envia templates WhatsApp do fluxo |
+| 9 | Meta Insights → Supabase | Schedule 30min | Meta API → meta_insights_campaign_daily |
+| 10 | Nativo → Sheets | Schedule + Webhook | Facebook → Sheets (backup) |
+
+Todos usam **service_role key** nos headers (ignora RLS).
 
 ---
 
 ## Time Comercial
 
-- **Closers:** Gabriel Fonseca (gerente comercial), Carla, Gabriel Moreira
-- **SDRs:** Vitória Mendes, Pedro Relvas
-
----
-
-## Relatório Comercial (App.tsx — módulo Aquisição)
-
-**Histórico de atividades:** grid de cards com thumbnail da imagem enviada. Ao clicar na imagem, abre lightbox em tela cheia (state `lightboxUrl`).
+- **Gabriel Fonseca** — Closer/Gerente comercial
+- **Gabriel Moreira** — Closer
+- **Vitória Mendes** — SDR
+- **Thalisson Gama** — Admin/Owner
+- Pedro Relvas e Carla — ex-membros, excluídos das métricas
 
 ---
 
 ## Padrões de Código
 
-- Sempre usar `import.meta.env.VITE_*` para acessar env vars (nunca hardcodar URLs ou chaves)
-- Animações: `import { motion, AnimatePresence } from 'motion/react'` (não `framer-motion`)
-- Arrays do Supabase: sempre tratar como `Array.isArray(d) ? d : d ? [d] : []`
-- Ao paginar o Supabase, deduplicar por `id` após juntar as páginas
-- Datas no CRM: usar os helpers `fmtDateSP(iso, opts?)` e `parseDateSP(iso)` definidos no topo de `CRMView.tsx` — nunca usar `format()` do date-fns nem `toLocaleDateString()` sem `timeZone: 'America/Sao_Paulo'`
-- Ao salvar datas de `<input type="datetime-local">`, usar `localDatetimeToISO(dt)` que anexa `-03:00` (São Paulo, sem horário de verão desde 2019)
-- Não modificar seções marcadas como TRAVADO nos comentários do DashboardView.tsx
+- Sempre usar `import.meta.env.VITE_*` para env vars
+- Animações: `import { motion, AnimatePresence } from 'motion/react'`
+- Arrays do Supabase: tratar como `Array.isArray(d) ? d : d ? [d] : []`
+- Datas no CRM: usar `fmtDateSP(iso, opts?)` e `parseDateSP(iso)` — nunca `format()` do date-fns
+- Salvar datas de `<input type="datetime-local">`: usar `localDatetimeToISO(dt)` que anexa `-03:00`
+- Não modificar seções marcadas como TRAVADO nos DashboardView.tsx
 
 ---
 
-## Pendências Conhecidas (lista priorizada)
+## Pendências Conhecidas
 
-### CRM
-1. Botão de ligar → abrir WhatsApp Beta
-2. ~~Timeline → integrar com histórico do módulo Comercial~~ ✅ Tarefas concluídas aparecem na timeline
-3. ~~Tarefas → alarme sonoro e visual~~ ✅ Implementado com popup + som + botão concluir com print
-4. Ao selecionar tarefa no histórico → abrir card do lead
-5. Informações financeiras pós-reunião editáveis no card
-6. Filtro por responsável no kanban
-7. Filtro por etiqueta
-8. Sync de etapa → atualizar de volta no Postgres/Sheets
-25. ~~Agendamento BANT no fluxo de ligação atendida~~ ✅ Botão + painel BANT com webhook
-26. ~~Print obrigatório em todas as atividades~~ ✅ Validação universal
-27. ~~Lightbox no histórico do relatório~~ ✅ Clique na imagem abre tela cheia
-28. ~~Responsável pela atividade no form~~ ✅ Seletor pré-preenchido com responsável da oportunidade
-29. ~~Reorganizar card do lead (info/atividades/tarefas)~~ ✅ Agendar tarefa na aba Tarefas, removido Agendar Reunião da info
+### Pós-migração (mudanças pontuais)
+1. Venda só conta no dashboard quando checklist `crm_demandas_venda` estiver 100% completo
+2. Gráfico "Vendas por Mês" no Overview mostra mês anterior quando filtro é "Este Mês"
+3. Filtrar vendas do mês por vendedor na aba Metas Mensais
+4. Funis: repensar lógica de filtro (filtrar só por data_entrada e mostrar funil completo)
+5. Reuniões do Dia: horário mostrando segundos (cortar no frontend)
 
-### Dashboard
-9. Negociando → mostrar apenas leads do mês vigente
-10. KPI's Pré-vendas → implementar (aguardando tabela de ligações)
-11. ~~Diferença timezone leads/RR vs Looker Studio~~ ✅ Timezone fixo America/Sao_Paulo
-
-### App geral
-12. Botão de esconder a barra lateral
-13. Notificação sem botão de fechar
-14. Botão de renovar (aba Clientes) sem funcionalidade
-15. Melhoria visual do CRM
-
-### Segurança (última etapa — antes de liberar para clientes)
-16. Login real via Supabase Auth com verificação de senha
-17. Tratar exceções — erros não podem expor detalhes técnicos
-18. Redefinição de senha
-19. Autenticação em dois fatores
-20. Política de cookies e tratamento de dados
-21. RLS no Supabase
-22. Isolamento de dados por cliente
-23. Automações n8n ao fechar venda
-24. Teste de estresse com Gabriel Gama
+### Estrutural
+6. Reestruturar monolitos: CRMView.tsx (225KB), App.tsx (236KB), DashboardView.tsx (81KB)
+7. Eliminar `comercial_tasks` — substituir por view/query em `crm_atividades`
+8. Migrar frontend pra usar tabela `metas` unificada (em vez das 5 tabelas antigas)
+9. Desligar Railway definitivamente
