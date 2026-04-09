@@ -209,6 +209,15 @@ export type CrmClientLead = {
   proximaReuniao: string;
   criadoEm: string;
   atualizadoEm: string;
+  leadScore?: number;
+  leadScoreCriteria?: {
+    budget?: number;
+    timeline?: string;
+    authority?: number;
+    need?: number;
+    timing?: number;
+  };
+  vendaDemandas?: CrmVendaDemanda[];
 };
 
 export type CrmClientLeadActivity = {
@@ -251,6 +260,49 @@ export type CrmClientUser = {
   senha: string;
   role: 'admin' | 'member';
   ativo: boolean;
+  criadoEm: string;
+};
+
+// ── Vendas Demandas ──────────────────────────────────────
+export type CrmVendaDemanda = {
+  id: string;
+  leadId: string;
+  tenantId: string;
+  tipo: 'contrato' | 'credito_aprovado' | 'reforma_construcao_financiada' | 'outro';
+  status: 'pendente' | 'concluido';
+  descricao: string;
+  dataVencimento?: string;
+  criadoEm: string;
+};
+
+// ── Partners / Parceiros ──────────────────────────────────
+export type CrmPartner = {
+  id: string;
+  tenantId: string;
+  nome: string;
+  email: string;
+  telefone: string;
+  empresa: string;
+  area: string;
+  dataAniversario?: string;
+  dataImportante?: string;
+  observacoes: string;
+  obrasTrazidas: number;
+  obrasNegociacao: number;
+  status: 'ativo' | 'inativo' | 'em_negociacao';
+  criadoEm: string;
+  atualizadoEm: string;
+};
+
+export type CrmPartnerObra = {
+  id: string;
+  partnerId: string;
+  tenantId: string;
+  nome: string;
+  status: 'negociacao' | 'contratado' | 'finalizado';
+  valorEstimado: number;
+  dataInicio?: string;
+  dataFim?: string;
   criadoEm: string;
 };
 
