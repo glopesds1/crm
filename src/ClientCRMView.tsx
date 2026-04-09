@@ -36,7 +36,7 @@ const localDatetimeToISO = (dt: string) => dt ? dt + ':00-03:00' : '';
 
 const PLAN_COLORS: Record<string, string> = { Pro: '#00FF88', Lite: '#3B82F6', Basic: '#8B5CF6' };
 
-// ── Lead Score ─────────────────────────────────────────────
+// ── Lead Score do Cliente ─────────────────────────────────
 const LEAD_SCORE_GRADE_STYLE: Record<string, { bg: string; text: string; border: string }> = {
   A: { bg: 'rgba(34,197,94,0.12)', text: '#22c55e', border: 'rgba(34,197,94,0.3)' },
   B: { bg: 'rgba(212,175,55,0.12)', text: '#d4af37', border: 'rgba(212,175,55,0.3)' },
@@ -44,62 +44,64 @@ const LEAD_SCORE_GRADE_STYLE: Record<string, { bg: string; text: string; border:
   D: { bg: 'rgba(239,68,68,0.12)', text: '#ef4444', border: 'rgba(239,68,68,0.3)' },
 };
 
-function calcClientLeadScore(lead: { faturamento?: string; investimento?: string; funcionarios?: string; area?: string }): { score: number; grade: string; breakdown: { faturamento: number; investimento: number; funcionarios: number; area: number } } {
-  let bFat = 0, bInv = 0, bFunc = 0, bArea = 0;
-  const fat = (lead.faturamento || '').toLowerCase().replace(/[\s.]/g, '');
-  const inv = (lead.investimento || '').toLowerCase();
-  const func = (lead.funcionarios || '').toLowerCase();
-  const area = (lead.area || '').toLowerCase();
+type LeadScoreRespostas = {
+  credito_aprovado: string;   // 'sim' | 'nao' | ''
+  recurso_proprio: string;    // 'sim' | 'nao' | ''
+  renda_familiar: string;     // '1k_3k' | '3k_6k' | '6k_9k' | '9k_12k' | '12k_mais' | ''
+  tem_terreno: string;        // 'sim' | 'nao' | ''
+  prazo_construir: string;    // '1_mes' | '3_meses' | '6_meses' | '1_ano_mais' | ''
+};
 
-  // FATURAMENTO (0-40)
-  if (fat.includes('acima_150') || fat.includes('150')) bFat = 40;
-  else if (fat.includes('70') || fat.includes('80')) bFat = 35;
-  else if (fat.includes('40')) bFat = 25;
-  else if (fat.includes('20') || fat.includes('30')) bFat = 15;
-  else if (fat.includes('10') && !fat.includes('100') && !fat.includes('150')) bFat = 8;
-  else if (fat.includes('menos') || fat.includes('5')) bFat = 3;
-  else {
-    const num = parseFloat(fat.replace(/[^0-9,.-]/g, '').replace(',', '.'));
-    if (!isNaN(num)) {
-      if (num >= 150000) bFat = 40;
-      else if (num >= 70000) bFat = 35;
-      else if (num >= 40000) bFat = 25;
-      else if (num >= 20000) bFat = 15;
-      else if (num >= 10000) bFat = 8;
-      else bFat = 3;
-    }
-  }
+const LEAD_SCORE_EMPTY: LeadScoreRespostas = {
+  credito_aprovado: '', recurso_proprio: '', renda_familiar: '',
+  tem_terreno: '', prazo_construir: '',
+};
 
-  // INVESTIMENTO (0-30)
-  if (inv.includes('todos')) bInv = 30;
-  else if (inv.includes('agência') || inv.includes('agencia')) bInv = 25;
-  else if (inv.includes('mentoria')) bInv = 20;
-  else if (inv.includes('curso')) bInv = 15;
-  else if (inv.includes('nenhum')) bInv = 5;
+function calcClientLeadScore(respostas: LeadScoreRespostas): { score: number; grade: string; breakdown: { credito: number; recurso: number; renda: number; terreno: number; prazo: number } } {
+  let credito = 0, recurso = 0, renda = 0, terreno = 0, prazo = 0;
 
-  // FUNCIONARIOS (0-20)
-  if (func.includes('acima_de_10') || func.includes('acima de 10')) bFunc = 20;
-  else if (func.includes('6_a_10') || func.includes('6 a 10')) bFunc = 18;
-  else if (func.includes('4_a_6') || func.includes('4 a 6')) bFunc = 14;
-  else if (func.includes('1_a_3') || func.includes('1 a 3')) bFunc = 8;
-  else if (func.includes('somente_eu') || func.includes('somente eu')) bFunc = 4;
+  // CRÉDITO APROVADO (0 ou 25)
+  if (respostas.credito_aprovado === 'sim') credito = 25;
 
-  // AREA BONUS (0-10)
-  if (area.includes('engenheiro') && area.includes('construtora')) bArea = 10;
-  else if (area.includes('engenheiro')) bArea = 6;
-  else if (area.includes('construtor')) bArea = 6;
-  else if (area.includes('arquiteto')) bArea = 4;
+  // RECURSO PRÓPRIO (0 ou 15)
+  if (respostas.recurso_proprio === 'sim') recurso = 15;
 
-  const score = bFat + bInv + bFunc + bArea;
+  // RENDA FAMILIAR (0-25)
+  if (respostas.renda_familiar === '12k_mais') renda = 25;
+  else if (respostas.renda_familiar === '9k_12k') renda = 20;
+  else if (respostas.renda_familiar === '6k_9k') renda = 15;
+  else if (respostas.renda_familiar === '3k_6k') renda = 8;
+  else if (respostas.renda_familiar === '1k_3k') renda = 3;
+
+  // TEM TERRENO (0 ou 20)
+  if (respostas.tem_terreno === 'sim') terreno = 20;
+
+  // PRAZO (0-15)
+  if (respostas.prazo_construir === '1_mes') prazo = 15;
+  else if (respostas.prazo_construir === '3_meses') prazo = 12;
+  else if (respostas.prazo_construir === '6_meses') prazo = 7;
+  else if (respostas.prazo_construir === '1_ano_mais') prazo = 3;
+
+  const score = credito + recurso + renda + terreno + prazo;
   const grade = score >= 70 ? 'A' : score >= 45 ? 'B' : score >= 20 ? 'C' : 'D';
-  return { score, grade, breakdown: { faturamento: bFat, investimento: bInv, funcionarios: bFunc, area: bArea } };
+  return { score, grade, breakdown: { credito, recurso, renda, terreno, prazo } };
 }
 
-// Tipo de serviço para badge
-const TIPO_SERVICO_LABELS: Record<string, { label: string; bg: string; text: string }> = {
-  reforma: { label: 'Reforma', bg: 'rgba(168,85,247,0.15)', text: '#a78bfa' },
-  construcao_financiada: { label: 'Const. Financiada', bg: 'rgba(59,130,246,0.15)', text: '#60a5fa' },
-};
+// Helpers pra salvar/ler score por lead (localStorage, chave por tenant)
+function getLeadScoreRespostas(tenantId: string, leadId: string): LeadScoreRespostas {
+  try {
+    const all = JSON.parse(localStorage.getItem(`m2_ls_${tenantId}`) || '{}');
+    return all[leadId] || { ...LEAD_SCORE_EMPTY };
+  } catch { return { ...LEAD_SCORE_EMPTY }; }
+}
+
+function saveLeadScoreRespostas(tenantId: string, leadId: string, respostas: LeadScoreRespostas) {
+  try {
+    const all = JSON.parse(localStorage.getItem(`m2_ls_${tenantId}`) || '{}');
+    all[leadId] = respostas;
+    localStorage.setItem(`m2_ls_${tenantId}`, JSON.stringify(all));
+  } catch { /* silent */ }
+}
 
 const playAlarmSound = () => {
   try {
@@ -409,24 +411,17 @@ export default function ClientCRMView({ clients, selectedTenantId, onBack, tenan
                         <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: idx * 0.02 }}
                           onClick={() => setSelectedLead(lead)} className="bg-[#161b26] border border-white/8 rounded-xl p-3 cursor-pointer hover:border-white/15 transition-colors space-y-1.5">
                           <p className="text-sm font-semibold text-white truncate">{lead.nome}</p>
-                          {/* Lead Score + Tipo badges */}
+                          {/* Lead Score badge */}
                           {(() => {
-                            const ls = calcClientLeadScore(lead);
+                            const respostas = getLeadScoreRespostas(activeTenantId!, lead.id);
+                            const hasScore = Object.values(respostas).some(v => v !== '');
+                            if (!hasScore) return null;
+                            const ls = calcClientLeadScore(respostas);
                             const gs = LEAD_SCORE_GRADE_STYLE[ls.grade] || LEAD_SCORE_GRADE_STYLE.D;
-                            const tipoInfo = TIPO_SERVICO_LABELS[(lead as any).tipoServico];
                             return (
-                              <div className="flex items-center gap-1.5 mt-0.5 mb-0.5">
-                                {ls.score > 0 && (
-                                  <span className="text-[10px] font-extrabold px-1.5 py-0.5 rounded-md" style={{ backgroundColor: gs.bg, color: gs.text, border: `1px solid ${gs.border}` }}>
-                                    {ls.grade} ({ls.score})
-                                  </span>
-                                )}
-                                {tipoInfo && (
-                                  <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-md" style={{ backgroundColor: tipoInfo.bg, color: tipoInfo.text }}>
-                                    {tipoInfo.label}
-                                  </span>
-                                )}
-                              </div>
+                              <span className="text-[10px] font-extrabold px-1.5 py-0.5 rounded-md" style={{ backgroundColor: gs.bg, color: gs.text, border: `1px solid ${gs.border}` }}>
+                                {ls.grade} ({ls.score})
+                              </span>
                             );
                           })()}
                           {lead.empresa && <div className="flex items-center gap-1.5 text-xs text-white/40"><Building2 className="w-3 h-3" /><span className="truncate">{lead.empresa}</span></div>}
@@ -644,6 +639,16 @@ Retorne APENAS o JSON, sem markdown, sem explicação.`;
   // Completing task
   const [completingTaskId, setCompletingTaskId] = useState<string | null>(null);
   const [taskCompleteImage, setTaskCompleteImage] = useState<File | null>(null);
+
+  // Lead Score
+  const [lsRespostas, setLsRespostas] = useState<LeadScoreRespostas>(() => getLeadScoreRespostas(tenantId, lead.id));
+  const [showScoreForm, setShowScoreForm] = useState(false);
+
+  const handleSaveScore = (respostas: LeadScoreRespostas) => {
+    saveLeadScoreRespostas(tenantId, lead.id, respostas);
+    setLsRespostas(respostas);
+    setShowScoreForm(false);
+  };
 
   // Demandas pós-venda (localStorage MVP)
   const demandasStorageKey = `m2_demandas_${lead.id}`;
@@ -921,117 +926,59 @@ Retorne APENAS o JSON, sem markdown, sem explicação.`;
 
           {/* ── LEAD SCORE TAB ── */}
           {activeTab === 'leadscore' && (() => {
-            const ls = calcClientLeadScore(form);
+            const hasScore = Object.values(lsRespostas).some(v => v !== '');
+            const ls = calcClientLeadScore(lsRespostas);
             const gs = LEAD_SCORE_GRADE_STYLE[ls.grade] || LEAD_SCORE_GRADE_STYLE.D;
             const bars = [
-              { label: 'Faturamento', value: ls.breakdown.faturamento, max: 40, hint: form.faturamento || '—' },
-              { label: 'Investimento', value: ls.breakdown.investimento, max: 30, hint: (form as any).investimento || '—' },
-              { label: 'Funcionários', value: ls.breakdown.funcionarios, max: 20, hint: (form as any).funcionarios || '—' },
-              { label: 'Área', value: ls.breakdown.area, max: 10, hint: form.area || '—' },
+              { label: 'Crédito Aprovado', value: ls.breakdown.credito, max: 25 },
+              { label: 'Recurso Próprio', value: ls.breakdown.recurso, max: 15 },
+              { label: 'Renda Familiar', value: ls.breakdown.renda, max: 25 },
+              { label: 'Terreno', value: ls.breakdown.terreno, max: 20 },
+              { label: 'Prazo', value: ls.breakdown.prazo, max: 15 },
             ];
-            const inputCls2 = 'w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder-white/30 focus:outline-none focus:border-brand-primary transition-colors';
 
             return (
               <div className="space-y-6">
                 {/* Score visual */}
-                <div className="flex items-center gap-5 p-5 rounded-2xl" style={{ backgroundColor: gs.bg, border: `1px solid ${gs.border}` }}>
-                  <div className="text-center">
-                    <div className="text-4xl font-extrabold" style={{ color: gs.text }}>{ls.grade}</div>
-                    <div className="text-lg font-bold" style={{ color: gs.text }}>{ls.score} pts</div>
-                  </div>
-                  <div className="flex-1 grid grid-cols-2 gap-3">
-                    {bars.map(b => (
-                      <div key={b.label}>
-                        <div className="flex items-center justify-between mb-1">
-                          <span className="text-[10px] font-bold uppercase tracking-wider text-white/40">{b.label}</span>
-                          <span className="text-xs font-bold" style={{ color: gs.text }}>{b.value}/{b.max}</span>
+                {hasScore ? (
+                  <div className="flex items-center gap-5 p-5 rounded-2xl" style={{ backgroundColor: gs.bg, border: `1px solid ${gs.border}` }}>
+                    <div className="text-center min-w-[80px]">
+                      <div className="text-4xl font-extrabold" style={{ color: gs.text }}>{ls.grade}</div>
+                      <div className="text-lg font-bold" style={{ color: gs.text }}>{ls.score} pts</div>
+                    </div>
+                    <div className="flex-1 grid grid-cols-2 gap-x-6 gap-y-3">
+                      {bars.map(b => (
+                        <div key={b.label}>
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-white/40">{b.label}</span>
+                            <span className="text-xs font-bold" style={{ color: gs.text }}>{b.value}/{b.max}</span>
+                          </div>
+                          <div className="h-2 rounded-full bg-white/5">
+                            <div className="h-full rounded-full transition-all" style={{ width: `${b.max > 0 ? (b.value / b.max) * 100 : 0}%`, backgroundColor: gs.text }} />
+                          </div>
                         </div>
-                        <div className="h-2 rounded-full bg-white/5">
-                          <div className="h-full rounded-full transition-all" style={{ width: `${(b.value / b.max) * 100}%`, backgroundColor: gs.text }} />
-                        </div>
-                        <div className="text-[10px] text-white/30 mt-0.5 truncate">{b.hint}</div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Formulário de critérios */}
-                <div className="space-y-4">
-                  <h4 className="text-xs font-bold text-brand-primary uppercase tracking-wider">Critérios de Qualificação</h4>
-
-                  <div>
-                    <label className="block text-xs text-white/40 mb-1">Tipo de Serviço</label>
-                    <div className="flex gap-2">
-                      {[
-                        { v: 'reforma', l: 'Reforma' },
-                        { v: 'construcao_financiada', l: 'Construção Financiada' },
-                      ].map(opt => (
-                        <button key={opt.v} type="button"
-                          onClick={() => setForm({ ...form, tipoServico: opt.v } as any)}
-                          className={`px-4 py-2 text-xs font-semibold rounded-xl border transition-colors ${
-                            (form as any).tipoServico === opt.v
-                              ? 'bg-brand-primary/15 border-brand-primary/40 text-brand-primary'
-                              : 'border-white/10 text-white/50 hover:border-white/20'
-                          }`}>
-                          {opt.l}
-                        </button>
                       ))}
                     </div>
                   </div>
-
-                  <div>
-                    <label className="block text-xs text-white/40 mb-1">Faturamento Mensal</label>
-                    <select className={inputCls2} style={{ backgroundColor: '#0d1117', color: '#e6e6e6' }} value={form.faturamento || ''} onChange={e => setForm({ ...form, faturamento: e.target.value })}>
-                      <option value="" style={{ backgroundColor: '#0d1117', color: '#9ca3af' }}>Selecione...</option>
-                      <option value="menos_10k" style={{ backgroundColor: '#0d1117', color: '#e6e6e6' }}>Menos de R$10k</option>
-                      <option value="10k_20k" style={{ backgroundColor: '#0d1117', color: '#e6e6e6' }}>R$10k - R$20k</option>
-                      <option value="20k_40k" style={{ backgroundColor: '#0d1117', color: '#e6e6e6' }}>R$20k - R$40k</option>
-                      <option value="40000" style={{ backgroundColor: '#0d1117', color: '#e6e6e6' }}>R$40k - R$70k</option>
-                      <option value="70000" style={{ backgroundColor: '#0d1117', color: '#e6e6e6' }}>R$70k - R$150k</option>
-                      <option value="150000" style={{ backgroundColor: '#0d1117', color: '#e6e6e6' }}>Acima de R$150k</option>
-                    </select>
+                ) : (
+                  <div className="text-center py-8 text-white/30">
+                    <Target className="w-12 h-12 mx-auto mb-3 opacity-30" />
+                    <p className="text-sm">Nenhum Lead Score calculado ainda</p>
+                    <p className="text-xs text-white/20 mt-1">Responda o formulário para gerar o score</p>
                   </div>
+                )}
 
-                  <div>
-                    <label className="block text-xs text-white/40 mb-1">Investimento em Marketing</label>
-                    <select className={inputCls2} style={{ backgroundColor: '#0d1117', color: '#e6e6e6' }} value={(form as any).investimento || ''} onChange={e => setForm({ ...form, investimento: e.target.value } as any)}>
-                      <option value="" style={{ backgroundColor: '#0d1117', color: '#9ca3af' }}>Selecione...</option>
-                      <option value="nenhum" style={{ backgroundColor: '#0d1117', color: '#e6e6e6' }}>Nenhum</option>
-                      <option value="curso" style={{ backgroundColor: '#0d1117', color: '#e6e6e6' }}>Curso</option>
-                      <option value="mentoria" style={{ backgroundColor: '#0d1117', color: '#e6e6e6' }}>Mentoria</option>
-                      <option value="agencia" style={{ backgroundColor: '#0d1117', color: '#e6e6e6' }}>Agência</option>
-                      <option value="todos" style={{ backgroundColor: '#0d1117', color: '#e6e6e6' }}>Todos (curso + mentoria + agência)</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs text-white/40 mb-1">Funcionários</label>
-                    <select className={inputCls2} style={{ backgroundColor: '#0d1117', color: '#e6e6e6' }} value={(form as any).funcionarios || ''} onChange={e => setForm({ ...form, funcionarios: e.target.value } as any)}>
-                      <option value="" style={{ backgroundColor: '#0d1117', color: '#9ca3af' }}>Selecione...</option>
-                      <option value="somente_eu" style={{ backgroundColor: '#0d1117', color: '#e6e6e6' }}>Somente eu</option>
-                      <option value="1_a_3" style={{ backgroundColor: '#0d1117', color: '#e6e6e6' }}>1 a 3</option>
-                      <option value="4_a_6" style={{ backgroundColor: '#0d1117', color: '#e6e6e6' }}>4 a 6</option>
-                      <option value="6_a_10" style={{ backgroundColor: '#0d1117', color: '#e6e6e6' }}>6 a 10</option>
-                      <option value="acima_de_10" style={{ backgroundColor: '#0d1117', color: '#e6e6e6' }}>Acima de 10</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs text-white/40 mb-1">Área de Atuação</label>
-                    <select className={inputCls2} style={{ backgroundColor: '#0d1117', color: '#e6e6e6' }} value={form.area || ''} onChange={e => setForm({ ...form, area: e.target.value })}>
-                      <option value="" style={{ backgroundColor: '#0d1117', color: '#9ca3af' }}>Selecione...</option>
-                      <option value="engenheiro" style={{ backgroundColor: '#0d1117', color: '#e6e6e6' }}>Engenheiro Civil</option>
-                      <option value="construtor" style={{ backgroundColor: '#0d1117', color: '#e6e6e6' }}>Construtor</option>
-                      <option value="arquiteto" style={{ backgroundColor: '#0d1117', color: '#e6e6e6' }}>Arquiteto</option>
-                      <option value="engenheiro construtora" style={{ backgroundColor: '#0d1117', color: '#e6e6e6' }}>Engenheiro + Construtora</option>
-                    </select>
-                  </div>
-
-                  <button onClick={handleSave} disabled={saving}
-                    className="w-full bg-brand-primary text-black font-bold rounded-xl py-2.5 text-sm hover:brightness-110 disabled:opacity-50">
-                    {saving ? 'Salvando...' : 'Salvar Lead Score'}
+                {/* Botão de responder formulário */}
+                {!showScoreForm && (
+                  <button onClick={() => setShowScoreForm(true)}
+                    className="w-full flex items-center justify-center gap-2 bg-brand-primary/10 text-brand-primary border border-brand-primary/20 font-bold rounded-xl py-3 text-sm hover:bg-brand-primary/20 transition-colors">
+                    <FileText className="w-4 h-4" />
+                    {hasScore ? 'Alterar respostas' : 'Responder formulário'}
                   </button>
-                </div>
+                )}
+
+                {/* Formulário inline */}
+                {showScoreForm && <LeadScoreFormInline respostas={lsRespostas} onSave={handleSaveScore} onCancel={() => setShowScoreForm(false)} />}
               </div>
             );
           })()}
@@ -1401,6 +1348,103 @@ Retorne APENAS o JSON, sem markdown, sem explicação.`;
           })()}
         </div>
       </motion.div>
+    </motion.div>
+  );
+}
+
+// ── Formulário Lead Score inline ──────────────────────────
+function LeadScoreFormInline({ respostas, onSave, onCancel }: {
+  respostas: LeadScoreRespostas;
+  onSave: (r: LeadScoreRespostas) => void;
+  onCancel: () => void;
+}) {
+  const [form, setForm] = useState<LeadScoreRespostas>({ ...respostas });
+  const preview = calcClientLeadScore(form);
+  const gs = LEAD_SCORE_GRADE_STYLE[preview.grade] || LEAD_SCORE_GRADE_STYLE.D;
+
+  const optBtnCls = (selected: boolean) =>
+    `px-4 py-2.5 text-sm font-semibold rounded-xl border transition-all ${
+      selected
+        ? 'bg-brand-primary/15 border-brand-primary/40 text-brand-primary'
+        : 'border-white/10 text-white/50 hover:border-white/20 hover:text-white/70'
+    }`;
+
+  const questions: { key: keyof LeadScoreRespostas; label: string; options: { value: string; label: string }[] }[] = [
+    {
+      key: 'credito_aprovado', label: 'Tem crédito aprovado?',
+      options: [{ value: 'sim', label: 'Sim' }, { value: 'nao', label: 'Não' }],
+    },
+    {
+      key: 'recurso_proprio', label: 'Tem recurso próprio?',
+      options: [{ value: 'sim', label: 'Sim' }, { value: 'nao', label: 'Não' }],
+    },
+    {
+      key: 'renda_familiar', label: 'Renda familiar',
+      options: [
+        { value: '1k_3k', label: 'R$1k a 3k' },
+        { value: '3k_6k', label: 'R$3k a 6k' },
+        { value: '6k_9k', label: 'R$6k a 9k' },
+        { value: '9k_12k', label: 'R$9k a 12k' },
+        { value: '12k_mais', label: '+ de R$12k' },
+      ],
+    },
+    {
+      key: 'tem_terreno', label: 'Tem terreno?',
+      options: [{ value: 'sim', label: 'Sim' }, { value: 'nao', label: 'Não' }],
+    },
+    {
+      key: 'prazo_construir', label: 'Quer construir pra quando?',
+      options: [
+        { value: '1_mes', label: '1 mês' },
+        { value: '3_meses', label: '3 meses' },
+        { value: '6_meses', label: '6 meses' },
+        { value: '1_ano_mais', label: '1 ano ou mais' },
+      ],
+    },
+  ];
+
+  return (
+    <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
+      className="bg-white/[0.02] border border-white/10 rounded-2xl p-5 space-y-6">
+
+      {/* Preview do score em tempo real */}
+      <div className="flex items-center gap-4 p-4 rounded-xl" style={{ backgroundColor: gs.bg, border: `1px solid ${gs.border}` }}>
+        <div className="text-center">
+          <div className="text-3xl font-extrabold" style={{ color: gs.text }}>{preview.grade}</div>
+          <div className="text-sm font-bold" style={{ color: gs.text }}>{preview.score} pts</div>
+        </div>
+        <div className="text-xs text-white/40">
+          Score atualiza em tempo real conforme você responde
+        </div>
+      </div>
+
+      {/* Perguntas */}
+      {questions.map(q => (
+        <div key={q.key}>
+          <label className="block text-sm font-semibold text-white mb-3">{q.label}</label>
+          <div className="flex flex-wrap gap-2">
+            {q.options.map(opt => (
+              <button key={opt.value} type="button"
+                onClick={() => setForm(f => ({ ...f, [q.key]: f[q.key] === opt.value ? '' : opt.value }))}
+                className={optBtnCls(form[q.key] === opt.value)}>
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      ))}
+
+      {/* Ações */}
+      <div className="flex gap-3 pt-2">
+        <button onClick={() => onSave(form)}
+          className="flex-1 bg-brand-primary text-black font-bold rounded-xl py-3 text-sm hover:brightness-110 transition-all">
+          Salvar Lead Score
+        </button>
+        <button onClick={onCancel}
+          className="px-6 bg-white/5 text-white/50 border border-white/10 font-medium rounded-xl py-3 text-sm hover:bg-white/10 transition-all">
+          Cancelar
+        </button>
+      </div>
     </motion.div>
   );
 }
