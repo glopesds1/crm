@@ -970,49 +970,49 @@ Retorne APENAS o JSON, sem markdown, sem explicação.`;
 
                   <div>
                     <label className="block text-xs text-white/40 mb-1">Faturamento Mensal</label>
-                    <select className={inputCls2} value={form.faturamento || ''} onChange={e => setForm({ ...form, faturamento: e.target.value })}>
-                      <option value="">Selecione...</option>
-                      <option value="menos_10k">Menos de R$10k</option>
-                      <option value="10k_20k">R$10k - R$20k</option>
-                      <option value="20k_40k">R$20k - R$40k</option>
-                      <option value="40000">R$40k - R$70k</option>
-                      <option value="70000">R$70k - R$150k</option>
-                      <option value="150000">Acima de R$150k</option>
+                    <select className={inputCls2} style={{ backgroundColor: '#0d1117', color: '#e6e6e6' }} value={form.faturamento || ''} onChange={e => setForm({ ...form, faturamento: e.target.value })}>
+                      <option value="" style={{ backgroundColor: '#0d1117', color: '#9ca3af' }}>Selecione...</option>
+                      <option value="menos_10k" style={{ backgroundColor: '#0d1117', color: '#e6e6e6' }}>Menos de R$10k</option>
+                      <option value="10k_20k" style={{ backgroundColor: '#0d1117', color: '#e6e6e6' }}>R$10k - R$20k</option>
+                      <option value="20k_40k" style={{ backgroundColor: '#0d1117', color: '#e6e6e6' }}>R$20k - R$40k</option>
+                      <option value="40000" style={{ backgroundColor: '#0d1117', color: '#e6e6e6' }}>R$40k - R$70k</option>
+                      <option value="70000" style={{ backgroundColor: '#0d1117', color: '#e6e6e6' }}>R$70k - R$150k</option>
+                      <option value="150000" style={{ backgroundColor: '#0d1117', color: '#e6e6e6' }}>Acima de R$150k</option>
                     </select>
                   </div>
 
                   <div>
                     <label className="block text-xs text-white/40 mb-1">Investimento em Marketing</label>
-                    <select className={inputCls2} value={(form as any).investimento || ''} onChange={e => setForm({ ...form, investimento: e.target.value } as any)}>
-                      <option value="">Selecione...</option>
-                      <option value="nenhum">Nenhum</option>
-                      <option value="curso">Curso</option>
-                      <option value="mentoria">Mentoria</option>
-                      <option value="agencia">Agência</option>
-                      <option value="todos">Todos (curso + mentoria + agência)</option>
+                    <select className={inputCls2} style={{ backgroundColor: '#0d1117', color: '#e6e6e6' }} value={(form as any).investimento || ''} onChange={e => setForm({ ...form, investimento: e.target.value } as any)}>
+                      <option value="" style={{ backgroundColor: '#0d1117', color: '#9ca3af' }}>Selecione...</option>
+                      <option value="nenhum" style={{ backgroundColor: '#0d1117', color: '#e6e6e6' }}>Nenhum</option>
+                      <option value="curso" style={{ backgroundColor: '#0d1117', color: '#e6e6e6' }}>Curso</option>
+                      <option value="mentoria" style={{ backgroundColor: '#0d1117', color: '#e6e6e6' }}>Mentoria</option>
+                      <option value="agencia" style={{ backgroundColor: '#0d1117', color: '#e6e6e6' }}>Agência</option>
+                      <option value="todos" style={{ backgroundColor: '#0d1117', color: '#e6e6e6' }}>Todos (curso + mentoria + agência)</option>
                     </select>
                   </div>
 
                   <div>
                     <label className="block text-xs text-white/40 mb-1">Funcionários</label>
-                    <select className={inputCls2} value={(form as any).funcionarios || ''} onChange={e => setForm({ ...form, funcionarios: e.target.value } as any)}>
-                      <option value="">Selecione...</option>
-                      <option value="somente_eu">Somente eu</option>
-                      <option value="1_a_3">1 a 3</option>
-                      <option value="4_a_6">4 a 6</option>
-                      <option value="6_a_10">6 a 10</option>
-                      <option value="acima_de_10">Acima de 10</option>
+                    <select className={inputCls2} style={{ backgroundColor: '#0d1117', color: '#e6e6e6' }} value={(form as any).funcionarios || ''} onChange={e => setForm({ ...form, funcionarios: e.target.value } as any)}>
+                      <option value="" style={{ backgroundColor: '#0d1117', color: '#9ca3af' }}>Selecione...</option>
+                      <option value="somente_eu" style={{ backgroundColor: '#0d1117', color: '#e6e6e6' }}>Somente eu</option>
+                      <option value="1_a_3" style={{ backgroundColor: '#0d1117', color: '#e6e6e6' }}>1 a 3</option>
+                      <option value="4_a_6" style={{ backgroundColor: '#0d1117', color: '#e6e6e6' }}>4 a 6</option>
+                      <option value="6_a_10" style={{ backgroundColor: '#0d1117', color: '#e6e6e6' }}>6 a 10</option>
+                      <option value="acima_de_10" style={{ backgroundColor: '#0d1117', color: '#e6e6e6' }}>Acima de 10</option>
                     </select>
                   </div>
 
                   <div>
                     <label className="block text-xs text-white/40 mb-1">Área de Atuação</label>
-                    <select className={inputCls2} value={form.area || ''} onChange={e => setForm({ ...form, area: e.target.value })}>
-                      <option value="">Selecione...</option>
-                      <option value="engenheiro">Engenheiro Civil</option>
-                      <option value="construtor">Construtor</option>
-                      <option value="arquiteto">Arquiteto</option>
-                      <option value="engenheiro construtora">Engenheiro + Construtora</option>
+                    <select className={inputCls2} style={{ backgroundColor: '#0d1117', color: '#e6e6e6' }} value={form.area || ''} onChange={e => setForm({ ...form, area: e.target.value })}>
+                      <option value="" style={{ backgroundColor: '#0d1117', color: '#9ca3af' }}>Selecione...</option>
+                      <option value="engenheiro" style={{ backgroundColor: '#0d1117', color: '#e6e6e6' }}>Engenheiro Civil</option>
+                      <option value="construtor" style={{ backgroundColor: '#0d1117', color: '#e6e6e6' }}>Construtor</option>
+                      <option value="arquiteto" style={{ backgroundColor: '#0d1117', color: '#e6e6e6' }}>Arquiteto</option>
+                      <option value="engenheiro construtora" style={{ backgroundColor: '#0d1117', color: '#e6e6e6' }}>Engenheiro + Construtora</option>
                     </select>
                   </div>
 
