@@ -297,3 +297,88 @@ export type Demand = {
   commentAuthor: string;
   createdAt: string;
 };
+
+// ── CRM Types ──────────────────────────────────────────────────
+
+export interface CRMLead {
+  id: string;
+  lead_externo_id?: string;
+  nome: string;
+  telefone?: string;
+  email?: string;
+  empresa?: string;
+  faturamento?: string;
+  area?: string;
+  closer_responsavel?: string;
+  sdr_responsavel?: string;
+  etapa: string;
+  status: string;
+  origem: string;
+  anuncio?: string;
+  programa_apresentado?: string;
+  valor_contrato?: number;
+  valor_cc?: number;
+  valor_mrr?: number;
+  motivo_perda?: string;
+  proxima_reuniao?: string;
+  lead_score?: number;
+  lead_grade?: string;
+  investimento?: string;
+  funcionarios?: string;
+  tags?: string[];
+  observacoes?: string;
+  created_at: string;
+  updated_at: string;
+  etapa_desde?: string;
+}
+
+export interface CRMAtividade {
+  id: string;
+  lead_id: string;
+  tipo: string;
+  titulo?: string;
+  descricao?: string;
+  data_atividade: string;
+  realizado_por?: string;
+  status_chamada?: string;
+  agendou?: boolean;
+  touchpoint?: number;
+  status_reuniao?: string;
+  resultado?: string;
+  imagem_url?: string;
+  created_at: string;
+}
+
+export interface CRMTarefa {
+  id: string;
+  lead_id: string;
+  titulo: string;
+  tipo?: 'ligacao' | 'reuniao';
+  data_agendada?: string;
+  responsavel?: string;
+  concluida: boolean;
+}
+
+export interface CRMDemandaVenda {
+  id: string;
+  lead_id: string;
+  contrato_feito: boolean;
+  contrato_assinado: boolean;
+  sinal_pago: boolean;
+  entrada_paga: boolean;
+  onboarding_agendado: boolean;
+  grupo_criado: boolean;
+  membros_adicionados: boolean;
+  mensagem_saudacao: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+// ── Dashboard Types ────────────────────────────────────────────
+
+export type DashboardPage = 'overview' | 'metas' | 'semanal' | 'reunioes' | 'analise' | 'anuncios' | 'sdr';
+
+export interface DateRange {
+  inicio: string;
+  fim: string;
+}

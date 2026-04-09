@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { supabase } from './lib/supabase';
+import { supabase } from '../shared/lib/supabase';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plus, RefreshCw, Search, Phone, Building2, DollarSign,
@@ -7,79 +7,17 @@ import {
   PhoneCall, Users, FileText, Calendar, CheckCircle2,
   ChevronDown, Trash2, Bell, Volume2, Send, Video, ArrowRightLeft
 } from 'lucide-react';
-import type { TeamMember } from './types';
-import { DEFAULT_ONBOARDING_ITEMS } from './constants';
+import type { TeamMember, CRMLead, CRMTarefa, CRMDemandaVenda } from '../shared/types';
+import { DEFAULT_ONBOARDING_ITEMS } from '../shared/constants';
+import { SP_TZ, localDatetimeToISO, parseDateSP, fmtDateSP, fmtDateSmartSP } from '../shared/lib/dateHelpers';
+import { syncPostgres, WEBHOOK_BASE } from '../shared/lib/webhooks';
+import { calcLeadScore, getLeadScore, getProgramaStyle } from '../shared/lib/leadScore';
+import { ETAPAS, ETAPA_MAP, CRM_TAGS_CONFIG, CRM_ALL_TAGS, GRADE_STYLE } from '../shared/constants';
+import { useLeads } from './hooks/useLeads';
+import { useTarefas } from './hooks/useTarefas';
+import { useDemandas } from './hooks/useDemandas';
 
-// ── Helpers — Fuso horário fixo: America/Sao_Paulo (UTC-3) ───
-// Brasil aboliu horário de verão em 2019, então -03:00 é fixo.
-const SP_TZ = 'America/Sao_Paulo';
-
-const WEBHOOK_BASE = (import.meta.env.VITE_WEBHOOK_BASE ?? 'https://webhook.m2black.com/webhook/dashboard').replace('/webhook/dashboard', '');
-
-const syncPostgres = (leadExternoId: string | undefined | null, fields: Record<string, unknown>) => {
-  if (!leadExternoId) return;
-  const clean: Record<string, unknown> = { lead_externo_id: leadExternoId };
-  for (const [k, v] of Object.entries(fields)) {
-    if (v !== undefined) clean[k] = v;
-  }
-  fetch(`${WEBHOOK_BASE}/webhook/crm-sync-etapa`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(clean),
-  }).catch(e => console.warn('[syncPostgres]', e.message));
-};
-
-// datetime-local retorna "2026-03-24T18:00" sem timezone.
-// Anexa explicitamente -03:00 para que o Supabase (timestamptz) interprete
-// como horário de São Paulo, independente do fuso do navegador.
-function localDatetimeToISO(dt: string): string {
-  if (!dt) return dt;
-  // Se já tem offset, não duplicar
-  if (/[+-]\d{2}:\d{2}$/.test(dt) || dt.endsWith('Z')) return dt;
-  // datetime-local dá "YYYY-MM-DDTHH:mm", pode ou não ter segundos
-  const needsSec = (dt.match(/:/g) || []).length < 2;
-  return `${dt}${needsSec ? ':00' : ''}-03:00`;
-}
-
-// Parse uma data do Supabase garantindo interpretação correta do fuso.
-// timestamptz vem com +00:00; timestamp vem sem offset (tratar como SP).
-function parseDateSP(iso: string): Date {
-  if (!iso) return new Date(NaN);
-  if (!iso.includes('+') && !iso.endsWith('Z') && !/[+-]\d{2}:\d{2}$/.test(iso)) {
-    return new Date(iso + '-03:00');
-  }
-  return new Date(iso);
-}
-
-// Formata uma data ISO na timezone de São Paulo.
-function fmtDateSP(iso: string, opts?: { year?: boolean }): string {
-  if (!iso) return '—';
-  try {
-    const d = parseDateSP(iso);
-    if (isNaN(d.getTime())) return '—';
-    return d.toLocaleString('pt-BR', {
-      timeZone: SP_TZ,
-      day: '2-digit', month: '2-digit',
-      ...(opts?.year ? { year: '2-digit' } : {}),
-      hour: '2-digit', minute: '2-digit',
-    });
-  } catch { return '—'; }
-}
-
-/** Formata data/hora, mas omite hora se for exatamente 00:00 (DATE sem hora). */
-function fmtDateSmartSP(iso: string, opts?: { year?: boolean }): string {
-  if (!iso) return '—';
-  try {
-    const d = parseDateSP(iso);
-    if (isNaN(d.getTime())) return '—';
-    const h = Number(d.toLocaleString('pt-BR', { timeZone: SP_TZ, hour: '2-digit', hour12: false }));
-    const m = Number(d.toLocaleString('pt-BR', { timeZone: SP_TZ, minute: '2-digit' }));
-    if (h === 0 && m === 0) {
-      return d.toLocaleDateString('pt-BR', { timeZone: SP_TZ, day: '2-digit', month: '2-digit', ...(opts?.year ? { year: '2-digit' } : {}) });
-    }
-    return fmtDateSP(iso, opts);
-  } catch { return '—'; }
-}
+// Helpers imported from shared/lib/dateHelpers and shared/lib/webhooks
 
 // ── Slot Picker — Calendário de disponibilidade ──────────────
 const SLOT_HOURS = ['09:00','10:00','11:00','13:00','14:00','15:00','16:00','17:00'];
@@ -344,39 +282,8 @@ function SlotPicker({ selectedDate, onSelectDate, selectedHour, onSelectHour, tp
 }
 
 // ── Types ─────────────────────────────────────────────────────
-interface CRMLead {
-  id: string;
-  lead_externo_id?: string;
-  nome: string;
-  telefone?: string;
-  email?: string;
-  empresa?: string;
-  faturamento?: string;
-  area?: string;
-  closer_responsavel?: string;
-  sdr_responsavel?: string;
-  etapa: string;
-  status: string;
-  origem: string;
-  anuncio?: string;
-  programa_apresentado?: string;
-  valor_contrato?: number;
-  valor_cc?: number;
-  valor_mrr?: number;
-  motivo_perda?: string;
-  proxima_reuniao?: string;
-
-  lead_score?: number;
-  lead_grade?: string;
-  investimento?: string;
-  funcionarios?: string;
-  tags?: string[];
-  observacoes?: string;
-  created_at: string;
-  updated_at: string;
-  etapa_desde?: string;
-}
-
+// Types imported from shared/types
+// CRMAtividade used locally — keep interface here for components that reference it
 interface CRMAtividade {
   id: string;
   lead_id: string;
@@ -394,63 +301,9 @@ interface CRMAtividade {
   created_at: string;
 }
 
-interface CRMTarefa {
-  id: string;
-  lead_id: string;
-  titulo: string;
-  tipo?: 'ligacao' | 'reuniao';
-  data_agendada?: string;
-  responsavel?: string;
-  concluida: boolean;
-}
-
-interface CRMDemandaVenda {
-  id: string;
-  lead_id: string;
-  contrato_feito: boolean;
-  contrato_assinado: boolean;
-  sinal_pago: boolean;
-  entrada_paga: boolean;
-  onboarding_agendado: boolean;
-  grupo_criado: boolean;
-  membros_adicionados: boolean;
-  mensagem_saudacao: boolean;
-  created_at: string;
-  updated_at: string;
-}
-
-// ── Etapas do pipeline ────────────────────────────────────────
-const ETAPAS = [
-  { id: 'base',           label: 'Base de Leads',      color: 'border-gray-600',     badge: 'bg-gray-700 text-gray-300' },
-  { id: 'triagem',        label: 'Triagem / Pré-venda', color: 'border-blue-600',     badge: 'bg-blue-900/50 text-blue-300' },
-  { id: 'rm_marcada',     label: 'Reunião Marcada',     color: 'border-yellow-500',   badge: 'bg-yellow-900/50 text-yellow-300' },
-  { id: 'rm_realizada',   label: 'Reunião Realizada',   color: 'border-orange-500',   badge: 'bg-orange-900/50 text-orange-300' },
-  { id: 'fup_ativa',      label: 'FUP Ativa',           color: 'border-purple-500',   badge: 'bg-purple-900/50 text-purple-300' },
-  { id: 'fechado',        label: 'Fechado',             color: 'border-brand-primary', badge: 'bg-green-900/50 text-green-300' },
-  { id: 'perdido',        label: 'Perdido',             color: 'border-red-600',      badge: 'bg-red-900/50 text-red-300' },
-  { id: 'congelado',      label: 'Congelado',           color: 'border-cyan-700',     badge: 'bg-cyan-900/50 text-cyan-300' },
-  { id: 'desqualificado', label: 'Desqualificado',      color: 'border-gray-700',     badge: 'bg-gray-800/50 text-gray-500' },
-];
-const ETAPA_MAP = Object.fromEntries(ETAPAS.map(e => [e.id, e]));
-
-const TAGS_CONFIG: Record<string, string> = {
-  'MQL':             'bg-blue-900/50 text-blue-300 border-blue-700/50',
-  'No-show':         'bg-red-900/50 text-red-300 border-red-700/50',
-  'Programa Pro':    'bg-yellow-900/50 text-yellow-400 border-yellow-700/50',
-  'Programa Lite':   'bg-gray-800/50 text-gray-300 border-gray-600/50',
-  'Programa Basic':  'bg-blue-900/50 text-blue-400 border-blue-700/50',
-  'Contrato na Mão': 'bg-green-900/50 text-green-300 border-green-700/50',
-  'Link na Mão':     'bg-cyan-900/50 text-cyan-300 border-cyan-700/50',
-};
-const ALL_TAGS = Object.keys(TAGS_CONFIG);
-
-const getProgramaStyle = (programa: string) => {
-  const p = (programa || '').toLowerCase();
-  if (p === 'pro')   return 'text-yellow-400 font-bold';
-  if (p === 'lite')  return 'text-gray-300 font-bold';
-  if (p === 'basic') return 'text-blue-400 font-bold';
-  return 'text-white font-bold';
-};
+// Aliases for shared constants used by inline components
+const TAGS_CONFIG = CRM_TAGS_CONFIG;
+const ALL_TAGS = CRM_ALL_TAGS;
 
 const TIPO_ICON: Record<string, any> = {
   ligacao: PhoneCall,
@@ -460,71 +313,7 @@ const TIPO_ICON: Record<string, any> = {
   alteracao: ArrowRightLeft,
 };
 
-function calcLeadScore(lead: any): { score: number; grade: string; breakdown: { faturamento: number; investimento: number; funcionarios: number; area: number } } {
-  let score = 0;
-  let bFat = 0, bInv = 0, bFunc = 0, bArea = 0;
-  const fat = (lead.faturamento || '').toLowerCase().replace(/[\s.]/g, '');
-  const inv = (lead.investimento || '').toLowerCase();
-  const func = (lead.funcionarios || '').toLowerCase();
-  const area = (lead.area || '').toLowerCase();
-
-  // FATURAMENTO (0-40)
-  if (fat.includes('300') || fat.includes('151')) bFat = 40;
-  else if (fat.includes('70') || fat.includes('r$70')) bFat = 35;
-  else if (fat.includes('80000') || fat.includes('acima')) bFat = 30;
-  else if (fat.includes('40') || fat.includes('r$40')) bFat = 25;
-  else if (fat.includes('20') || fat.includes('r$20') || fat.includes('11') || fat.includes('r$11') || fat.includes('30')) bFat = 15;
-  else if (fat.includes('10') && !fat.includes('100')) bFat = 8;
-  else if (fat.includes('menos') || fat.includes('5000')) bFat = 3;
-  else {
-    const num = parseFloat(fat.replace(/[^0-9,.-]/g, '').replace(',', '.'));
-    if (!isNaN(num)) {
-      if (num >= 150000) bFat = 40;
-      else if (num >= 70000) bFat = 35;
-      else if (num >= 40000) bFat = 25;
-      else if (num >= 20000) bFat = 15;
-      else if (num >= 10000) bFat = 8;
-      else bFat = 3;
-    }
-  }
-
-  // INVESTIMENTO (0-30)
-  if (inv.includes('todos')) bInv = 30;
-  else if (inv.includes('agência') || inv.includes('agencia')) bInv = 25;
-  else if (inv.includes('mentoria')) bInv = 20;
-  else if (inv.includes('curso')) bInv = 15;
-  else if (inv.includes('nenhum')) bInv = 5;
-
-  // FUNCIONARIOS (0-20)
-  if (func.includes('acima_de_10') || func.includes('acima de 10')) bFunc = 20;
-  else if (func.includes('6_a_10') || func.includes('6 a 10')) bFunc = 18;
-  else if (func.includes('4_a_6') || func.includes('4 a 6')) bFunc = 14;
-  else if (func.includes('1_a_3') || func.includes('1 a 3')) bFunc = 8;
-  else if (func.includes('somente_eu') || func.includes('somente eu')) bFunc = 4;
-
-  // AREA BONUS (0-10)
-  if (area.includes('engenheiro') && area.includes('construtora')) bArea = 10;
-  else if (area.includes('engenheiro')) bArea = 6;
-  else if (area.includes('construtor')) bArea = 6;
-  else if (area.includes('arquiteto')) bArea = 4;
-
-  score = bFat + bInv + bFunc + bArea;
-  const grade = score >= 70 ? 'A' : score >= 45 ? 'B' : score >= 20 ? 'C' : 'D';
-  return { score, grade, breakdown: { faturamento: bFat, investimento: bInv, funcionarios: bFunc, area: bArea } };
-}
-
-function getLeadScore(lead: CRMLead) {
-  return (lead.lead_score && lead.lead_score > 0)
-    ? { score: lead.lead_score, grade: lead.lead_grade || 'D', breakdown: null }
-    : calcLeadScore(lead);
-}
-
-const GRADE_STYLE: Record<string, { background: string; color: string; border: string }> = {
-  A: { background: '#22c55e22', color: '#22c55e', border: '#22c55e44' },
-  B: { background: '#d4af3722', color: '#d4af37', border: '#d4af3744' },
-  C: { background: '#60a5fa22', color: '#60a5fa', border: '#60a5fa44' },
-  D: { background: '#ef444422', color: '#ef4444', border: '#ef444444' },
-};
+// calcLeadScore, getLeadScore, GRADE_STYLE imported from shared/lib/leadScore and shared/constants
 
 // ── Lead Card ─────────────────────────────────────────────────
 function LeadCard({ lead, proximaTarefa, onClick }: { key?: React.Key; lead: CRMLead; proximaTarefa?: CRMTarefa; onClick: () => void }) {
