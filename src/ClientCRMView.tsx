@@ -645,6 +645,17 @@ Retorne APENAS o JSON, sem markdown, sem explicação.`;
   const [completingTaskId, setCompletingTaskId] = useState<string | null>(null);
   const [taskCompleteImage, setTaskCompleteImage] = useState<File | null>(null);
 
+  // Demandas pós-venda (localStorage MVP)
+  const demandasStorageKey = `m2_demandas_${lead.id}`;
+  const [demandas, setDemandasLocal] = useState<Record<string, boolean>>(() => {
+    try { return JSON.parse(localStorage.getItem(`m2_demandas_${lead.id}`) || '{}'); } catch { return {}; }
+  });
+  const toggleDemanda = (key: string) => {
+    const updated = { ...demandas, [key]: !demandas[key] };
+    setDemandasLocal(updated);
+    localStorage.setItem(demandasStorageKey, JSON.stringify(updated));
+  };
+
   useEffect(() => { setForm({ ...lead }); }, [lead]);
 
   useEffect(() => {
@@ -1030,8 +1041,23 @@ Retorne APENAS o JSON, sem markdown, sem explicação.`;
             <div className="space-y-4">
               {/* Buttons */}
               <div className="flex flex-wrap gap-2">
-                <button onClick={() => { setShowActivityForm(true); setActType('ligacao'); setShowRecPanel(false); }} className="flex items-center gap-2 bg-green-500/10 text-green-400 px-4 py-2 rounded-xl text-sm font-medium hover:bg-green-500/20">
-                  <PhoneCall className="w-4 h-4" /> Registrar Ligação
+                <button onClick={async () => {
+                  const phone = (form.telefone || lead.telefone || '').replace(/\D/g, '');
+                  if (phone) {
+                    window.open(`https://api.whatsapp.com/send?phone=55${phone}`, '_blank');
+                    try {
+                      const act = await createLeadActivity({
+                        leadId: lead.id, tenantId, tipo: 'ligacao', subtipo: 'WhatsApp Call',
+                        conteudo: `Ligação via WhatsApp para ${form.nome || lead.nome} (${form.telefone || lead.telefone})`,
+                        autor: userName || 'Usuário', imagemUrl: '', dados: {},
+                      });
+                      setActivities(prev => [act, ...prev]);
+                    } catch (err) { console.error('Erro ao registrar atividade:', err); }
+                  } else {
+                    alert('Lead sem telefone cadastrado.');
+                  }
+                }} className="flex items-center gap-2 bg-green-500/10 text-green-400 px-4 py-2 rounded-xl text-sm font-medium hover:bg-green-500/20">
+                  <PhoneCall className="w-4 h-4" /> Ligar
                 </button>
                 <button onClick={() => { setShowActivityForm(true); setActType('reuniao'); setShowRecPanel(false); }} className="flex items-center gap-2 bg-purple-500/10 text-purple-400 px-4 py-2 rounded-xl text-sm font-medium hover:bg-purple-500/20">
                   <Video className="w-4 h-4" /> Registrar Reunião
@@ -1303,32 +1329,19 @@ Retorne APENAS o JSON, sem markdown, sem explicação.`;
 
           {/* ── CHECKLIST VENDAS (DEMANDAS PÓS-VENDA) TAB ── */}
           {activeTab === 'demandas' && (() => {
-            // Checa se o lead está em etapa "fechado/ganho"
             const currentStageName = (stages.find(s => s.id === form.stageId)?.nome || '').toLowerCase();
             const isFechado = currentStageName.includes('fech') || currentStageName.includes('ganh') || form.status === 'ganho';
 
-            // Lê/salva demandas do campo dados (ou localStorage como MVP)
-            const storageKey = `m2_demandas_${lead.id}`;
-            const getDemandas = (): Record<string, boolean> => {
-              try { return JSON.parse(localStorage.getItem(storageKey) || '{}'); } catch { return {}; }
-            };
-            const [demandas, setDemandasState] = React.useState<Record<string, boolean>>(getDemandas);
-            const toggleDemanda = (key: string) => {
-              const updated = { ...demandas, [key]: !demandas[key] };
-              setDemandasState(updated);
-              localStorage.setItem(storageKey, JSON.stringify(updated));
-            };
-
             const items = [
-              { key: 'contrato_feito', label: 'Contrato elaborado', icon: '📄' },
-              { key: 'contrato_assinado', label: 'Contrato assinado', icon: '✍️' },
-              { key: 'sinal_pago', label: 'Sinal pago', icon: '💰' },
-              { key: 'entrada_paga', label: 'Entrada paga', icon: '💵' },
-              { key: 'credito_aprovado', label: 'Crédito aprovado', icon: '🏦' },
-              { key: 'onboarding_agendado', label: 'Onboarding agendado', icon: '📅' },
-              { key: 'grupo_criado', label: 'Grupo WhatsApp criado', icon: '💬' },
-              { key: 'membros_adicionados', label: 'Membros adicionados ao grupo', icon: '👥' },
-              { key: 'mensagem_saudacao', label: 'Mensagem de saudação enviada', icon: '👋' },
+              { key: 'contrato_feito', label: 'Contrato elaborado' },
+              { key: 'contrato_assinado', label: 'Contrato assinado' },
+              { key: 'sinal_pago', label: 'Sinal pago' },
+              { key: 'entrada_paga', label: 'Entrada paga' },
+              { key: 'credito_aprovado', label: 'Crédito aprovado' },
+              { key: 'onboarding_agendado', label: 'Onboarding agendado' },
+              { key: 'grupo_criado', label: 'Grupo WhatsApp criado' },
+              { key: 'membros_adicionados', label: 'Membros adicionados ao grupo' },
+              { key: 'mensagem_saudacao', label: 'Mensagem de saudação enviada' },
             ];
 
             const completedCount = items.filter(i => demandas[i.key]).length;
@@ -1346,7 +1359,6 @@ Retorne APENAS o JSON, sem markdown, sem explicação.`;
 
             return (
               <div className="space-y-5">
-                {/* Progress header */}
                 <div className="flex items-center justify-between">
                   <h4 className="text-sm font-bold text-white">Checklist Pós-Venda</h4>
                   <span className="text-sm font-extrabold" style={{ color: progress === 100 ? '#00FF88' : '#eab308' }}>
@@ -1356,8 +1368,6 @@ Retorne APENAS o JSON, sem markdown, sem explicação.`;
                 <div className="h-2 rounded-full bg-white/5">
                   <div className="h-full rounded-full transition-all duration-500" style={{ width: `${progress}%`, backgroundColor: progress === 100 ? '#00FF88' : '#eab308' }} />
                 </div>
-
-                {/* Items */}
                 <div className="space-y-2">
                   {items.map(item => (
                     <button key={item.key} onClick={() => toggleDemanda(item.key)}
@@ -1367,26 +1377,22 @@ Retorne APENAS o JSON, sem markdown, sem explicação.`;
                           : 'bg-white/[0.02] border-white/8 hover:border-white/15'
                       }`}>
                       <div className={`w-6 h-6 rounded-lg border-2 flex items-center justify-center flex-shrink-0 transition-all ${
-                        demandas[item.key]
-                          ? 'border-brand-primary bg-brand-primary/20'
-                          : 'border-white/15'
+                        demandas[item.key] ? 'border-brand-primary bg-brand-primary/20' : 'border-white/15'
                       }`}>
                         {demandas[item.key] && <CheckCircle2 size={14} className="text-brand-primary" />}
                       </div>
-                      <span className="text-sm mr-1">{item.icon}</span>
                       <span className={`text-sm font-medium ${demandas[item.key] ? 'text-brand-primary' : 'text-white/80'}`}>
                         {item.label}
                       </span>
                     </button>
                   ))}
                 </div>
-
                 {progress === 100 && (
                   <div className="flex items-center gap-3 p-4 rounded-xl bg-brand-primary/10 border border-brand-primary/20">
                     <CheckCircle2 size={20} className="text-brand-primary flex-shrink-0" />
                     <div>
                       <p className="text-sm font-bold text-brand-primary">Processo completo!</p>
-                      <p className="text-xs text-white/40">Todas as demandas de venda foram concluídas.</p>
+                      <p className="text-xs text-white/40">Todas as demandas foram concluídas.</p>
                     </div>
                   </div>
                 )}
