@@ -9,6 +9,9 @@ import {
 } from 'lucide-react';
 import type { TeamMember } from './types';
 import { DEFAULT_ONBOARDING_ITEMS } from './constants';
+import { LeadScoreModal, calculateLeadScore, getScoreBadgeIcon } from '../components/LeadScoreModal';
+import { CallActivityButton } from '../components/CallActivityButton';
+import { saveLeadScore, getLeadScore, saveCallLog } from '../lib/mvpStorage';
 
 // ── Helpers — Fuso horário fixo: America/Sao_Paulo (UTC-3) ───
 // Brasil aboliu horário de verão em 2019, então -03:00 é fixo.
@@ -460,57 +463,35 @@ const TIPO_ICON: Record<string, any> = {
   alteracao: ArrowRightLeft,
 };
 
-function calcLeadScore(lead: any): { score: number; grade: string; breakdown: { faturamento: number; investimento: number; funcionarios: number; area: number } } {
+function calcLeadScore(lead: any): { score: number; grade: string; breakdown: { renda: number; terreno: number; projeto: number; credito: number } } {
   let score = 0;
-  let bFat = 0, bInv = 0, bFunc = 0, bArea = 0;
-  const fat = (lead.faturamento || '').toLowerCase().replace(/[\s.]/g, '');
-  const inv = (lead.investimento || '').toLowerCase();
-  const func = (lead.funcionarios || '').toLowerCase();
-  const area = (lead.area || '').toLowerCase();
-
-  // FATURAMENTO (0-40)
-  if (fat.includes('300') || fat.includes('151')) bFat = 40;
-  else if (fat.includes('70') || fat.includes('r$70')) bFat = 35;
-  else if (fat.includes('80000') || fat.includes('acima')) bFat = 30;
-  else if (fat.includes('40') || fat.includes('r$40')) bFat = 25;
-  else if (fat.includes('20') || fat.includes('r$20') || fat.includes('11') || fat.includes('r$11') || fat.includes('30')) bFat = 15;
-  else if (fat.includes('10') && !fat.includes('100')) bFat = 8;
-  else if (fat.includes('menos') || fat.includes('5000')) bFat = 3;
-  else {
-    const num = parseFloat(fat.replace(/[^0-9,.-]/g, '').replace(',', '.'));
-    if (!isNaN(num)) {
-      if (num >= 150000) bFat = 40;
-      else if (num >= 70000) bFat = 35;
-      else if (num >= 40000) bFat = 25;
-      else if (num >= 20000) bFat = 15;
-      else if (num >= 10000) bFat = 8;
-      else bFat = 3;
-    }
+  let bRenda = 0, bTerreno = 0, bProjeto = 0, bCredito = 0;
+  
+  try {
+    const scoreData = JSON.parse(localStorage.getItem(`lead_score_data_${lead.id}`) || '{}');
+    
+    // RENDA (0-40 pontos)
+    const renda = scoreData.renda ? parseFloat(scoreData.renda) : 0;
+    if (renda > 20000) bRenda = 40;
+    else if (renda > 10000) bRenda = 30;
+    else if (renda > 5000) bRenda = 15;
+    
+    // TERRENO (0-20 pontos)
+    bTerreno = scoreData.terreno ? 20 : 0;
+    
+    // PROJETO (0-20 pontos)
+    bProjeto = scoreData.projeto ? 20 : 0;
+    
+    // CRÉDITO (0-20 pontos)
+    if (scoreData.credito === 'Aprovado') bCredito = 20;
+    else if (scoreData.credito === 'Em análise') bCredito = 10;
+  } catch (e) {
+    // Se houver erro ao parsear, retorna score zero
   }
-
-  // INVESTIMENTO (0-30)
-  if (inv.includes('todos')) bInv = 30;
-  else if (inv.includes('agência') || inv.includes('agencia')) bInv = 25;
-  else if (inv.includes('mentoria')) bInv = 20;
-  else if (inv.includes('curso')) bInv = 15;
-  else if (inv.includes('nenhum')) bInv = 5;
-
-  // FUNCIONARIOS (0-20)
-  if (func.includes('acima_de_10') || func.includes('acima de 10')) bFunc = 20;
-  else if (func.includes('6_a_10') || func.includes('6 a 10')) bFunc = 18;
-  else if (func.includes('4_a_6') || func.includes('4 a 6')) bFunc = 14;
-  else if (func.includes('1_a_3') || func.includes('1 a 3')) bFunc = 8;
-  else if (func.includes('somente_eu') || func.includes('somente eu')) bFunc = 4;
-
-  // AREA BONUS (0-10)
-  if (area.includes('engenheiro') && area.includes('construtora')) bArea = 10;
-  else if (area.includes('engenheiro')) bArea = 6;
-  else if (area.includes('construtor')) bArea = 6;
-  else if (area.includes('arquiteto')) bArea = 4;
-
-  score = bFat + bInv + bFunc + bArea;
-  const grade = score >= 70 ? 'A' : score >= 45 ? 'B' : score >= 20 ? 'C' : 'D';
-  return { score, grade, breakdown: { faturamento: bFat, investimento: bInv, funcionarios: bFunc, area: bArea } };
+  
+  score = bRenda + bTerreno + bProjeto + bCredito;
+  const grade = score === 0 ? 'D' : score >= 50 ? 'A' : score >= 30 ? 'B' : 'C';
+  return { score, grade, breakdown: { renda: bRenda, terreno: bTerreno, projeto: bProjeto, credito: bCredito } };
 }
 
 function getLeadScore(lead: CRMLead) {
@@ -541,8 +522,10 @@ function LeadCard({ lead, proximaTarefa, onClick }: { key?: React.Key; lead: CRM
   const tpColor = tpAtual === 'R1' ? 'bg-white/10 text-gray-400' : tpAtual === 'R2' ? 'bg-amber-900/30 text-amber-400' : tpAtual ? 'bg-red-900/30 text-red-400' : '';
 
   // WhatsApp URL
-  const waUrl = lead.telefone ? `https://api.whatsapp.com/send?phone=${lead.telefone.replace(/\D/g, '').replace(/^0/, '').replace(/^(?!55)/, '55')}` : '';
-
+  const waUrl = lead.  // Dentro do componente CRMView, após os outros useState:
+  const [scoreModalOpen, setScoreModalOpen] = useState(false);
+  const [selectedLeadForScore, setSelectedLeadForScore] = useState<CRMLead | null>(null);
+  
   return (
     <motion.div layout initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
       onClick={onClick}
@@ -580,16 +563,10 @@ function LeadCard({ lead, proximaTarefa, onClick }: { key?: React.Key; lead: CRM
       {lead.area && <div className="flex items-center gap-1.5 text-[10px] text-gray-400"><MapPin size={9} className="text-gray-600" /><span className="truncate">{lead.area}</span></div>}
       {lead.faturamento && <div className="flex items-center gap-1.5 text-[10px] text-gray-500"><DollarSign size={9} className="text-gray-600" />{lead.faturamento}</div>}
       {(() => {
-        const resp = ['base', 'triagem'].includes(lead.etapa) ? lead.sdr_responsavel : lead.closer_responsavel;
-        return resp ? <div className="flex items-center gap-1.5 text-[10px] text-gray-500"><User size={9} className="text-gray-600" />{resp}</div> : null;
-      })()}
-      {lead.programa_apresentado && (() => {
-        const p = (lead.programa_apresentado || '').toLowerCase();
-        const style = p.includes('pro') ? { background: '#d4af3722', color: '#d4af37', border: '1px solid #d4af3744' }
-          : p.includes('lite') ? { background: '#c0c0c022', color: '#c0c0c0', border: '1px solid #c0c0c044' }
-          : p.includes('basic') ? { background: '#60a5fa22', color: '#60a5fa', border: '1px solid #60a5fa44' }
-          : { background: '#ffffff11', color: '#fff', border: '1px solid #ffffff22' };
-        return <div style={{ fontSize: 13, fontWeight: 600, padding: '4px 12px', borderRadius: 6, display: 'inline-block', ...style }}>{lead.programa_apresentado}</div>;
+        const { score, grade } = getLeadScore(lead);
+        if (score === 0) return null;
+        const gs = GRADE_STYLE[grade] || GRADE_STYLE.D;
+        return <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 4, border: `1px solid ${gs.border}`, background: gs.background, color: gs.color, display: 'inline-block', flexShrink: 0 }}>{score} {grade}</span>;
       })()}
       {((lead.valor_contrato != null && lead.valor_contrato > 0) || (lead.valor_cc != null && lead.valor_cc > 0)) && (
         <div style={{ display: 'flex', gap: 16, marginTop: 4 }}>
@@ -749,8 +726,6 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
     setValidationMsg('');
     if (!tipo) { setValidationMsg('Selecione o tipo: Ligação ou Reunião'); return; }
     if (!responsavelAtividade) { setValidationMsg('Selecione o responsável pela atividade'); return; }
-    // Print obrigatório para todas as atividades
-    if (!imageFile) { setImageError(true); return; }
 
     if (tipo === 'ligacao') {
       if (!statusChamada) { setValidationMsg('Selecione se atendeu ou não'); return; }
@@ -759,15 +734,6 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
         if (agendou) {
           if (!bantDataHora) { setValidationMsg('Preencha a data/hora da reunião'); return; }
           if (!bantCloser) { setValidationMsg('Selecione o closer responsável'); return; }
-          if (!bantSdr) { setValidationMsg('Selecione o SDR responsável'); return; }
-          if (!bantFaturamento) { setValidationMsg('Preencha o faturamento (BANT)'); return; }
-          if (!bantBudget) { setValidationMsg('Preencha o budget (BANT)'); return; }
-          if (!bantMomento) { setValidationMsg('Selecione o momento do negócio (BANT)'); return; }
-          if (!bantCaptacao) { setValidationMsg('Selecione como capta clientes (BANT)'); return; }
-          if (!bantAutoridade) { setValidationMsg('Selecione a autoridade (BANT)'); return; }
-          if (!bantNecessidade) { setValidationMsg('Selecione a necessidade/dor (BANT)'); return; }
-          if (!bantTiming) { setValidationMsg('Selecione o timing/urgência (BANT)'); return; }
-          if (!bantObs.trim()) { setValidationMsg('Preencha o desafio, dor e observações (BANT)'); return; }
         }
       }
       if (statusChamada === 'Não atendeu' && !motivoNaoAtendeu) { setValidationMsg('Selecione o motivo'); return; }
@@ -960,7 +926,7 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
           onLeadUpdated?.(leadUpd);
           // Track responsavel change in timeline
           if (bantCloser && bantCloser !== (leadObj?.closer_responsavel ?? '')) {
-            await supabase.from('crm_atividades').insert({
+            await supabbase.from('crm_atividades').insert({
               lead_id: leadId,
               tipo: 'alteracao',
               data_atividade: now,
@@ -979,7 +945,7 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
         }
       }
 
-      // Bloco 1: Criar tarefa de retorno quando não atendeu + agendarRetorno
+      // Bloco 1: Criar t
       if (statusChamada === 'Não atendeu' && agendarRetorno && dataRetorno) {
         try {
           const { data: retornoTask } = await supabase.from('crm_tarefas').insert({
@@ -1033,7 +999,7 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
           onLeadUpdated?.({ etapa: 'perdido', status: 'perdido' });
         } else if (resultado === 'Marcou R2+' || resultado === 'Reagendou') {
           // Bloco 3: Atualizar lead para rm_realizada com tp_atual
-          const tpMap_upd: Record<string, string> = {'R1': 'R2', 'R2': 'R3', 'R3': 'R4+'};
+          const tpMap_upd: Record<string, string> = {'': 'R1', 'R1': 'R2', 'R2': 'R3', 'R3': 'R4+'};
           const nextTP_upd = resultado === 'Marcou R2+' ? (tpMap_upd[resolvedTP] || 'R4+') : resolvedTP;
           const leadUpdR2: Partial<CRMLead> = {
             etapa: 'rm_realizada',
@@ -1440,93 +1406,7 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
                       </select>
                     </div>
                   </div>
-                  {/* Divisor BANT */}
-                  <div className="flex items-center gap-2 pt-1">
-                    <div className="flex-1 h-px bg-white/10" />
-                    <span className="text-[9px] font-bold uppercase tracking-widest text-gray-600">BANT</span>
-                    <div className="flex-1 h-px bg-white/10" />
-                  </div>
-                  <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">Faturamento (R$)</label>
-                      <input value={bantFaturamento} onChange={e => setBantFaturamento(e.target.value)}
-                        className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-1.5 text-sm text-white focus:outline-none focus:border-yellow-500"
-                        placeholder="Ex: 100.000"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">Budget líquido (R$)</label>
-                      <input value={bantBudget} onChange={e => setBantBudget(e.target.value)}
-                        className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-1.5 text-sm text-white focus:outline-none focus:border-yellow-500"
-                        placeholder="Ex: 5.000"
-                      />
-                    </div>
-                  </div>
-                  <div>
-                    <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">Momento do negócio</label>
-                    <select value={bantMomento} onChange={e => setBantMomento(e.target.value)}
-                      className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-1.5 text-sm text-white focus:outline-none focus:border-yellow-500 appearance-none"
-                    >
-                      <option value="" className="bg-bg-main">Selecionar...</option>
-                      <option value="Comecei agora e preciso de estrutura no digital" className="bg-bg-main">Comecei agora e preciso de estrutura no digital</option>
-                      <option value="Já contratei agência, mas não tive resultado" className="bg-bg-main">Já contratei agência, mas não tive resultado</option>
-                      <option value="Já vendo por indicação, mas quero escalar via internet" className="bg-bg-main">Já vendo por indicação, mas quero escalar via internet</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">Como capta clientes hoje</label>
-                    <select value={bantCaptacao} onChange={e => setBantCaptacao(e.target.value)}
-                      className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-1.5 text-sm text-white focus:outline-none focus:border-yellow-500 appearance-none"
-                    >
-                      <option value="" className="bg-bg-main">Selecionar...</option>
-                      <option value="Indicação" className="bg-bg-main">Indicação</option>
-                      <option value="Tráfego Pago" className="bg-bg-main">Tráfego Pago</option>
-                      <option value="Ainda não tenho clientes" className="bg-bg-main">Ainda não tenho clientes</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">Autoridade (Decisores)</label>
-                    <select value={bantAutoridade} onChange={e => setBantAutoridade(e.target.value)}
-                      className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-1.5 text-sm text-white focus:outline-none focus:border-yellow-500 appearance-none"
-                    >
-                      <option value="" className="bg-bg-main">Selecionar...</option>
-                      <option value="Nenhum decisor envolvido / lead terceirizado" className="bg-bg-main">Nenhum decisor envolvido / lead terceirizado</option>
-                      <option value="Tem influência, mas depende do sócio ou gestor" className="bg-bg-main">Tem influência, mas depende do sócio ou gestor</option>
-                      <option value="Decisor principal e sócio confirmado para a reunião" className="bg-bg-main">Decisor principal e sócio confirmado para a reunião</option>
-                      <option value="É o único decisor e demonstra autoridade total" className="bg-bg-main">É o único decisor e demonstra autoridade total</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">Necessidade / Dor</label>
-                    <select value={bantNecessidade} onChange={e => setBantNecessidade(e.target.value)}
-                      className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-1.5 text-sm text-white focus:outline-none focus:border-yellow-500 appearance-none"
-                    >
-                      <option value="" className="bg-bg-main">Selecionar...</option>
-                      <option value="Quer melhorar marketing, mas sem dor clara" className="bg-bg-main">Quer melhorar marketing, mas sem dor clara</option>
-                      <option value="Reconhece que falta previsibilidade, mas ainda sem urgência" className="bg-bg-main">Reconhece que falta previsibilidade, mas ainda sem urgência</option>
-                      <option value="Sofre com falta de leads ou estrutura comercial e quer resolver" className="bg-bg-main">Sofre com falta de leads ou estrutura comercial e quer resolver</option>
-                      <option value="Está com prejuízo, sem previsibilidade e quer agir agora" className="bg-bg-main">Está com prejuízo, sem previsibilidade e quer agir agora</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">Timing / Urgência</label>
-                    <select value={bantTiming} onChange={e => setBantTiming(e.target.value)}
-                      className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-1.5 text-sm text-white focus:outline-none focus:border-yellow-500 appearance-none"
-                    >
-                      <option value="" className="bg-bg-main">Selecionar...</option>
-                      <option value="Não tem previsão / talvez no futuro" className="bg-bg-main">Não tem previsão / talvez no futuro</option>
-                      <option value="Pensa em agir em até 3 meses" className="bg-bg-main">Pensa em agir em até 3 meses</option>
-                      <option value="Quer começar em até 30 dias" className="bg-bg-main">Quer começar em até 30 dias</option>
-                      <option value="Quer iniciar imediatamente / essa semana" className="bg-bg-main">Quer iniciar imediatamente / essa semana</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">Desafio, dor e observações</label>
-                    <textarea value={bantObs} onChange={e => setBantObs(e.target.value)} rows={2}
-                      className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-1.5 text-sm text-white focus:outline-none focus:border-yellow-500 resize-none"
-                      placeholder="Descreva o cenário do lead..."
-                    />
-                  </div>
+
                 </div>
               )}
             </>
@@ -1737,7 +1617,7 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
           {/* Marcou R2+ / Reagendou — próxima reunião */}
           {(resultado === 'Marcou R2+' || resultado === 'Reagendou') && (() => {
             const curTP = (leadObj as any)?.tp_atual || 'R1';
-            const tpMap: Record<string, string> = { 'R1': 'R2', 'R2': 'R3', 'R3': 'R4+' };
+            const tpMap: Record<string, string> = {'': 'R1', 'R1': 'R2', 'R2': 'R3', 'R3': 'R4+'};
             const nextTP = tpMap[curTP] || 'R4+';
             return (
               <div>
@@ -1769,15 +1649,14 @@ function NovaAtividadeForm({ lead: leadObj, leadId, leadName, userSession, onSav
         />
       )}
 
-      {/* Upload de print */}
+      {/* Upload de print (opcional) */}
       <div>
         <label className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">
-          Print da tela <span className="text-red-400">* (obrigatório)</span>
+          Print da tela (opcional)
         </label>
         <input type="file" accept="image/*" onChange={e => { handleImageChange(e); setImageError(false); }}
-          className={`w-full text-xs text-gray-400 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-white/10 file:text-gray-300 hover:file:bg-white/20 file:cursor-pointer file:transition-colors ${imageError ? 'ring-1 ring-red-500 rounded-lg' : ''}`}
+          className="w-full text-xs text-gray-400 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-white/10 file:text-gray-300 hover:file:bg-white/20 file:cursor-pointer file:transition-colors"
         />
-        {imageError && <p className="text-[10px] text-red-400 mt-1">Print obrigatório para registrar atividade</p>}
         {imagePreview && (
           <div className="mt-2 relative">
             <img src={imagePreview} alt="Preview" className="w-full max-h-40 object-contain rounded-lg border border-white/10" />
@@ -1851,8 +1730,7 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
     if (!demandaVenda || demandaSaving) return;
     const allComplete = demandaVenda.contrato_feito && demandaVenda.contrato_assinado &&
       demandaVenda.sinal_pago && demandaVenda.entrada_paga &&
-      demandaVenda.onboarding_agendado && demandaVenda.grupo_criado &&
-      demandaVenda.membros_adicionados && demandaVenda.mensagem_saudacao;
+      demandaVenda.onboarding_agendado;
     if (allComplete) return;
     const newVal = !demandaVenda[field];
     setDemandaSaving(true);
@@ -2392,12 +2270,12 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
             lead_telefone: lead.telefone ?? '',
             lead_externo_id: lead.lead_externo_id ?? lead.id,
             closer: closerResponsavel || userSession?.name || '',
-            sdr: sdrResponsavel || userSession?.name || '',
+            sdr: lead.sdr_responsavel || userSession?.name || '',
             tipo_reuniao: webhookTipoReuniao,
             data_hora: new Date(rrProximaReuniao).toISOString(),
             duracao_min: 60,
-            reagendamento: rrResultado === 'Reagendou',
-            bant: { sdr: sdrResponsavel || userSession?.name || '' },
+            reagendamento: true,
+            bant: { sdr: lead.sdr_responsavel || userSession?.name || '' },
           }),
         }).catch(e => { console.warn('Webhook agendar-reuniao (CORS em dev):', e.message); return null; });
       } catch (err) { console.error('Failed to send agendar-reuniao webhook:', err); }
@@ -2776,6 +2654,7 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
                 {isAdmin ? (
                   <select value={closerResponsavel} onChange={e => setCloserResponsavel(e.target.value)}
                     className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-brand-primary appearance-none"
+                    ref={tarefaFileRef}
                   >
                     <option value="" className="bg-bg-main">Sem responsável</option>
                     {teamMembers.filter(m => ['admin','comercial'].includes((m.role ?? '').toLowerCase()))
@@ -2805,6 +2684,7 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
                   {ETAPAS.filter(e => e.id !== 'base').map(e => (
                     <button key={e.id} onClick={() => setEtapa(e.id)}
                       className={`px-2 py-1.5 rounded-lg text-[10px] font-bold border transition-all ${etapa === e.id ? `${e.badge} border-transparent` : 'bg-white/5 border-white/10 text-gray-500 hover:border-white/20'}`}
+                      ref={tarefaFileRef}
                     >{e.label}</button>
                   ))}
                 </div>
@@ -2816,8 +2696,8 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
               <div className="bg-white/5 rounded-xl p-3 space-y-2">
                 <p className="text-[9px] font-bold uppercase tracking-widest text-brand-primary">Negociação</p>
                 {lead.programa_apresentado && <div className="flex justify-between text-xs"><span className="text-gray-500">Programa</span><span className={getProgramaStyle(lead.programa_apresentado)}>{lead.programa_apresentado}</span></div>}
-                {lead.valor_contrato != null && <div className="flex justify-between text-xs"><span className="text-gray-500">Contrato</span><span className="text-brand-primary font-bold">R$ {Number(lead.valor_contrato).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span></div>}
-                {lead.valor_cc != null && <div className="flex justify-between text-xs"><span className="text-gray-500">Cash Collect</span><span className="text-white font-bold">R$ {Number(lead.valor_cc).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span></div>}
+                {lead.valor_contrato != null && <div className="flex justify-between text-xs"><span className="text-gray-500">Contrato</span><span className="text-brand-primary font-bold">R$ {Number(lead.valor_contrato).toLocaleString('pt-BR', { minimumFractionDigits: lead.valor_contrato % 1 ? 2 : 0 })}</span></div>}
+                {lead.valor_cc != null && <div className="flex justify-between text-xs"><span className="text-gray-500">Cash Collect</span><span className="text-white font-bold">R$ {Number(lead.valor_cc).toLocaleString('pt-BR', { minimumFractionDigits: lead.valor_cc % 1 ? 2 : 0 })}</span></div>}
               </div>
             )}
 
@@ -3107,7 +2987,7 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
           {tab === 'timeline' && (
             <div className="space-y-3">
               <button onClick={() => { setShowAtivForm(!showAtivForm); if (!showAtivForm) { setAtivFormTipo(undefined); setConcluindoTarefaViaAtiv(null); } }}
-                className="w-full py-2 rounded-xl bg-brand-primary/10 border border-brand-primary/30 text-xs text-brand-primary hover:bg-brand-primary/20 transition-all flex items-center justify-center gap-2"
+                className="w-full py-2 rounded-xl bg-brand-primary/10 border border-brand-primary/30 text-xs font-bold text-brand-primary hover:bg-brand-primary/20 transition-all flex items-center justify-center gap-2"
               >
                 <Plus size={13} /> Registrar atividade
               </button>
@@ -3131,7 +3011,7 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
                           <span className="text-[9px] text-gray-700">{fmtAtivDate(a.created_at)}</span>
                         </div>
                         <p className="text-xs text-gray-300">Responsável alterado de <span className="font-bold text-red-400">{desc.de}</span> para <span className="font-bold text-brand-primary">{desc.para}</span></p>
-                        {a.realizado_por && <p className="text-[9px] text-gray-600">por {a.realizado_por}{desc.obs ? ` — ${desc.obs}` : ''}</p>}
+                        {a.realizado_por && <p className="text-[9px] text-gray-600">{a.realizado_por}{desc.obs ? ` — ${desc.obs}` : ''}</p>}
                       </div>
                     </div>
                   );
@@ -3260,12 +3140,12 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
                       />
                       <div className="flex gap-2">
                         <button onClick={() => reagendarTarefa(t)} disabled={!reagendarData || reagendarSaving}
-                          className={`flex-1 py-2 rounded-lg text-[11px] font-bold transition-colors flex items-center justify-center gap-1.5 ${reagendarData ? 'bg-yellow-500/10 border border-yellow-500/30 text-yellow-400 hover:bg-yellow-500/20 cursor-pointer' : 'bg-white/3 border border-white/10 text-gray-600 cursor-not-allowed'}`}
+                          className={`flex-1 py-2.5 rounded-xl text-[11px] font-bold transition-colors flex items-center justify-center gap-1.5 ${reagendarData ? 'bg-yellow-500/10 border border-yellow-500/30 text-yellow-400 hover:bg-yellow-500/20 cursor-pointer' : 'bg-white/3 border border-white/10 text-gray-600 cursor-not-allowed'}`}
                         >
                           {reagendarSaving ? <Loader2 size={12} className="animate-spin" /> : <Calendar size={12} />} Confirmar
                         </button>
                         <button onClick={() => { setReagendandoTarefa(null); setReagendarData(''); }}
-                          className="py-2 px-3 rounded-lg bg-white/5 border border-white/10 text-[11px] font-bold text-gray-400 hover:text-white transition-colors cursor-pointer"
+                          className="py-2.5 px-3 rounded-lg bg-white/5 border border-white/10 text-[11px] font-bold text-gray-400 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
                         >Cancelar</button>
                       </div>
                     </div>
@@ -3295,7 +3175,7 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
                           {tarefaUploading ? <Loader2 size={12} className="animate-spin" /> : <CheckCircle2 size={12} />} Concluir
                         </button>
                         <button onClick={() => { setConcluindoTarefa(null); setTarefaImageFile(null); setTarefaImagePreview(null); setTarefaObs(''); }}
-                          className="py-2 px-3 rounded-lg bg-white/5 border border-white/10 text-[11px] font-bold text-gray-400 hover:text-white transition-colors cursor-pointer"
+                          className="py-2 px-3 rounded-lg bg-white/5 border border-white/10 text-[11px] font-bold text-gray-400 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
                         >Cancelar</button>
                       </div>
                     </div>
@@ -3309,8 +3189,7 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
           {tab === 'demandas' && demandaVenda && (() => {
             const demandaCompleta = demandaVenda.contrato_feito && demandaVenda.contrato_assinado &&
               demandaVenda.sinal_pago && demandaVenda.entrada_paga &&
-              demandaVenda.onboarding_agendado && demandaVenda.grupo_criado &&
-              demandaVenda.membros_adicionados && demandaVenda.mensagem_saudacao;
+              demandaVenda.onboarding_agendado;
             return (
             <div className="space-y-4">
               {demandaCompleta && (
@@ -3324,10 +3203,11 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
                 <p className="text-[9px] text-gray-500 mb-3">A venda só é contabilizada quando: (Contrato assinado + Sinal pago) ou (Entrada paga)</p>
                 <div className="space-y-2">
                   {([
-                    ['contrato_feito', 'Contrato feito (enviado ao cliente)'],
+                    ['contrato_feito', 'Contrato elaborado'],
                     ['contrato_assinado', 'Contrato assinado'],
-                    ['sinal_pago', 'Sinal pago'],
-                    ['entrada_paga', 'Entrada paga (cash collect)'],
+                    ['sinal_pago', 'Entrada paga'],
+                    ['entrada_paga', 'Dados financeiros preenchidos'],
+                    ['onboarding_agendado', 'Crédito Aprovado'],
                   ] as const).map(([field, label]) => (
                     <label key={field} className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all ${
                       demandaVenda[field]
@@ -3352,29 +3232,6 @@ function LeadModal({ lead, onClose, onSave, onDelete, userSession, teamMembers, 
                     </div>
                   );
                 })()}
-              </div>
-
-              {/* Checklist de processo */}
-              <div>
-                <p className="text-[9px] font-bold uppercase tracking-widest text-gray-600 mb-2">Processo de Ativação</p>
-                <div className="space-y-2">
-                  {([
-                    ['onboarding_agendado', 'Onboarding agendado'],
-                    ['grupo_criado', 'Grupo criado'],
-                    ['membros_adicionados', 'Adicionou os membros'],
-                    ['mensagem_saudacao', 'Enviou mensagem de saudação'],
-                  ] as const).map(([field, label]) => (
-                    <label key={field} className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all ${
-                      demandaVenda[field]
-                        ? 'bg-brand-primary/10 border-brand-primary/30'
-                        : 'bg-white/5 border-white/10 hover:border-white/20'
-                    } ${demandaCompleta ? 'opacity-60 pointer-events-none' : ''}`}>
-                      <input type="checkbox" checked={demandaVenda[field]} onChange={() => toggleDemanda(field)}
-                        disabled={demandaCompleta} className="w-4 h-4 rounded accent-brand-primary" />
-                      <span className={`text-xs ${demandaVenda[field] ? 'text-brand-primary font-semibold' : 'text-gray-400'}`}>{label}</span>
-                    </label>
-                  ))}
-                </div>
               </div>
             </div>
             );
@@ -3634,7 +3491,7 @@ function TaskAlarmPopup({ tarefa, lead, onDismiss, onOpenLead, onComplete, onRes
               </button>
             )}
             <button onClick={() => setShowReschedule(true)}
-              className="py-2.5 px-4 rounded-xl bg-yellow-500/10 border border-yellow-500/30 text-xs font-bold text-yellow-400 hover:text-white hover:bg-yellow-500/20 transition-colors cursor-pointer flex items-center gap-1.5"
+              className="py-2.5 px-4 rounded-xl bg-yellow-500/10 border border-yellow-500/30 text-xs font-bold text-yellow-400 hover:text-white hover:bg-yellow-500/20 transition-colors flex items-center gap-1.5"
             >
               <Calendar size={13} /> Reagendar
             </button>
