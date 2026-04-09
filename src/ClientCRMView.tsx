@@ -419,9 +419,11 @@ export default function ClientCRMView({ clients, selectedTenantId, onBack, tenan
                             const ls = calcClientLeadScore(respostas);
                             const gs = LEAD_SCORE_GRADE_STYLE[ls.grade] || LEAD_SCORE_GRADE_STYLE.D;
                             return (
-                              <span className="text-[10px] font-extrabold px-1.5 py-0.5 rounded-md" style={{ backgroundColor: gs.bg, color: gs.text, border: `1px solid ${gs.border}` }}>
-                                {ls.grade} ({ls.score})
-                              </span>
+                              <div className="flex items-center gap-1.5 mt-0.5 mb-0.5">
+                                <span className="text-[10px] font-extrabold px-1.5 py-0.5 rounded-md" style={{ backgroundColor: gs.bg, color: gs.text, border: `1px solid ${gs.border}` }}>
+                                  {ls.grade} ({ls.score})
+                                </span>
+                              </div>
                             );
                           })()}
                           {lead.empresa && <div className="flex items-center gap-1.5 text-xs text-white/40"><Building2 className="w-3 h-3" /><span className="truncate">{lead.empresa}</span></div>}
@@ -650,6 +652,22 @@ Retorne APENAS o JSON, sem markdown, sem explicação.`;
     setShowScoreForm(false);
   };
 
+  // Checklist de pontos de contato (5 contatos)
+  const touchStorageKey = `m2_touch_${lead.id}`;
+  const [touchpoints, setTouchpoints] = useState<boolean[]>(() => {
+    try { return JSON.parse(localStorage.getItem(`m2_touch_${lead.id}`) || '[false,false,false,false,false]'); } catch { return [false, false, false, false, false]; }
+  });
+  const toggleTouchpoint = (idx: number) => {
+    const updated = [...touchpoints];
+    updated[idx] = !updated[idx];
+    setTouchpoints(updated);
+    localStorage.setItem(touchStorageKey, JSON.stringify(updated));
+  };
+
+  // Modal de motivo de perda
+  const [showPerdaModal, setShowPerdaModal] = useState(false);
+  const [motivoPerda, setMotivoPerda] = useState(form.motivoPerda || '');
+
   // Demandas pós-venda (localStorage MVP)
   const demandasStorageKey = `m2_demandas_${lead.id}`;
   const [demandas, setDemandasLocal] = useState<Record<string, boolean>>(() => {
@@ -821,7 +839,7 @@ Retorne APENAS o JSON, sem markdown, sem explicação.`;
                 className="px-4 py-1.5 rounded-lg text-xs font-bold bg-blue-500/10 text-blue-400 border border-blue-500/20 hover:bg-blue-500/20 transition-colors">
                 Congelar
               </button>
-              <button onClick={() => handleMoveToStatus('perdido')}
+              <button onClick={() => setShowPerdaModal(true)}
                 className="px-4 py-1.5 rounded-lg text-xs font-bold bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20 transition-colors">
                 Perda
               </button>
@@ -885,37 +903,38 @@ Retorne APENAS o JSON, sem markdown, sem explicação.`;
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div><label className="block text-xs text-white/40 mb-1">Nome</label><input className={inputCls} value={form.nome} onChange={e => setForm({ ...form, nome: e.target.value })} /></div>
-                <div><label className="block text-xs text-white/40 mb-1">Empresa</label><input className={inputCls} value={form.empresa} onChange={e => setForm({ ...form, empresa: e.target.value })} /></div>
+                <div><label className="block text-xs text-white/40 mb-1">Etapa</label><select className={inputCls} style={{ backgroundColor: '#0d1117', color: '#e6e6e6' }} value={form.stageId} onChange={e => setForm({ ...form, stageId: e.target.value })}>{stages.map(s => <option key={s.id} value={s.id} style={{ backgroundColor: '#0d1117', color: '#e6e6e6' }}>{s.nome}</option>)}</select></div>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div><label className="block text-xs text-white/40 mb-1">Telefone</label><input className={inputCls} value={form.telefone} onChange={e => setForm({ ...form, telefone: e.target.value })} /></div>
                 <div><label className="block text-xs text-white/40 mb-1">Email</label><input className={inputCls} value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} /></div>
               </div>
-              <div className="grid grid-cols-3 gap-4">
-                <div><label className="block text-xs text-white/40 mb-1">Segmento</label><input className={inputCls} value={form.segmento} onChange={e => setForm({ ...form, segmento: e.target.value })} /></div>
-                <div><label className="block text-xs text-white/40 mb-1">Área</label><input className={inputCls} value={form.area} onChange={e => setForm({ ...form, area: e.target.value })} /></div>
-                <div><label className="block text-xs text-white/40 mb-1">Origem</label><input className={inputCls} value={form.origem} onChange={e => setForm({ ...form, origem: e.target.value })} /></div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div><label className="block text-xs text-white/40 mb-1">Faturamento</label><input className={inputCls} value={form.faturamento} onChange={e => setForm({ ...form, faturamento: e.target.value })} /></div>
-                <div><label className="block text-xs text-white/40 mb-1">Responsável</label><input className={inputCls} value={form.responsavel} onChange={e => setForm({ ...form, responsavel: e.target.value })} /></div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div><label className="block text-xs text-white/40 mb-1">Etapa</label><select className={inputCls} value={form.stageId} onChange={e => setForm({ ...form, stageId: e.target.value })}>{stages.map(s => <option key={s.id} value={s.id}>{s.nome}</option>)}</select></div>
-                <div><label className="block text-xs text-white/40 mb-1">Ticket estimado</label><input type="number" className={inputCls} value={form.ticketEstimado || ''} onChange={e => setForm({ ...form, ticketEstimado: +e.target.value })} /></div>
-              </div>
+              <div><label className="block text-xs text-white/40 mb-1">Origem</label><input className={inputCls} value={form.origem} onChange={e => setForm({ ...form, origem: e.target.value })} /></div>
 
-              {/* Financial */}
+              {/* Financeiro */}
               <div className="border-t border-white/5 pt-4 mt-4">
                 <h4 className="text-xs font-bold text-brand-primary uppercase mb-3">Financeiro</h4>
                 <div className="grid grid-cols-3 gap-4">
                   <div><label className="block text-xs text-white/40 mb-1">Contrato (R$)</label><input type="number" className={inputCls} value={form.valorContrato || ''} onChange={e => setForm({ ...form, valorContrato: +e.target.value })} /></div>
-                  <div><label className="block text-xs text-white/40 mb-1">Cash Collect (R$)</label><input type="number" className={inputCls} value={form.valorCc || ''} onChange={e => setForm({ ...form, valorCc: +e.target.value })} /></div>
-                  <div><label className="block text-xs text-white/40 mb-1">MRR (R$)</label><input type="number" className={inputCls} value={form.valorMrr || ''} onChange={e => setForm({ ...form, valorMrr: +e.target.value })} /></div>
+                  <div><label className="block text-xs text-white/40 mb-1">Entrada (R$)</label><input type="number" className={inputCls} value={form.valorCc || ''} onChange={e => setForm({ ...form, valorCc: +e.target.value })} /></div>
+                  <div>
+                    <label className="block text-xs text-white/40 mb-1">Forma de Pagamento</label>
+                    <select className={inputCls} style={{ backgroundColor: '#0d1117', color: '#e6e6e6' }} value={(form as any).formaPagamento || ''} onChange={e => setForm({ ...form, formaPagamento: e.target.value } as any)}>
+                      <option value="" style={{ backgroundColor: '#0d1117', color: '#9ca3af' }}>Selecione...</option>
+                      <option value="boleto" style={{ backgroundColor: '#0d1117', color: '#e6e6e6' }}>Boleto</option>
+                      <option value="cartao" style={{ backgroundColor: '#0d1117', color: '#e6e6e6' }}>Cartão de Crédito</option>
+                      <option value="financiamento" style={{ backgroundColor: '#0d1117', color: '#e6e6e6' }}>Financiamento</option>
+                    </select>
+                  </div>
                 </div>
               </div>
 
-              <div><label className="block text-xs text-white/40 mb-1">Observações</label><textarea rows={3} className={inputCls + ' resize-none'} value={form.observacoes} onChange={e => setForm({ ...form, observacoes: e.target.value })} /></div>
+              {/* Descrição / UTMs */}
+              <div className="border-t border-white/5 pt-4 mt-4">
+                <label className="block text-xs text-white/40 mb-1">Descrição <span className="text-white/20">— UTMs, tracking, observações gerais</span></label>
+                <textarea rows={8} className={inputCls + ' resize-y font-mono text-xs'} placeholder="Cole aqui as UTMs, parâmetros de tracking, observações do lead..."
+                  value={form.observacoes} onChange={e => setForm({ ...form, observacoes: e.target.value })} />
+              </div>
 
               <div className="flex items-center gap-3 pt-2">
                 <button onClick={handleSave} disabled={saving} className="bg-brand-primary text-black font-bold rounded-xl px-6 py-2 text-sm hover:brightness-110 disabled:opacity-50">{saving ? 'Salvando...' : 'Salvar'}</button>
@@ -986,7 +1005,34 @@ Retorne APENAS o JSON, sem markdown, sem explicação.`;
           {/* ── ATENDIMENTOS TAB ── */}
           {activeTab === 'atendimentos' && (
             <div className="space-y-4">
-              {/* Buttons */}
+              {/* Checklist de Pontos de Contato */}
+              <div className="bg-white/[0.02] border border-white/8 rounded-xl p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-white/40">Pontos de Contato</h4>
+                  <span className="text-xs font-bold" style={{ color: touchpoints.filter(Boolean).length === 5 ? '#00FF88' : '#eab308' }}>
+                    {touchpoints.filter(Boolean).length}/5
+                  </span>
+                </div>
+                <div className="flex gap-3">
+                  {touchpoints.map((done, idx) => (
+                    <button key={idx} onClick={() => toggleTouchpoint(idx)}
+                      className={`flex-1 flex flex-col items-center gap-1.5 p-3 rounded-xl border transition-all ${
+                        done ? 'bg-brand-primary/10 border-brand-primary/30' : 'bg-white/[0.02] border-white/8 hover:border-white/15'
+                      }`}>
+                      <div className={`w-7 h-7 rounded-full border-2 flex items-center justify-center transition-all ${
+                        done ? 'border-brand-primary bg-brand-primary/20' : 'border-white/15'
+                      }`}>
+                        {done ? <CheckCircle2 size={14} className="text-brand-primary" /> : <span className="text-xs text-white/30">{idx + 1}</span>}
+                      </div>
+                      <span className={`text-[10px] font-semibold ${done ? 'text-brand-primary' : 'text-white/30'}`}>
+                        Contato {idx + 1}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Botões de ação */}
               <div className="flex flex-wrap gap-2">
                 <button onClick={async () => {
                   const phone = (form.telefone || lead.telefone || '').replace(/\D/g, '');
@@ -999,10 +1045,8 @@ Retorne APENAS o JSON, sem markdown, sem explicação.`;
                         autor: userName || 'Usuário', imagemUrl: '', dados: {},
                       });
                       setActivities(prev => [act, ...prev]);
-                    } catch (err) { console.error('Erro ao registrar atividade:', err); }
-                  } else {
-                    alert('Lead sem telefone cadastrado.');
-                  }
+                    } catch (err) { console.error('Erro ao registrar:', err); }
+                  } else { alert('Lead sem telefone cadastrado.'); }
                 }} className="flex items-center gap-2 bg-green-500/10 text-green-400 px-4 py-2 rounded-xl text-sm font-medium hover:bg-green-500/20">
                   <PhoneCall className="w-4 h-4" /> Ligar
                 </button>
@@ -1014,7 +1058,7 @@ Retorne APENAS o JSON, sem markdown, sem explicação.`;
                 </button>
               </div>
 
-              {/* Recording Panel */}
+              {/* Recording Panel — manter exatamente como está */}
               <AnimatePresence>
                 {showRecPanel && (
                   <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
@@ -1026,9 +1070,7 @@ Retorne APENAS o JSON, sem markdown, sem explicação.`;
                       </div>
                       <button onClick={() => { setShowRecPanel(false); setRecState('idle'); setRecResult(null); setRecError(''); }} className="text-white/30 hover:text-white"><X size={16} /></button>
                     </div>
-
                     {recError && <p className="text-xs text-red-400 bg-red-500/10 rounded-lg px-3 py-2">{recError}</p>}
-
                     {recState === 'idle' && (
                       <div className="text-center py-4 space-y-3">
                         <p className="text-xs text-white/40">Grave a ligação e o Taleco analisa o que foi bem e o que melhorar.</p>
@@ -1037,7 +1079,6 @@ Retorne APENAS o JSON, sem markdown, sem explicação.`;
                         </button>
                       </div>
                     )}
-
                     {recState === 'recording' && (
                       <div className="text-center py-4 space-y-3">
                         <div className="flex items-center justify-center gap-2">
@@ -1050,14 +1091,12 @@ Retorne APENAS o JSON, sem markdown, sem explicação.`;
                         </button>
                       </div>
                     )}
-
                     {recState === 'processing' && (
                       <div className="text-center py-6 space-y-2">
                         <Loader2 className="w-8 h-8 animate-spin text-brand-primary mx-auto" />
                         <p className="text-sm text-white/60">Taleco está analisando a ligação...</p>
                       </div>
                     )}
-
                     {recState === 'done' && recResult && (
                       <div className="space-y-3">
                         <div className="flex items-center justify-between">
@@ -1065,8 +1104,8 @@ Retorne APENAS o JSON, sem markdown, sem explicação.`;
                             <span className={`text-xs font-bold px-2 py-1 rounded-lg ${recResult.nota_geral >= 7 ? 'bg-green-500/20 text-green-400' : recResult.nota_geral >= 5 ? 'bg-amber-500/20 text-amber-400' : 'bg-red-500/20 text-red-400'}`}>
                               Nota {recResult.nota_geral}/10
                             </span>
-                            {recResult.dor_encontrada && <span className="text-xs bg-brand-primary/10 text-brand-primary px-2 py-1 rounded-lg">✅ Dor encontrada</span>}
-                            {recResult.momento_uau && <span className="text-xs bg-purple-500/10 text-purple-400 px-2 py-1 rounded-lg">⚡ Momento UAU</span>}
+                            {recResult.dor_encontrada && <span className="text-xs bg-brand-primary/10 text-brand-primary px-2 py-1 rounded-lg">Dor encontrada</span>}
+                            {recResult.momento_uau && <span className="text-xs bg-purple-500/10 text-purple-400 px-2 py-1 rounded-lg">Momento UAU</span>}
                           </div>
                           <span className="text-xs text-white/30">{fmtRecTime(recResult.duracao_segundos)}</span>
                         </div>
@@ -1085,46 +1124,55 @@ Retorne APENAS o JSON, sem markdown, sem explicação.`;
                           <img src="/consultor-avatar.jpg" alt="Taleco" className="w-6 h-6 rounded-full object-cover flex-shrink-0 mt-0.5" />
                           <p className="text-xs text-white/70 italic">{recResult.comentario_taleco}</p>
                         </div>
-                        <p className="text-xs text-green-400 text-center">✅ Análise salva na timeline desta oportunidade</p>
-                        <button onClick={() => { setRecState('idle'); setRecResult(null); }} className="w-full text-xs text-white/40 hover:text-white/60 py-1">Gravar outra ligação</button>
+                        <p className="text-xs text-green-400 text-center">Análise salva na timeline</p>
+                        <button onClick={() => { setRecState('idle'); setRecResult(null); }} className="w-full text-xs text-white/40 hover:text-white/60 py-1">Gravar outra</button>
                       </div>
                     )}
                   </motion.div>
                 )}
               </AnimatePresence>
 
-              {/* Activity Form */}
+              {/* Activity Form — com Atendeu/Não atendeu + Observações */}
               <AnimatePresence>
                 {showActivityForm && (
                   <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
                     className="bg-white/3 border border-white/10 rounded-xl p-4 space-y-3 overflow-hidden">
                     <div className="flex items-center justify-between">
-                      <h4 className="text-sm font-bold text-white">{actType === 'ligacao' ? '📞 Ligação' : '📹 Reunião'}</h4>
+                      <h4 className="text-sm font-bold text-white">{actType === 'ligacao' ? 'Ligação' : 'Reunião'}</h4>
                       <button onClick={() => setShowActivityForm(false)} className="text-white/30 hover:text-white"><X size={16} /></button>
                     </div>
 
                     {actType === 'ligacao' && (
-                      <div className="flex gap-2">
-                        {['Atendeu', 'Não atendeu'].map(opt => (
-                          <button key={opt} onClick={() => setActSubtype(opt)}
-                            className={`px-3 py-1.5 text-xs rounded-lg border transition-colors ${actSubtype === opt ? 'bg-brand-primary/20 border-brand-primary text-brand-primary' : 'border-white/10 text-white/50 hover:border-white/20'}`}>{opt}</button>
-                        ))}
+                      <div>
+                        <label className="block text-xs text-white/40 mb-2">Status da ligação</label>
+                        <div className="flex gap-2">
+                          {['Atendeu', 'Não atendeu'].map(opt => (
+                            <button key={opt} onClick={() => setActSubtype(opt)}
+                              className={`flex-1 py-2.5 text-sm font-semibold rounded-xl border transition-all ${actSubtype === opt ? 'bg-brand-primary/15 border-brand-primary/40 text-brand-primary' : 'border-white/10 text-white/50 hover:border-white/20'}`}>{opt}</button>
+                          ))}
+                        </div>
                       </div>
                     )}
                     {actType === 'reuniao' && (
-                      <div className="flex gap-2">
-                        {['Realizada', 'Não compareceu', 'Remarcou'].map(opt => (
-                          <button key={opt} onClick={() => setActSubtype(opt.toLowerCase())}
-                            className={`px-3 py-1.5 text-xs rounded-lg border transition-colors ${actSubtype === opt.toLowerCase() ? 'bg-brand-primary/20 border-brand-primary text-brand-primary' : 'border-white/10 text-white/50 hover:border-white/20'}`}>{opt}</button>
-                        ))}
+                      <div>
+                        <label className="block text-xs text-white/40 mb-2">Status da reunião</label>
+                        <div className="flex gap-2">
+                          {['Realizada', 'Não compareceu', 'Remarcou'].map(opt => (
+                            <button key={opt} onClick={() => setActSubtype(opt.toLowerCase())}
+                              className={`flex-1 py-2.5 text-sm font-semibold rounded-xl border transition-all ${actSubtype === opt.toLowerCase() ? 'bg-brand-primary/15 border-brand-primary/40 text-brand-primary' : 'border-white/10 text-white/50 hover:border-white/20'}`}>{opt}</button>
+                          ))}
+                        </div>
                       </div>
                     )}
 
-                    <textarea className={inputCls + ' resize-none'} rows={3} placeholder="Descreva a atividade..." value={actContent} onChange={e => setActContent(e.target.value)} />
-
-                    {/* Image upload */}
                     <div>
-                      <label className="block text-xs text-white/40 mb-1">Print da tela (opcional)</label>
+                      <label className="block text-xs text-white/40 mb-1">Observações</label>
+                      <textarea className={inputCls + ' resize-none'} rows={3} placeholder="O que foi conversado, próximos passos..." value={actContent} onChange={e => setActContent(e.target.value)} />
+                    </div>
+
+                    {/* Image upload — opcional */}
+                    <div>
+                      <label className="block text-xs text-white/20 mb-1">Print da tela (opcional)</label>
                       <div className="flex items-center gap-3">
                         <label className="flex items-center gap-2 bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-xs text-white/60 cursor-pointer hover:bg-white/10">
                           <Upload size={14} /> {actImage ? actImage.name : 'Selecionar imagem'}
@@ -1139,7 +1187,7 @@ Retorne APENAS o JSON, sem markdown, sem explicação.`;
 
                     <button onClick={handleSubmitActivity} disabled={sendingActivity || (!actContent.trim() && !actImage)}
                       className="w-full bg-brand-primary text-black font-bold rounded-xl py-2.5 text-sm hover:brightness-110 disabled:opacity-50">
-                      {sendingActivity ? 'Enviando...' : 'Registrar Atividade'}
+                      {sendingActivity ? 'Enviando...' : 'Registrar'}
                     </button>
                   </motion.div>
                 )}
@@ -1165,8 +1213,8 @@ Retorne APENAS o JSON, sem markdown, sem explicação.`;
                           <p className="text-xs text-white/60">{act.dados.analise.resumo}</p>
                           <div className="flex gap-1.5 flex-wrap">
                             {act.dados.analise.nota_geral && <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${act.dados.analise.nota_geral >= 7 ? 'bg-green-500/20 text-green-400' : 'bg-amber-500/20 text-amber-400'}`}>Nota {act.dados.analise.nota_geral}/10</span>}
-                            {act.dados.analise.dor_encontrada && <span className="text-[10px] bg-brand-primary/10 text-brand-primary px-2 py-0.5 rounded">✅ Dor</span>}
-                            {act.dados.analise.momento_uau && <span className="text-[10px] bg-purple-500/10 text-purple-400 px-2 py-0.5 rounded">⚡ UAU</span>}
+                            {act.dados.analise.dor_encontrada && <span className="text-[10px] bg-brand-primary/10 text-brand-primary px-2 py-0.5 rounded">Dor</span>}
+                            {act.dados.analise.momento_uau && <span className="text-[10px] bg-purple-500/10 text-purple-400 px-2 py-0.5 rounded">UAU</span>}
                           </div>
                           {act.dados.analise.comentario_taleco && (
                             <div className="flex gap-2 bg-brand-primary/5 rounded-lg p-2">
@@ -1347,6 +1395,58 @@ Retorne APENAS o JSON, sem markdown, sem explicação.`;
             );
           })()}
         </div>
+
+        {/* Modal Motivo de Perda */}
+        <AnimatePresence>
+          {showPerdaModal && (
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              className="absolute inset-0 z-10 bg-black/60 flex items-center justify-center p-6 rounded-2xl" onClick={() => setShowPerdaModal(false)}>
+              <motion.div initial={{ scale: 0.95 }} animate={{ scale: 1 }} exit={{ scale: 0.95 }}
+                onClick={e => e.stopPropagation()}
+                className="bg-[#0d1117] border border-red-500/20 rounded-2xl p-6 w-full max-w-md space-y-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-red-500/10 flex items-center justify-center">
+                    <AlertCircle size={20} className="text-red-400" />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-white text-sm">Marcar como Perda</h3>
+                    <p className="text-xs text-gray-500">Registre o motivo da perda deste lead</p>
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs text-white/40 mb-1">Motivo da perda</label>
+                  <textarea rows={4} className={inputCls + ' resize-none'} placeholder="Descreva por que o lead foi perdido..."
+                    value={motivoPerda} onChange={e => setMotivoPerda(e.target.value)} />
+                </div>
+                <div className="flex gap-3">
+                  <button onClick={() => setShowPerdaModal(false)}
+                    className="flex-1 bg-white/5 text-gray-400 py-2.5 rounded-xl text-sm hover:bg-white/10">
+                    Cancelar
+                  </button>
+                  <button onClick={async () => {
+                    const statusStage = stages.find(s => s.nome.toLowerCase().includes('perd'));
+                    const updated = { ...form, status: 'perdido', motivoPerda, stageId: statusStage?.id ?? form.stageId };
+                    setForm(updated as any);
+                    await onUpdate(updated as any);
+                    // Registrar na timeline
+                    try {
+                      const act = await createLeadActivity({
+                        leadId: lead.id, tenantId, tipo: 'movimentacao', subtipo: 'Perda',
+                        conteudo: `Lead marcado como perdido. Motivo: ${motivoPerda || 'Não informado'}`,
+                        autor: userName || 'Usuário', imagemUrl: '', dados: {},
+                      });
+                      setActivities(prev => [act, ...prev]);
+                    } catch { /* silent */ }
+                    setShowPerdaModal(false);
+                  }}
+                    className="flex-1 bg-red-500/20 text-red-400 font-bold py-2.5 rounded-xl text-sm hover:bg-red-500/30">
+                    Confirmar Perda
+                  </button>
+                </div>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </motion.div>
     </motion.div>
   );
