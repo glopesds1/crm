@@ -5,7 +5,7 @@ import {
   ChevronDown, Check, Calendar, Link, Eye, EyeOff, Save,
   Loader2,
 } from 'lucide-react';
-import { supabase } from './lib/supabase';
+import { supabase } from './shared/lib/supabase';
 
 // ── Types ────────────────────────────────────────────────────
 interface MateriaisData {

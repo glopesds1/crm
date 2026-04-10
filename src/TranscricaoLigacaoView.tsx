@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Mic, Square, Loader2, ChevronDown, ChevronUp, CheckCircle2, AlertCircle, Lightbulb, ArrowRight, Clock, Save, History, Trash2, X } from 'lucide-react';
-import { supabase } from './lib/supabase';
+import { supabase } from './shared/lib/supabase';
 
 const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
 

@@ -7,7 +7,7 @@ import {
   Building2, MapPin, Rocket, Settings2, Save,
   ScanSearch, CircleAlert, Download
 } from 'lucide-react';
-import { supabase } from './lib/supabase';
+import { supabase } from './shared/lib/supabase';
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 

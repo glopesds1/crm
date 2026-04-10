@@ -4,12 +4,12 @@ import {
   Plus, Play, CheckCircle2, X, BookOpen, Video, Clock, ChevronRight,
   Edit3, Trash2, GripVertical, ArrowLeft, Save, ExternalLink,
 } from 'lucide-react';
-import type { EducacaoModulo, EducacaoAula, EducacaoProgresso } from './types';
+import type { EducacaoModulo, EducacaoAula, EducacaoProgresso } from './shared/types';
 import {
   getModulos, createModulo, updateModulo, deleteModulo,
   getAllAulas, getAulasByModulo, createAula, updateAula, deleteAula,
   getProgressoByUser, upsertProgresso,
-} from './lib/database';
+} from './shared/lib/database';
 
 // ── Helpers ─────────────────────────────────────────────────
 const getYouTubeId = (url: string): string | null => {

@@ -4,7 +4,7 @@ import {
   FileText, ExternalLink, FolderOpen, Video, Link2, Image,
   File, Search,
 } from 'lucide-react';
-import { supabase } from './lib/supabase';
+import { supabase } from './shared/lib/supabase';
 
 // ── Types ────────────────────────────────────────────────────
 type Documento = {

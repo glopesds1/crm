@@ -18,14 +18,14 @@ import * as XLSX from 'xlsx';
 import type {
   CrmClientTenant, CrmClientStage, CrmClientLead,
   CrmClientLeadActivity, CrmClientTarefa, Client,
-} from './types';
+} from './shared/types';
 import {
   getAllTenants, getStagesByTenant, getClientLeads,
   createClientLead, updateClientLead, deleteClientLead,
   getLeadActivities, createLeadActivity, deleteTenant,
   getClientTarefas, createClientTarefa, updateClientTarefa, deleteClientTarefa,
-} from './lib/database';
-import { supabase } from './lib/supabase';
+} from './shared/lib/database';
+import { supabase } from './shared/lib/supabase';
 
 // ── Helpers ─────────────────────────────────────────────────
 const SP_TZ = 'America/Sao_Paulo';

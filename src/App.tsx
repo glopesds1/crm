@@ -76,8 +76,8 @@ import DocumentosClienteView from './DocumentosClienteView';
 import ConsultorIAView from './ConsultorIAView';
 import TranscricaoLigacaoView from './TranscricaoLigacaoView';
 import LandingPagesView from './LandingPagesView';
-import { getTenantByClientId, activateCrmForClient, authenticateCrmUser, getCrmUsersByTenant, createCrmUser, updateCrmUser, deleteCrmUser, authenticateUser, signOut, resetPassword, updatePassword, getAuthSession, mfaListFactors, mfaChallenge, mfaVerify, mfaEnrollTotp, mfaUnenroll, mfaGetAuthenticatorLevel } from './lib/database';
-import type { CrmClientTenant, CrmClientUser } from './types';
+import { getTenantByClientId, activateCrmForClient, authenticateCrmUser, getCrmUsersByTenant, createCrmUser, updateCrmUser, deleteCrmUser, authenticateUser, signOut, resetPassword, updatePassword, getAuthSession, mfaListFactors, mfaChallenge, mfaVerify, mfaEnrollTotp, mfaUnenroll, mfaGetAuthenticatorLevel } from './shared/lib/database';
+import type { CrmClientTenant, CrmClientUser } from './shared/types';
 import { ptBR } from 'date-fns/locale';
 
 import { 
@@ -90,14 +90,14 @@ import {
   DEFAULT_ONBOARDING_ITEMS, 
   INITIAL_TEAM_MEMBERS,
   INITIAL_AGENCY_CONFIG
-} from './constants';
-import { 
-  Client, 
-  Plan, 
-  Tag, 
-  ClientComment, 
-  Offer, 
-  OnboardingItem, 
+} from './shared/constants';
+import {
+  Client,
+  Plan,
+  Tag,
+  ClientComment,
+  Offer,
+  OnboardingItem,
   MonthlyMeeting,
   MeetingActionItem,
   Demand,
@@ -106,17 +106,17 @@ import {
   Notification,
   UserSession,
   ComercialTask
-} from './types';
+} from './shared/types';
 
-import { 
+import {
   getClients, createClient, updateClient, deleteClient,
   getTeamMembers, createTeamMember, updateTeamMember, deleteTeamMember,
   getAgencyConfig, updateAgencyConfig,
   getTags, saveTag, deleteTag,
   getComercialTasks, createComercialTask, deleteComercialTask,
   getDemands, createDemand, updateDemand, deleteDemand
-} from './lib/database';
-import { supabase } from './lib/supabase';
+} from './shared/lib/database';
+import { supabase } from './shared/lib/supabase';
 
 // --- Helper Functions ---
 
